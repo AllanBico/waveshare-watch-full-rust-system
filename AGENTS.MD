@@ -135,21 +135,52 @@
 - The simulator must never compile hardware drivers.
 - Feature flags must be documented in the workspace `Cargo.toml`.
 
+## File Size
+- Max 300 lines per source file. If a source file grows past 300, split it.
+- Design docs and the protocol document are exempt from the line limit.
+- Split by responsibility, not by line count.
+- One file, one job.
+
+## Function Design
+- One function, one purpose.
+- If a function needs a comment to explain what it does, rename it.
+- If a function needs a comment to explain why, add the comment.
+- Max 40 lines per function.
+- Max 5 parameters per function. If more, use a struct.
+- Return `Result`, never panic in library code.
+- Prefer pure functions when possible.
+- No side effects unless the function's name says so.
+
 ## Naming Rules
 - Crates: lowercase, single word where possible.
 - Types: PascalCase.
-- Functions: snake_case.
+- Functions: verb_noun, snake_case.
 - Constants: SCREAMING_SNAKE_CASE.
+- Booleans: `is_`, `has_`, `can_` prefix.
+- Avoid abbreviations unless universally known.
 - Modes: `Mode::Watch`, `Mode::Desk`.
 - Events: `Event::WakeReason`, `Event::ModeSwitch`.
 - Errors: `Error::PowerFail`, `Error::StorageFull`.
 
 ## Documentation Rules
+- Comment the why, not the what.
+- Do not comment obvious code.
+- Do comment tricky logic, workarounds, and trade-offs.
+- Keep comments short. One line if possible.
+- Delete stale comments immediately.
 - Every public trait must have a doc comment.
+- Every public item must have a doc comment.
 - Every module must have a module-level doc comment.
 - Every unsafe block must have a safety comment.
 - Every hardware assumption must be documented.
 - Every power trade-off must be documented.
+
+## No Hardcoding
+- No magic numbers. Use named constants.
+- No hardcoded paths, URLs, keys, or timeouts. Use the compile-time config struct.
+- No hardcoded pin numbers or I2C addresses outside `drivers`.
+- If it might change, make it configurable. Config is a typed struct with safe, documented defaults.
+- Secrets never live on the watch. If it is a secret, it belongs on the VPS.
 
 ## Forbidden Patterns
 - No `std` in any watch code path.
@@ -159,11 +190,11 @@
 - No `delay_ms()` in main loop.
 - No global mutable state.
 - No circular dependencies.
-- No hardcoded pin numbers outside `drivers`.
-- No hardcoded I2C addresses outside `drivers`.
-- No magic numbers. Use named constants.
+- No commented-out code.
+- No debug prints left behind.
 
 ## Review Checklist
+- Source file under 300 lines. Function under 40 lines.
 - Does this compile as `no_std` for the ESP32-S3 target?
 - Does watch boot leave voice, sync, and radios uninitialized?
 - Does this respect the power budget?
@@ -172,8 +203,19 @@
 - Does this allocate in a hot path?
 - Does this block in an async task?
 - Does this assume hardware state?
-- Does this have a test?
-- Does this have a doc comment?
+- No hardcoded values.
+- No unsafe without justification.
+- Errors handled. No silent failures.
+- Comments explain why. Public items documented.
+- Tests pass. Clippy clean. Rustfmt clean.
+
+## Commit Rules
+- Do not commit to git. Suggest commit messages only.
+- A suggested message says what and why.
+- One logical concern per suggested commit.
+- No commented-out code.
+- No debug prints left behind.
+- No secrets in the suggested commit.
 
 ## Escalation Rules
 - If unsure about power impact, ask.
