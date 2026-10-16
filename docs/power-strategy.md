@@ -21,9 +21,17 @@ esp-hal 1.0.0 marks GPIO0–21 as RTC pins (deep-sleep wake capable). Therefore:
   insert cannot wake a sleeping watch — it is noticed on the next wake.
 
 ## Display strategy
-- Watch mode sleeps with the panel rail cut. Clock shows on motion/tap/button.
+- Watch mode sleeps with the panel dark. Clock shows on motion/tap/button.
+- Panel power is not a dedicated rail (it ties to VCC3V3); the enable is
+  `DSI_PWR_EN` (GPIO, pulled up to ALDO2). See `axp2101-reference.md` for the
+  open question of whether ALDO3 VCC3V3 is a distinct cuttable net.
 - IMU stays powered in wake-on-motion (it is a wake source).
 - Always-on display (AOD) is a possible later mode, not the default.
+
+## Motor
+- A vibration motor exists: ALDO3 supply, switched low-side by GPIO18 (`MOTOR`).
+- Keep GPIO18 low in sleep and whenever vibration is not needed.
+- Alarms can vibrate; add the motor to the power budget.
 
 ## Power state table (single source of truth)
 One table maps state to actuators; `PowerManager` applies transitions.

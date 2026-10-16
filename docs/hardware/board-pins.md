@@ -71,9 +71,13 @@ pub const PWR_BUTTON: u8 = 10;
   `05_LVGL_AXP2101_ADC_Data.ino`: `Arduino_ESP32QSPI(CS, SCLK, SDIO0..3)` and
   `Arduino_CO5300(bus, LCD_RESET, 0, width, height, 22, 0, 0, 0)`.
   So `LCD_RESET` (GPIO8) is real and `LCD_COL_OFFSET = 22` is confirmed.
-- **No vibration motor pin exists** in the pin map or the vendor demos. Roadmap
-  6.3 (alarm vibrate) assumes one. Replace vibration with a display/sound alert
-  unless a motor is confirmed.
+- **A vibration motor IS present.** Schematic `Motor` block: the motor supply
+  comes from **ALDO3 (VCC3V3)** through `R7 0R` to connector `J1/J2`, switched
+  low-side by `Q1 MMBT3904` driven by **GPIO18 (`MOTOR`)**. So roadmap 6.3
+  (alarm vibrate) is feasible, and the motor must be off (GPIO18 low) in sleep.
+- **Display enable is a GPIO.** Schematic `AMOLED` block: the panel's `DSI_PWR_EN`
+  (J3 pin 21) is pulled up to **ALDO2 (VL2_3.3V)** via `R10 10K`. Panel power pins
+  tie to **VCC3V3**. See `axp2101-reference.md` for the display-rail question.
 - **AMOLED brightness** is not a PWM backlight pin. The CO5300 exposes brightness
   via a panel command (e.g. `0x51`) over QSPI. No backlight GPIO.
 - **SD card** is not used by the roadmap's storage plan (TicKV on internal

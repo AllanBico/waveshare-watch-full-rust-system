@@ -158,6 +158,16 @@ Wired AXP2101 outputs on this board:
 
 Other wiring observed on the sheet:
 
+- **Vibration motor on ALDO3.** `Motor` block: ALDO3 (VCC3V3) -> `R7 0R` -> motor
+  connector, switched low-side by `Q1 MMBT3904` from `GPIO18 (MOTOR)`.
+- **AMOLED panel power is not a dedicated rail.** Its power pins tie to VCC3V3,
+  and its enable `DSI_PWR_EN` (J3 pin 21) is pulled up to ALDO2 (VL2_3.3V) and
+  otherwise driven by a GPIO. So the panel cannot obviously be isolated by
+  cutting one rail.
+- **Open question: is `VCC3V3` one net or two?** Both DCDC1 and ALDO3 are labeled
+  VCC3V3. If they are tied, disabling ALDO3 does nothing and the panel/motor
+  cannot be cut independently of the SoC. Resolve on hardware by disabling ALDO3
+  and checking whether the panel/motor lose power while the SoC stays alive.
 - Battery NTC 10K thermistor on the TS pin. The vendor disables TS measurement
   (AXP ignores TS). Follow that default in 1.1; revisit for charge safety.
 - AXP IRQ (pin 38) shares a net labelled `EXIO5` / `AXP IRQ`. Confirm whether it
