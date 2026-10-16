@@ -263,6 +263,10 @@ dependencies = [
 [[package]]
 name = "drivers"
 version = "0.1.0"
+dependencies = [
+ "defmt",
+ "embedded-hal 1.0.0",
+]
 
 [[package]]
 name = "embassy-embedded-hal"
