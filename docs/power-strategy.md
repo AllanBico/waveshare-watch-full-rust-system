@@ -22,9 +22,10 @@ esp-hal 1.0.0 marks GPIO0–21 as RTC pins (deep-sleep wake capable). Therefore:
 
 ## Display strategy
 - Watch mode sleeps with the panel dark. Clock shows on motion/tap/button.
-- Panel power is not a dedicated rail (it ties to VCC3V3); the enable is
-  `DSI_PWR_EN` (GPIO, pulled up to ALDO2). See `axp2101-reference.md` for the
-  open question of whether ALDO3 VCC3V3 is a distinct cuttable net.
+- Panel main power is VCC3V3 (system), so it cannot be isolated by a rail. Turn
+  it off with the CO5300 sleep command and by driving `DSI_PWR_EN` low.
+- The cuttable peripheral rail is **ALDO3** (motor + VL peripherals): cut it in
+  DeepSleep and restore on wake. Keep DCDC1/VCC3V3 and RTCLDO on.
 - IMU stays powered in wake-on-motion (it is a wake source).
 - Always-on display (AOD) is a possible later mode, not the default.
 

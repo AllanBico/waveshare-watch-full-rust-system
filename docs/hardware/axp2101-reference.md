@@ -164,10 +164,13 @@ Other wiring observed on the sheet:
   and its enable `DSI_PWR_EN` (J3 pin 21) is pulled up to ALDO2 (VL2_3.3V) and
   otherwise driven by a GPIO. So the panel cannot obviously be isolated by
   cutting one rail.
-- **Open question: is `VCC3V3` one net or two?** Both DCDC1 and ALDO3 are labeled
-  VCC3V3. If they are tied, disabling ALDO3 does nothing and the panel/motor
-  cannot be cut independently of the SoC. Resolve on hardware by disabling ALDO3
-  and checking whether the panel/motor lose power while the SoC stays alive.
+- **`VCC3V3` resolved (AXP block reading).** DCDC1's output is VCC3V3 via `L1`
+  (the system 3.3 V: ESP32, pull-ups, panel main power). The repeated "VCC3V3"
+  beside ALDO3 in the legend is a 3.3 V *setpoint* label, not a net tie: the
+  motor block wires its supply as `ALDO3`, a distinct output. So **ALDO3 is an
+  independently controllable 3.3 V peripheral rail**. The AMOLED panel's mains
+  still tie to VCC3V3, so the display is gated by `DSI_PWR_EN` + panel sleep,
+  not by cutting VCC3V3. Confirm on hardware before relying on it.
 - Battery NTC 10K thermistor on the TS pin. The vendor disables TS measurement
   (AXP ignores TS). Follow that default in 1.1; revisit for charge safety.
 - AXP IRQ (pin 38) shares a net labelled `EXIO5` / `AXP IRQ`. Confirm whether it
