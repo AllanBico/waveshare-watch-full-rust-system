@@ -1,8 +1,8 @@
 //! Firmware entry point.
 //!
-//! Phase 1.3: read the wake cause, bring up the shared I2C bus and AXP2101,
-//! run a short awake window, then enter deep sleep with an RTC-timer and
-//! power-button wake source. Deep sleep is a reboot: `main` re-runs on wake.
+//! Phase 1.4: choose the runtime mode from VBUS. USB present -> Desk (stay
+//! awake); otherwise Watch (deep sleep, waking on the RTC timer or the power
+//! button). Mode is runtime state, never a build variant.
 
 #![no_std]
 #![no_main]
@@ -12,7 +12,7 @@ extern crate alloc;
 use core::cell::RefCell;
 
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::efuse::Efuse;
 use esp_hal::gpio::RtcPin;
@@ -28,6 +28,7 @@ use common::{Mode, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
 use embedded_hal_bus::i2c::RefCellDevice;
+use hal::Power;
 use power::PowerManager;
 
 use esp_alloc as _;
@@ -38,11 +39,14 @@ esp_bootloader_esp_idf::esp_app_desc!();
 /// CPU clock for bring-up. Mode-based clock switching comes later.
 const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
 
-/// Awake time budget granted on each wake.
+/// Awake time budget granted on each watch-mode wake.
 const AWAKE_BUDGET_MS: u32 = 5_000;
 
-/// How long to stay awake before sleeping, for the 1.3 bring-up.
+/// How long to stay awake before sleeping, for the 1.4 bring-up.
 const AWAKE_WINDOW: Duration = Duration::from_secs(2);
+
+/// Desk-mode VBUS poll and heartbeat period.
+const POLL_PERIOD: Duration = Duration::from_secs(1);
 
 /// SRAM heap size reserved for the runtime.
 const SRAM_HEAP_BYTES: usize = 64 * 1024;
@@ -73,15 +77,31 @@ async fn main(_spawner: Spawner) {
         halt().await
     }
 
+    // Mode is chosen from VBUS only: USB -> Desk, otherwise Watch.
+    let vbus = power.is_vbus_present().unwrap_or(false);
+    let mode = if vbus { Mode::Desk } else { Mode::Watch };
+    if let Err(error) = power.set_mode(mode) {
+        println!("[pm] set_mode failed: {}", error.to_common());
+        halt().await
+    }
+    println!("[pm] mode {:?} (vbus: {})", mode, vbus);
+
     if let Some(reason) = wake {
-        match power.request_awake(reason, AWAKE_BUDGET_MS, 0) {
-            Ok(()) => println!("[pm] awake, budget {} ms", AWAKE_BUDGET_MS),
-            Err(error) => println!("[pm] awake failed: {}", error.to_common()),
+        if let Err(error) = power.request_awake(reason, AWAKE_BUDGET_MS, 0) {
+            println!("[pm] awake failed: {}", error.to_common());
         }
     }
 
-    Timer::after(AWAKE_WINDOW).await;
+    if mode == Mode::Desk {
+        desk_keepalive(&mut power).await;
+        if let Err(error) = power.set_mode(Mode::Watch) {
+            println!("[pm] set_mode failed: {}", error.to_common());
+            halt().await
+        }
+    }
 
+    // Watch mode: a brief awake window, then deep sleep.
+    Timer::after(AWAKE_WINDOW).await;
     let plan = match power.plan_sleep() {
         Ok(plan) => plan,
         Err(error) => {
@@ -89,10 +109,7 @@ async fn main(_spawner: Spawner) {
             halt().await
         }
     };
-    println!(
-        "[pm] sleeping {} ms (button wake: {})",
-        plan.timer_ms, plan.wake_on_button
-    );
+    println!("[pm] sleeping {} ms", plan.timer_ms);
 
     let mut rtc = Rtc::new(peripherals.LPWR);
     let timer = TimerWakeupSource::new(core::time::Duration::from_millis(u64::from(plan.timer_ms)));
@@ -100,6 +117,19 @@ async fn main(_spawner: Spawner) {
     let mut wake_pins: [&mut dyn RtcPin; 1] = [&mut pwr_button];
     let button = Ext1WakeupSource::new(&mut wake_pins, WakeupLevel::High);
     rtc.sleep_deep(&[&timer, &button]);
+}
+
+/// Stays awake in desk mode until USB is removed.
+async fn desk_keepalive<P: Power>(power: &mut PowerManager<P>) {
+    let start = Instant::now();
+    loop {
+        Timer::after(POLL_PERIOD).await;
+        if !power.is_vbus_present().unwrap_or(true) {
+            println!("[pm] USB removed");
+            return;
+        }
+        println!("[hb] uptime {} ms", (Instant::now() - start).as_millis());
+    }
 }
 
 /// Maps the SoC wake cause onto a shared wake reason.
@@ -157,7 +187,7 @@ fn report_boot(psram_bytes: usize) {
     let revision = Efuse::chip_revision();
     let mac = Efuse::mac_address();
 
-    println!("=== wv2 firmware (Phase 1.3 deep-sleep bring-up) ===");
+    println!("=== wv2 firmware (Phase 1.4 mode detection) ===");
     println!(
         "chip:  {} rev v{}.{}",
         esp_hal::chip!(),

@@ -57,6 +57,15 @@ impl<P: Power> PowerManager<P> {
         Ok(())
     }
 
+    /// Switches runtime mode, applying the new state's rail plan and render
+    /// policy. Mode is chosen from VBUS detection, never a build variant.
+    pub fn set_mode(&mut self, mode: Mode) -> Result<(), PowerError<P::Error>> {
+        self.mode = mode;
+        self.state = PowerState::for_mode(mode);
+        self.policy = RenderPolicy::for_mode(mode);
+        self.apply_plan(self.state.rail_plan())
+    }
+
     /// Marks the device awake for `reason`, applies the awake plan, and starts
     /// the awake budget.
     pub fn request_awake(
@@ -94,6 +103,11 @@ impl<P: Power> PowerManager<P> {
     /// Evaluates the awake budget at `now_ms`.
     pub const fn check_budget(&self, now_ms: u64) -> BudgetStatus {
         self.budget.status(now_ms)
+    }
+
+    /// Whether USB (VBUS) is present.
+    pub fn is_vbus_present(&mut self) -> Result<bool, PowerError<P::Error>> {
+        self.pmic.is_vbus_present().map_err(PowerError::Pmic)
     }
 
     /// Applies a plan: power-down in reverse order, power-up forward, then audit.

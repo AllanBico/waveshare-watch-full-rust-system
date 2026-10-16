@@ -5,7 +5,6 @@ use hal::{Power, Rail};
 
 use super::plan::ENABLE_ORDER;
 use super::{BudgetStatus, PowerError, PowerManager, PowerState};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FakeError;
 
@@ -166,6 +165,30 @@ fn plan_sleep_returns_policy_and_cuts_rails() {
     assert!(plan.rails.wants_on(Rail::Dcdc1));
     assert!(!plan.rails.wants_on(Rail::Aldo3));
     assert_eq!(pm.state(), PowerState::DeepSleep);
+}
+
+#[test]
+fn reports_vbus_present() {
+    let mut pm = PowerManager::new(FakePower::new(), Mode::Watch);
+    assert!(!pm.is_vbus_present().unwrap());
+    pm.pmic_mut().vbus = true;
+    assert!(pm.is_vbus_present().unwrap());
+}
+
+#[test]
+fn set_mode_applies_policy_and_rails() {
+    let mut pm = PowerManager::new(FakePower::new(), Mode::Watch);
+    pm.sync().unwrap();
+
+    pm.set_mode(Mode::Desk).unwrap();
+    assert_eq!(pm.mode(), Mode::Desk);
+    assert_eq!(pm.state(), PowerState::Desk);
+    assert_eq!(pm.policy().color, common::ColorMode::Rgb565);
+    assert!(pm.plan().wants_on(Rail::Cpusldo));
+
+    pm.set_mode(Mode::Watch).unwrap();
+    assert_eq!(pm.policy().color, common::ColorMode::Mono);
+    assert_eq!(pm.state(), PowerState::ActiveWatch);
 }
 
 #[test]
