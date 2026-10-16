@@ -105,7 +105,7 @@ async fn main(_spawner: Spawner) {
     }
     println!("[pm] mode {:?} (vbus: {})", mode, vbus);
 
-    // Phase 3.0 spike: prove the CO5300 QSPI transport with a solid fill.
+    // Phase 3.2: fill red, then push one green region to prove partial refresh.
     if let Err(error) = display::run(display::Peripherals {
         spi: peripherals.SPI2,
         dma: peripherals.DMA_CH0,
@@ -119,7 +119,7 @@ async fn main(_spawner: Spawner) {
     }) {
         println!("[lcd] bring-up failed: {:?}", error);
     } else {
-        println!("[lcd] solid fill written");
+        println!("[lcd] red fill plus green region written");
     }
 
     if let Some(reason) = wake {
