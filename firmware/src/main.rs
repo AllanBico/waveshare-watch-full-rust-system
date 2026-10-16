@@ -28,6 +28,8 @@ use common::{DateTime, Mode, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
+
+mod display;
 use embedded_hal_bus::i2c::RefCellDevice;
 use hal::Power;
 use power::PowerManager;
@@ -102,6 +104,23 @@ async fn main(_spawner: Spawner) {
         halt().await
     }
     println!("[pm] mode {:?} (vbus: {})", mode, vbus);
+
+    // Phase 3.0 spike: prove the CO5300 QSPI transport with a solid fill.
+    if let Err(error) = display::run(display::Peripherals {
+        spi: peripherals.SPI2,
+        dma: peripherals.DMA_CH0,
+        sclk: peripherals.GPIO11,
+        cs: peripherals.GPIO12,
+        sio0: peripherals.GPIO4,
+        sio1: peripherals.GPIO5,
+        sio2: peripherals.GPIO6,
+        sio3: peripherals.GPIO7,
+        reset: peripherals.GPIO8,
+    }) {
+        println!("[lcd] bring-up failed: {:?}", error);
+    } else {
+        println!("[lcd] solid fill written");
+    }
 
     if let Some(reason) = wake {
         if let Err(error) = power.request_awake(reason, AWAKE_BUDGET_MS, 0) {
