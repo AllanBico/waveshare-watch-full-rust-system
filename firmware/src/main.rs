@@ -105,8 +105,8 @@ async fn main(_spawner: Spawner) {
     }
     println!("[pm] mode {:?} (vbus: {})", mode, vbus);
 
-    // Phase 3.3: render the demo clock and flush only its region.
-    match display::run(display::Peripherals {
+    // Phase 3.4: own the panel across the awake window so it can sleep.
+    let mut display = match display::Display::new(display::Peripherals {
         spi: peripherals.SPI2,
         dma: peripherals.DMA_CH0,
         sclk: peripherals.GPIO11,
@@ -117,11 +117,20 @@ async fn main(_spawner: Spawner) {
         sio3: peripherals.GPIO7,
         reset: peripherals.GPIO8,
     }) {
-        Ok(stat) => println!(
-            "[lcd] clock lit {}/{} pixels",
-            stat.lit_pixels, stat.total_pixels
-        ),
-        Err(error) => println!("[lcd] bring-up failed: {:?}", error),
+        Ok(display) => Some(display),
+        Err(error) => {
+            println!("[lcd] init failed: {:?}", error);
+            None
+        }
+    };
+    if let Some(display) = display.as_mut() {
+        match display.init_and_draw() {
+            Ok(stat) => println!(
+                "[lcd] clock lit {}/{} pixels",
+                stat.lit_pixels, stat.total_pixels
+            ),
+            Err(error) => println!("[lcd] draw failed: {:?}", error),
+        }
     }
 
     if let Some(reason) = wake {
@@ -140,6 +149,14 @@ async fn main(_spawner: Spawner) {
 
     // Watch mode: a brief awake window, then deep sleep.
     Timer::after(AWAKE_WINDOW).await;
+
+    // Sleep the panel before `power` cuts its enable rail (ALDO2).
+    if let Some(display) = display.as_mut() {
+        if let Err(error) = display.sleep() {
+            println!("[lcd] sleep failed: {:?}", error);
+        }
+    }
+
     let plan = match power.plan_sleep() {
         Ok(plan) => plan,
         Err(error) => {

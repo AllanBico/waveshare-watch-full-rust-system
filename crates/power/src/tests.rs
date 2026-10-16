@@ -91,6 +91,7 @@ fn sleep_cuts_peripheral_rail_and_keeps_system() {
     assert_eq!(pm.state(), PowerState::DeepSleep);
     assert!(pm.pmic_mut().enabled[Rail::Dcdc1.index() as usize]);
     assert!(!pm.pmic_mut().enabled[Rail::Aldo3.index() as usize]);
+    assert!(!pm.pmic_mut().enabled[Rail::Aldo2.index() as usize]);
 }
 
 #[test]
@@ -121,6 +122,7 @@ fn awake_then_sleep_sequences_offs_after_ons() {
         vec![
             (Rail::Bldo1, false),
             (Rail::Aldo3, false),
+            (Rail::Aldo2, false),
             (Rail::Dcdc4, false),
             (Rail::Dcdc3, false),
         ]
@@ -164,6 +166,7 @@ fn plan_sleep_returns_policy_and_cuts_rails() {
     assert!(plan.wake_on_button);
     assert!(plan.rails.wants_on(Rail::Dcdc1));
     assert!(!plan.rails.wants_on(Rail::Aldo3));
+    assert!(!plan.rails.wants_on(Rail::Aldo2));
     assert_eq!(pm.state(), PowerState::DeepSleep);
 }
 

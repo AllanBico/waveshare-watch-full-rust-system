@@ -37,6 +37,8 @@ const RESET_PULSE_MS: u32 = 10;
 const RESET_HOLD_MS: u32 = 200;
 /// Sleep-out settle, in milliseconds.
 const SLPOUT_MS: u32 = 120;
+/// Sleep-in settle, in milliseconds.
+const SLPIN_MS: u32 = 120;
 /// Post-init settle, in milliseconds.
 const INIT_SETTLE_MS: u32 = 10;
 
@@ -177,7 +179,7 @@ impl<B: Bus, R, D: DelayNs> Display for Co5300<B, R, D> {
 
     fn display_off(&mut self) -> Result<(), Self::Error> {
         self.command(CMD_DISPOFF)?;
-        self.delay.delay_ms(SLPOUT_MS);
+        self.delay.delay_ms(SLPIN_MS);
         self.command(CMD_SLPIN)
     }
 

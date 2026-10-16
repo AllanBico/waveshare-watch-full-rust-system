@@ -76,12 +76,12 @@ impl RailPlan {
     }
 }
 
-/// Rails kept alive in deep sleep: system 3.3 V, sensors, and RTC/display
-/// enable support. Everything else is cut. Provisional pending the rail audit.
+/// Rails kept alive in deep sleep: system 3.3 V, sensors, and RTC keep-alive.
+/// The display enable (ALDO2) is cut so the panel powers down; everything else
+/// outside these rails is cut too. Provisional pending the rail audit.
 const SLEEP_PLAN: RailPlan = RailPlan::none()
     .with(Rail::Dcdc1)
     .with(Rail::Aldo1)
-    .with(Rail::Aldo2)
     .with(Rail::Aldo4);
 
 /// Rails enabled while awake on battery.
@@ -133,6 +133,12 @@ mod tests {
         let plan = PowerState::DeepSleep.rail_plan();
         assert!(plan.wants_on(Rail::Dcdc1));
         assert!(!plan.wants_on(Rail::Aldo3));
+    }
+
+    #[test]
+    fn sleep_cuts_the_display_enable() {
+        let plan = PowerState::DeepSleep.rail_plan();
+        assert!(!plan.wants_on(Rail::Aldo2));
     }
 
     #[test]

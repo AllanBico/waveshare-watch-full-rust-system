@@ -1,12 +1,13 @@
-//! CO5300 bring-up on the board (Phase 3.3).
+//! CO5300 display control on the board (Phase 3.4).
 //!
-//! Wires the board's SPI2 quad bus to the generic [`Co5300`] driver and shows
-//! monochrome partial refresh: render a fixed "10:09" clock into the 1-bit
-//! [`MonoBuffer`], expand only the clock region to RGB565, and push it over a
-//! black background. The rest of the panel is never transmitted.
+//! Owns the SPI2 quad transport, the panel, and the frame across the awake
+//! window so the panel can be powered down before sleep and brought back after.
 //!
-//! The transport, confirmed against ChipOne's datasheet and the vendor
-//! databus, is one-line `0x02` register access and one-line instruction and
+//! The AMOLED has no dedicated rail: its power ties to VCC3V3 and its enable
+//! `DSI_PWR_EN` is pulled up to ALDO2 (VL2). Power-down is therefore `SLPIN`
+//! first, then `power` cuts ALDO2; because the panel loses power, wake re-runs
+//! the full init and re-flushes. The transport, confirmed against ChipOne's
+//! datasheet, is one-line `0x02` register access and one-line instruction and
 //! address with four-line pixel data for `0x32`.
 
 use alloc::vec;
@@ -26,7 +27,7 @@ use drivers::board;
 use drivers::co5300::{
     Bus, Co5300, DisplayError, Geometry, OP_WRITE_COMMAND, OP_WRITE_PIXELS, PIXEL_WRITE_ADDRESS,
 };
-use hal::Display;
+use hal::Display as _;
 use ui::{clock_region, clock_size, draw_time, MonoBuffer};
 
 /// SPI clock. The vendor uses 40 MHz.
@@ -76,6 +77,15 @@ pub enum BringUpError {
     Dma(DmaBufError),
     /// The driver rejected an operation.
     Display(DisplayError<SpiError>),
+}
+
+/// Lit-pixel accounting for the rendered frame.
+#[derive(Debug)]
+pub struct DisplayStat {
+    /// Number of lit (white) pixels in the frame.
+    pub lit_pixels: u32,
+    /// Total pixels in the frame.
+    pub total_pixels: u32,
 }
 
 /// An SPI2 quad transport implementing the driver's [`Bus`].
@@ -175,70 +185,85 @@ impl EspQspiBus<'_> {
     }
 }
 
-/// Lit-pixel accounting for the rendered demo frame.
-#[derive(Debug)]
-pub struct DisplayStat {
-    /// Number of lit (white) pixels in the frame.
-    pub lit_pixels: u32,
-    /// Total pixels in the frame.
-    pub total_pixels: u32,
+/// The board's CO5300 panel, reusable across one awake window.
+pub struct Display {
+    panel: Co5300<EspQspiBus<'static>, Output<'static>, Delay>,
+    geometry: Geometry,
 }
 
-/// Brings up the panel, draws the demo clock, and flushes only its region.
-pub fn run(pins: Peripherals<'static>) -> Result<DisplayStat, BringUpError> {
-    let config = SpiConfig::default()
-        .with_frequency(Rate::from_mhz(SPI_FREQUENCY_MHZ))
-        .with_mode(Mode::_0);
+impl Display {
+    /// Builds the SPI2 quad transport and panel. Touches no hardware state.
+    pub fn new(pins: Peripherals<'static>) -> Result<Self, BringUpError> {
+        let config = SpiConfig::default()
+            .with_frequency(Rate::from_mhz(SPI_FREQUENCY_MHZ))
+            .with_mode(Mode::_0);
 
-    let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(4, CHUNK_BYTES);
-    let rx = DmaRxBuf::new(rx_descriptors, rx_buffer).map_err(BringUpError::Dma)?;
-    let tx = DmaTxBuf::new(tx_descriptors, tx_buffer).map_err(BringUpError::Dma)?;
+        let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(4, CHUNK_BYTES);
+        let rx = DmaRxBuf::new(rx_descriptors, rx_buffer).map_err(BringUpError::Dma)?;
+        let tx = DmaTxBuf::new(tx_descriptors, tx_buffer).map_err(BringUpError::Dma)?;
 
-    let bus = EspQspiBus {
-        bus: Spi::new(pins.spi, config)
-            .map_err(BringUpError::Config)?
-            .with_sck(pins.sclk)
-            .with_sio0(pins.sio0)
-            .with_sio1(pins.sio1)
-            .with_sio2(pins.sio2)
-            .with_sio3(pins.sio3)
-            .with_dma(pins.dma)
-            .with_buffers(rx, tx),
-        cs: Output::new(pins.cs, Level::High, OutputConfig::default()),
-    };
+        let bus = EspQspiBus {
+            bus: Spi::new(pins.spi, config)
+                .map_err(BringUpError::Config)?
+                .with_sck(pins.sclk)
+                .with_sio0(pins.sio0)
+                .with_sio1(pins.sio1)
+                .with_sio2(pins.sio2)
+                .with_sio3(pins.sio3)
+                .with_dma(pins.dma)
+                .with_buffers(rx, tx),
+            cs: Output::new(pins.cs, Level::High, OutputConfig::default()),
+        };
 
-    let geometry = Geometry {
-        width: board::LCD_WIDTH,
-        height: board::LCD_HEIGHT,
-        column_offset: board::LCD_COL_OFFSET,
-        row_offset: board::LCD_ROW_OFFSET,
-    };
-    let reset = Output::new(pins.reset, Level::High, OutputConfig::default());
-    let mut panel = Co5300::new(bus, reset, Delay::new(), geometry);
+        let geometry = Geometry {
+            width: board::LCD_WIDTH,
+            height: board::LCD_HEIGHT,
+            column_offset: board::LCD_COL_OFFSET,
+            row_offset: board::LCD_ROW_OFFSET,
+        };
+        let reset = Output::new(pins.reset, Level::High, OutputConfig::default());
+        Ok(Self {
+            panel: Co5300::new(bus, reset, Delay::new(), geometry),
+            geometry,
+        })
+    }
 
-    panel.init().map_err(BringUpError::Display)?;
+    /// Re-runs the full init (the panel lost power) and paints the demo clock.
+    pub fn init_and_draw(&mut self) -> Result<DisplayStat, BringUpError> {
+        self.panel.init().map_err(BringUpError::Display)?;
 
-    let mut frame = MonoBuffer::new(geometry.width, geometry.height);
-    let (clock_width, clock_height) = clock_size(CLOCK_SCALE);
-    let origin = (
-        (geometry.width - clock_width) / 2,
-        (geometry.height - clock_height) / 2,
-    );
-    draw_time(&mut frame, DEMO_HOUR, DEMO_MINUTE, origin, CLOCK_SCALE);
+        let mut frame = MonoBuffer::new(self.geometry.width, self.geometry.height);
+        let (clock_width, clock_height) = clock_size(CLOCK_SCALE);
+        let origin = (
+            (self.geometry.width - clock_width) / 2,
+            (self.geometry.height - clock_height) / 2,
+        );
+        draw_time(&mut frame, DEMO_HOUR, DEMO_MINUTE, origin, CLOCK_SCALE);
 
-    let clock = geometry.align_region(clock_region(origin, CLOCK_SCALE));
-    let mut expanded = vec![0u8; clock.rgb565_len()];
-    frame.expand_region(clock, &mut expanded);
+        let clock = self
+            .geometry
+            .align_region(clock_region(origin, CLOCK_SCALE));
+        let mut expanded = vec![0u8; clock.rgb565_len()];
+        frame.expand_region(clock, &mut expanded);
 
-    panel
-        .fill_region(Region::full(geometry.width, geometry.height), Rgb565::BLACK)
-        .map_err(BringUpError::Display)?;
-    panel
-        .write_region(clock, &expanded)
-        .map_err(BringUpError::Display)?;
+        self.panel
+            .fill_region(
+                Region::full(self.geometry.width, self.geometry.height),
+                Rgb565::BLACK,
+            )
+            .map_err(BringUpError::Display)?;
+        self.panel
+            .write_region(clock, &expanded)
+            .map_err(BringUpError::Display)?;
 
-    Ok(DisplayStat {
-        lit_pixels: frame.lit_pixels(),
-        total_pixels: frame.total_pixels(),
-    })
+        Ok(DisplayStat {
+            lit_pixels: frame.lit_pixels(),
+            total_pixels: frame.total_pixels(),
+        })
+    }
+
+    /// Puts the panel into sleep, before `power` cuts the enable rail.
+    pub fn sleep(&mut self) -> Result<(), BringUpError> {
+        self.panel.display_off().map_err(BringUpError::Display)
+    }
 }
