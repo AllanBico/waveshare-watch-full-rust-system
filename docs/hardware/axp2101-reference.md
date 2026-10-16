@@ -160,10 +160,11 @@ Other wiring observed on the sheet:
 
 - **Vibration motor on ALDO3.** `Motor` block: ALDO3 (VCC3V3) -> `R7 0R` -> motor
   connector, switched low-side by `Q1 MMBT3904` from `GPIO18 (MOTOR)`.
-- **AMOLED panel power is not a dedicated rail.** Its power pins tie to VCC3V3,
-  and its enable `DSI_PWR_EN` (J3 pin 21) is pulled up to ALDO2 (VL2_3.3V) and
-  otherwise driven by a GPIO. So the panel cannot obviously be isolated by
-  cutting one rail.
+- **AMOLED panel power is not a dedicated rail.** Its VCI/VDDIO pins tie to
+  VCC3V3, and its enable `DSI_PWR_EN` (J3 pin 21) is pulled up to ALDO2
+  (VL2_3.3V) via `R10 10K`, with `R54` `NC` to test point `TP14`. No ESP32 GPIO
+  drives it, so **ALDO2 is the sole panel enable**; the panel cannot be isolated
+  from VCC3V3.
 - **`VCC3V3` resolved (AXP block reading).** DCDC1's output is VCC3V3 via `L1`
   (the system 3.3 V: ESP32, pull-ups, panel main power). The repeated "VCC3V3"
   beside ALDO3 in the legend is a 3.3 V *setpoint* label, not a net tie: the

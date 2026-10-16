@@ -130,11 +130,22 @@
 
 **Test:** Draw a clock. Count lit pixels. Under 5%.
 
-### 3.4 Display Rail Control
-- Cut display rail via AXP2101 before sleep.
-- Restore on wake.
+### 3.4 Display Power Control
+- The AMOLED has no dedicated rail. Its power pins tie to VCC3V3 (DCDC1, shared
+  with the SoC) and its enable `DSI_PWR_EN` is pulled up to ALDO2 (VL2) and
+  otherwise driven by a GPIO. See `docs/hardware/axp2101-reference.md` and
+  `docs/hardware/board-pins.md`. The earlier "cut the display rail" framing was
+  wrong.
+- Put the panel into sleep (SLPIN) before cutting the enable; never drive QSPI
+  into an unpowered panel.
+- Cut the display enable through `power`; ALDO2 is the sole enable (the
+  schematic shows no enable GPIO). This means removing ALDO2 from `SLEEP_PLAN`,
+  which currently keeps it on.
+- On wake: restore the enable, re-run the full init sequence (the panel lost
+  power, so SLPOUT alone is not enough), and re-flush the retained framebuffer.
 
-**Test:** Sleep, measure current. Display rail off saves measurable power.
+**Test:** Sleep, measure current. Panel sleep plus the display enable off saves
+measurable power.
 
 ---
 

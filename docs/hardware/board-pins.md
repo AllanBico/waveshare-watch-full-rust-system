@@ -84,9 +84,11 @@ pub const PWR_BUTTON: u8 = 10;
     button is both an AXP input and a GPIO10 signal.
   - Both buttons land on RTC-capable pins (GPIO0, GPIO10). See `power-strategy.md`
     for wake-source policy.
-- **Display enable is a GPIO.** Schematic `AMOLED` block: the panel's `DSI_PWR_EN`
-  (J3 pin 21) is pulled up to **ALDO2 (VL2_3.3V)** via `R10 10K`. Panel power pins
-  tie to **VCC3V3**. See `axp2101-reference.md` for the display-rail question.
+- **Display enable is ALDO2, not a GPIO.** Schematic `AMOLED` block: the panel's
+  `DSI_PWR_EN` (J3 pin 21) is pulled up to **ALDO2 (VL2_3.3V)** via `R10 10K`;
+  `R54` is `NC` to test point `TP14`, so no ESP32 GPIO drives it. VCI and VDDIO
+  tie to **VCC3V3**. The panel is therefore gated only by ALDO2 plus the CO5300
+  sleep command. See `axp2101-reference.md`.
 - **AMOLED brightness** is not a PWM backlight pin. The CO5300 exposes brightness
   via a panel command (e.g. `0x51`) over QSPI. No backlight GPIO.
 - **SD card** is not used by the roadmap's storage plan (TicKV on internal
