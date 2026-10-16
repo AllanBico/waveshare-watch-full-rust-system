@@ -2,6 +2,7 @@
 
 use embedded_hal::i2c::I2c;
 
+use super::rails as rh;
 use super::regs::{
     ADC_ENABLE, BAT_DETECT, COMMON_CONFIG, COMMON_DISCHARGE, COMMON_POWER_OFF, COMMON_RESET,
     CV_CHG_VOL, DC_DVM_RAMP, DC_FORCE_PWM, DC_ONOFF_DVM, DIE_TEMP_H, IRQ_ENABLE0, IRQ_STATUS0,
@@ -36,27 +37,27 @@ impl<I: I2c> Axp2101<I> {
         rail: Rail,
         millivolts: Millivolts,
     ) -> Result<(), AxpError<I::Error>> {
-        let code = rail.encode(millivolts)?;
-        self.update_u8(rail.voltage_register(), VOLTAGE_VALUE_MASK, code)
+        let code = rh::encode(rail, millivolts)?;
+        self.update_u8(rh::voltage_register(rail), VOLTAGE_VALUE_MASK, code)
     }
 
     /// Reads back a rail's configured voltage.
     pub fn read_rail_voltage(&mut self, rail: Rail) -> Result<Millivolts, AxpError<I::Error>> {
-        let code = self.read_u8(rail.voltage_register())?;
-        Ok(rail.decode(code)?)
+        let code = self.read_u8(rh::voltage_register(rail))?;
+        Ok(rh::decode(rail, code)?)
     }
 
     /// Enables or disables a rail.
     pub fn enable_rail(&mut self, rail: Rail, on: bool) -> Result<(), AxpError<I::Error>> {
-        let mask = 1u8 << rail.enable_bit();
+        let mask = 1u8 << rh::enable_bit(rail);
         let value = if on { mask } else { 0 };
-        self.update_u8(rail.enable_register(), mask, value)
+        self.update_u8(rh::enable_register(rail), mask, value)
     }
 
     /// Reads back whether a rail is enabled.
     pub fn is_rail_enabled(&mut self, rail: Rail) -> Result<bool, AxpError<I::Error>> {
-        let mask = 1u8 << rail.enable_bit();
-        Ok(self.read_u8(rail.enable_register())? & mask != 0)
+        let mask = 1u8 << rh::enable_bit(rail);
+        Ok(self.read_u8(rh::enable_register(rail))? & mask != 0)
     }
 
     /// Enables or disables one ADC channel.
@@ -112,9 +113,7 @@ impl<I: I2c> Axp2101<I> {
 
     /// Sets a DCDC rail's switching mode.
     pub fn set_dcdc_mode(&mut self, rail: Rail, mode: DcdcMode) -> Result<(), AxpError<I::Error>> {
-        let bit = rail
-            .dcdc_pwm_bit()
-            .ok_or(AxpError::Voltage(RailError::NotApplicable))?;
+        let bit = rh::dcdc_pwm_bit(rail).ok_or(AxpError::Voltage(RailError::NotApplicable))?;
         let mask = 1u8 << bit;
         let value = if mode == DcdcMode::Pwm { mask } else { 0 };
         self.update_u8(DC_FORCE_PWM, mask, value)

@@ -8,5 +8,7 @@ default = []
 defmt = ["dep:defmt"]
 
 [dependencies]
+common = { path = "../crates/common" }
+hal = { path = "../crates/hal" }
 embedded-hal = { workspace = true }
 defmt = { workspace = true, optional = true }

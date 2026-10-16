@@ -5,3 +5,7 @@
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
+
+mod power;
+
+pub use power::{Power, Rail, RAIL_COUNT};

@@ -1,4 +1,4 @@
-//! Unit newtypes for the AXP2101 driver.
+//! Physical unit newtypes shared across crates.
 
 /// A voltage in millivolts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

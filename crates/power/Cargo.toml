@@ -3,4 +3,11 @@ name = "power"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+defmt = ["dep:defmt"]
+
 [dependencies]
+common = { path = "../common" }
+hal = { path = "../hal" }
+defmt = { workspace = true, optional = true }

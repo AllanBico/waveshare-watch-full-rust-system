@@ -1,10 +1,11 @@
 //! AXP2101 status, snapshot, and interrupt types.
 
+use common::{Millivolts, Percent};
+
 use super::regs::{
     STATUS1_BAT_PRESENT, STATUS1_VBUS_GOOD, STATUS2_CHARGING, STATUS2_CHG_SHIFT, STATUS2_POWER_ON,
     STATUS2_VBUS_IN,
 };
-use super::units::{Millivolts, Percent};
 
 /// Charger state machine position (STATUS2 bits 2:0).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

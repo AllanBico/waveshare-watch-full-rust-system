@@ -1,40 +1,14 @@
-//! AXP2101 output rails and their voltage encoding.
+//! AXP2101 rail voltage encoding.
 //!
-//! Only the rails wired on this board are modeled. Voltage encoding is
-//! piecewise per the datasheet; off-step and out-of-range values are rejected.
+//! Maps the shared [`Rail`] contract onto AXP2101 voltage/enable registers.
+//! Voltage encoding is piecewise per the datasheet; off-step and out-of-range
+//! values are rejected.
+
+use common::Millivolts;
+use hal::Rail;
 
 use super::error::RailError;
 use super::regs::{DC_ONOFF_DVM, DC_PWM_BASE_BIT, DC_VOL_BASE, LDO_ONOFF0, LDO_VOL_BASE};
-use super::units::Millivolts;
-
-/// A managed AXP2101 output rail wired on this board.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[non_exhaustive]
-pub enum Rail {
-    /// DCDC1 (main 3.3 V rail).
-    Dcdc1,
-    /// DCDC2.
-    Dcdc2,
-    /// DCDC3.
-    Dcdc3,
-    /// DCDC4.
-    Dcdc4,
-    /// ALDO1.
-    Aldo1,
-    /// ALDO2.
-    Aldo2,
-    /// ALDO3.
-    Aldo3,
-    /// ALDO4.
-    Aldo4,
-    /// BLDO1.
-    Bldo1,
-    /// BLDO2.
-    Bldo2,
-    /// CPUSLDO.
-    Cpusldo,
-}
 
 /// A contiguous linear voltage segment: `min + n * step` for `n` in `0..=count`.
 struct Segment {
@@ -137,78 +111,76 @@ const fn ldo_spec(index: u8, segments: &'static [Segment]) -> RailSpec {
     }
 }
 
-impl Rail {
-    const fn spec(self) -> RailSpec {
-        match self {
-            Self::Dcdc1 => dcdc_spec(0, &DCDC1_SEGMENTS),
-            Self::Dcdc2 => dcdc_spec(1, &DCDC2_SEGMENTS),
-            Self::Dcdc3 => dcdc_spec(2, &DCDC3_SEGMENTS),
-            Self::Dcdc4 => dcdc_spec(3, &DCDC4_SEGMENTS),
-            Self::Aldo1 => ldo_spec(0, &ALDO_SEGMENTS),
-            Self::Aldo2 => ldo_spec(1, &ALDO_SEGMENTS),
-            Self::Aldo3 => ldo_spec(2, &ALDO_SEGMENTS),
-            Self::Aldo4 => ldo_spec(3, &ALDO_SEGMENTS),
-            Self::Bldo1 => ldo_spec(4, &ALDO_SEGMENTS),
-            Self::Bldo2 => ldo_spec(5, &ALDO_SEGMENTS),
-            Self::Cpusldo => ldo_spec(6, &CPUSLDO_SEGMENTS),
+fn spec(rail: Rail) -> RailSpec {
+    match rail {
+        Rail::Dcdc1 => dcdc_spec(0, &DCDC1_SEGMENTS),
+        Rail::Dcdc2 => dcdc_spec(1, &DCDC2_SEGMENTS),
+        Rail::Dcdc3 => dcdc_spec(2, &DCDC3_SEGMENTS),
+        Rail::Dcdc4 => dcdc_spec(3, &DCDC4_SEGMENTS),
+        Rail::Aldo1 => ldo_spec(0, &ALDO_SEGMENTS),
+        Rail::Aldo2 => ldo_spec(1, &ALDO_SEGMENTS),
+        Rail::Aldo3 => ldo_spec(2, &ALDO_SEGMENTS),
+        Rail::Aldo4 => ldo_spec(3, &ALDO_SEGMENTS),
+        Rail::Bldo1 => ldo_spec(4, &ALDO_SEGMENTS),
+        Rail::Bldo2 => ldo_spec(5, &ALDO_SEGMENTS),
+        Rail::Cpusldo => ldo_spec(6, &CPUSLDO_SEGMENTS),
+    }
+}
+
+/// Register holding `rail`'s voltage setting.
+pub(super) fn voltage_register(rail: Rail) -> u8 {
+    spec(rail).voltage_reg
+}
+
+/// Register holding `rail`'s enable bit.
+pub(super) fn enable_register(rail: Rail) -> u8 {
+    spec(rail).enable_reg
+}
+
+/// Enable-bit position within [`enable_register`].
+pub(super) fn enable_bit(rail: Rail) -> u8 {
+    spec(rail).enable_bit
+}
+
+/// Forced-PWM bit for a DCDC rail, or `None` for LDO rails.
+pub(super) fn dcdc_pwm_bit(rail: Rail) -> Option<u8> {
+    match rail {
+        Rail::Dcdc1 => Some(DC_PWM_BASE_BIT),
+        Rail::Dcdc2 => Some(DC_PWM_BASE_BIT + 1),
+        Rail::Dcdc3 => Some(DC_PWM_BASE_BIT + 2),
+        Rail::Dcdc4 => Some(DC_PWM_BASE_BIT + 3),
+        _ => None,
+    }
+}
+
+/// Encodes a millivolt setting into the 7-bit register value.
+pub(super) fn encode(rail: Rail, millivolts: Millivolts) -> Result<u8, RailError> {
+    let mv = millivolts.value();
+    for segment in spec(rail).segments {
+        if mv < segment.min || mv > segment.max {
+            continue;
+        }
+        let delta = mv - segment.min;
+        if !delta.is_multiple_of(segment.step) {
+            return Err(RailError::OffStep);
+        }
+        return Ok(segment.code_base + (delta / segment.step) as u8);
+    }
+    Err(RailError::OutOfRange)
+}
+
+/// Decodes a 7-bit register value back into millivolts.
+pub(super) fn decode(rail: Rail, code: u8) -> Result<Millivolts, RailError> {
+    let code = code & 0x7F;
+    for segment in spec(rail).segments {
+        let count = ((segment.max - segment.min) / segment.step) as u8;
+        let end = segment.code_base + count;
+        if code >= segment.code_base && code <= end {
+            let mv = segment.min + (code - segment.code_base) as u16 * segment.step;
+            return Ok(Millivolts::new(mv));
         }
     }
-
-    /// Register holding this rail's voltage setting.
-    pub(super) const fn voltage_register(self) -> u8 {
-        self.spec().voltage_reg
-    }
-
-    /// Register holding this rail's enable bit.
-    pub(super) const fn enable_register(self) -> u8 {
-        self.spec().enable_reg
-    }
-
-    /// Enable-bit position within [`Self::enable_register`].
-    pub(super) const fn enable_bit(self) -> u8 {
-        self.spec().enable_bit
-    }
-
-    /// Forced-PWM bit for a DCDC rail, or `None` for LDO rails.
-    pub(super) const fn dcdc_pwm_bit(self) -> Option<u8> {
-        match self {
-            Self::Dcdc1 => Some(DC_PWM_BASE_BIT),
-            Self::Dcdc2 => Some(DC_PWM_BASE_BIT + 1),
-            Self::Dcdc3 => Some(DC_PWM_BASE_BIT + 2),
-            Self::Dcdc4 => Some(DC_PWM_BASE_BIT + 3),
-            _ => None,
-        }
-    }
-
-    /// Encodes a millivolt setting into the 7-bit register value.
-    pub(super) fn encode(self, millivolts: Millivolts) -> Result<u8, RailError> {
-        let mv = millivolts.value();
-        for segment in self.spec().segments {
-            if mv < segment.min || mv > segment.max {
-                continue;
-            }
-            let delta = mv - segment.min;
-            if !delta.is_multiple_of(segment.step) {
-                return Err(RailError::OffStep);
-            }
-            return Ok(segment.code_base + (delta / segment.step) as u8);
-        }
-        Err(RailError::OutOfRange)
-    }
-
-    /// Decodes a 7-bit register value back into millivolts.
-    pub(super) fn decode(self, code: u8) -> Result<Millivolts, RailError> {
-        let code = code & 0x7F;
-        for segment in self.spec().segments {
-            let count = ((segment.max - segment.min) / segment.step) as u8;
-            let end = segment.code_base + count;
-            if code >= segment.code_base && code <= end {
-                let mv = segment.min + (code - segment.code_base) as u16 * segment.step;
-                return Ok(Millivolts::new(mv));
-            }
-        }
-        Err(RailError::OutOfRange)
-    }
+    Err(RailError::OutOfRange)
 }
 
 #[cfg(test)]
@@ -216,8 +188,8 @@ mod tests {
     use super::*;
 
     fn roundtrip(rail: Rail, mv: u16) {
-        let code = rail.encode(Millivolts::new(mv)).expect("encodes");
-        assert_eq!(rail.decode(code).expect("decodes").value(), mv);
+        let code = encode(rail, Millivolts::new(mv)).expect("encodes");
+        assert_eq!(decode(rail, code).expect("decodes").value(), mv);
     }
 
     #[test]
@@ -238,15 +210,15 @@ mod tests {
 
     #[test]
     fn known_codes_decode() {
-        assert_eq!(Rail::Dcdc2.decode(71).unwrap().value(), 1220);
-        assert_eq!(Rail::Dcdc3.decode(88).unwrap().value(), 1600);
-        assert_eq!(Rail::Dcdc1.decode(13).unwrap().value(), 2800);
+        assert_eq!(decode(Rail::Dcdc2, 71).unwrap().value(), 1220);
+        assert_eq!(decode(Rail::Dcdc3, 88).unwrap().value(), 1600);
+        assert_eq!(decode(Rail::Dcdc1, 13).unwrap().value(), 2800);
     }
 
     #[test]
     fn off_step_is_rejected() {
         assert_eq!(
-            Rail::Dcdc1.encode(Millivolts::new(1505)),
+            encode(Rail::Dcdc1, Millivolts::new(1505)),
             Err(RailError::OffStep)
         );
     }
@@ -254,17 +226,17 @@ mod tests {
     #[test]
     fn out_of_range_is_rejected() {
         assert_eq!(
-            Rail::Dcdc1.encode(Millivolts::new(1000)),
+            encode(Rail::Dcdc1, Millivolts::new(1000)),
             Err(RailError::OutOfRange)
         );
     }
 
     #[test]
-    fn rail_register_mapping() {
-        assert_eq!(Rail::Dcdc1.voltage_register(), 0x82);
-        assert_eq!(Rail::Cpusldo.voltage_register(), 0x98);
-        assert_eq!(Rail::Bldo2.enable_bit(), 5);
-        assert_eq!(Rail::Aldo1.dcdc_pwm_bit(), None);
-        assert_eq!(Rail::Dcdc4.dcdc_pwm_bit(), Some(5));
+    fn register_mapping() {
+        assert_eq!(voltage_register(Rail::Dcdc1), 0x82);
+        assert_eq!(voltage_register(Rail::Cpusldo), 0x98);
+        assert_eq!(enable_bit(Rail::Bldo2), 5);
+        assert_eq!(dcdc_pwm_bit(Rail::Aldo1), None);
+        assert_eq!(dcdc_pwm_bit(Rail::Dcdc4), Some(5));
     }
 }

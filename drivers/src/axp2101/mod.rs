@@ -7,27 +7,27 @@
 
 use embedded_hal::i2c::I2c;
 
+mod adapter;
 mod error;
 mod irq;
 mod ops;
 mod rails;
 mod regs;
 mod status;
-mod units;
 
 #[cfg(test)]
 mod mock;
 #[cfg(test)]
 mod tests;
 
+pub use common::{Millivolts, Percent};
 pub use error::{AxpError, RailError};
+pub use hal::Rail;
 pub use irq::IrqMask;
-pub use rails::Rail;
 pub use status::{
     AdcChannel, ChargeState, ChargeTarget, DcdcMode, DvmRamp, LongPressAction, PowerSnapshot,
     Status, WakePowerState,
 };
-pub use units::{Millivolts, Percent};
 
 use regs::{CHIP_ID_AXP2101, IC_TYPE, STATUS1, VBAT_H, VBAT_HIGH_MASK, VOLT_HIGH_MASK};
 
