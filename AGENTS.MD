@@ -223,3 +223,5 @@
 - If unsure about hardware assumption, ask.
 - If unsure about dependency direction, ask.
 - Never guess. Never assume. Never skip the checklist.
+
+fyi use . /home/jarvis/export-esp.sh to  dor esp
