@@ -30,6 +30,8 @@ pub enum Error {
     NetworkUnavailable,
     /// A subsystem was used before it was initialized.
     NotReady,
+    /// The clock source reports its time is not valid.
+    TimeInvalid,
 }
 
 impl Error {
@@ -46,6 +48,7 @@ impl Error {
             Error::InvalidInput => 8,
             Error::NetworkUnavailable => 9,
             Error::NotReady => 10,
+            Error::TimeInvalid => 11,
         }
     }
 
@@ -62,12 +65,13 @@ impl Error {
             Error::InvalidInput => "invalid input",
             Error::NetworkUnavailable => "network unavailable",
             Error::NotReady => "subsystem not ready",
+            Error::TimeInvalid => "clock time invalid",
         }
     }
 
     /// Every variant, for exhaustiveness tests.
     #[cfg(test)]
-    const ALL: [Error; 10] = [
+    const ALL: [Error; 11] = [
         Error::PowerFail,
         Error::StorageFull,
         Error::StorageCorrupt,
@@ -78,6 +82,7 @@ impl Error {
         Error::InvalidInput,
         Error::NetworkUnavailable,
         Error::NotReady,
+        Error::TimeInvalid,
     ];
 }
 

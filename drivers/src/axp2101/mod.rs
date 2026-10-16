@@ -16,8 +16,6 @@ mod regs;
 mod status;
 
 #[cfg(test)]
-mod mock;
-#[cfg(test)]
 mod tests;
 
 pub use common::{Millivolts, Percent};

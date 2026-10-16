@@ -1,4 +1,4 @@
-//! Register-file I2C mock for host tests.
+//! Shared register-file I2C mock for host tests.
 
 use embedded_hal::i2c::{Error, ErrorKind, ErrorType, I2c, NoAcknowledgeSource, Operation};
 
@@ -60,7 +60,7 @@ impl MockI2c {
         self.fail = fail;
     }
 
-    /// The recorded `[register, value]` writes.
+    /// The recorded `(register, value)` writes.
     pub fn writes(&self) -> &[(u8, u8)] {
         &self.writes
     }
@@ -79,9 +79,12 @@ impl I2c for MockI2c {
         if self.fail {
             return Err(MockError::Nack);
         }
-        if let [reg, value] = bytes {
-            self.regs[*reg as usize] = *value;
-            self.writes.push((*reg, *value));
+        if let Some((reg, values)) = bytes.split_first() {
+            for (offset, value) in values.iter().enumerate() {
+                let address = (u16::from(*reg) + offset as u16) as u8;
+                self.regs[address as usize] = *value;
+                self.writes.push((address, *value));
+            }
         }
         Ok(())
     }

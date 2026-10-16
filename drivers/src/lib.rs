@@ -10,3 +10,7 @@
 
 pub mod axp2101;
 pub mod board;
+pub mod pcf85063a;
+
+#[cfg(test)]
+mod test_support;

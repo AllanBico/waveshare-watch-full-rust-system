@@ -1,6 +1,7 @@
 //! Host tests for the AXP2101 driver against a register-file mock.
 
-use super::mock::{MockError, MockI2c};
+use crate::test_support::{MockError, MockI2c};
+
 use super::regs;
 use super::{
     AdcChannel, Axp2101, AxpError, ChargeState, ChargeTarget, DcdcMode, DvmRamp, IrqMask,

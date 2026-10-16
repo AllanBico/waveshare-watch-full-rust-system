@@ -7,5 +7,7 @@
 #![forbid(unsafe_code)]
 
 mod power;
+mod time;
 
 pub use power::{Power, Rail, RAIL_COUNT};
+pub use time::Time;

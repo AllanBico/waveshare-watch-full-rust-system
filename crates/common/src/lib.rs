@@ -7,6 +7,7 @@
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 
+mod datetime;
 mod error;
 mod event;
 mod log_entry;
@@ -15,6 +16,7 @@ mod render_policy;
 mod time;
 mod units;
 
+pub use datetime::{is_supported_year, DateTime};
 pub use error::Error;
 pub use event::{Event, WakeReason};
 pub use log_entry::{LogEntry, SCHEMA_VERSION};

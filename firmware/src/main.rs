@@ -1,8 +1,8 @@
 //! Firmware entry point.
 //!
-//! Phase 1.4: choose the runtime mode from VBUS. USB present -> Desk (stay
-//! awake); otherwise Watch (deep sleep, waking on the RTC timer or the power
-//! button). Mode is runtime state, never a build variant.
+//! Phase 1.5: the AXP2101 and the PCF85063A share one I2C bus. Mode comes from
+//! VBUS (USB -> Desk, else Watch). Watch mode deep-sleeps, waking on the RTC
+//! timer or the power button. The external RTC keeps wall-clock time.
 
 #![no_std]
 #![no_main]
@@ -24,9 +24,10 @@ use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
-use common::{Mode, WakeReason};
+use common::{DateTime, Mode, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
+use drivers::pcf85063a::Pcf85063a;
 use embedded_hal_bus::i2c::RefCellDevice;
 use hal::Power;
 use power::PowerManager;
@@ -42,7 +43,7 @@ const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
 /// Awake time budget granted on each watch-mode wake.
 const AWAKE_BUDGET_MS: u32 = 5_000;
 
-/// How long to stay awake before sleeping, for the 1.4 bring-up.
+/// How long to stay awake before sleeping, for the 1.5 bring-up.
 const AWAKE_WINDOW: Duration = Duration::from_secs(2);
 
 /// Desk-mode VBUS poll and heartbeat period.
@@ -50,6 +51,9 @@ const POLL_PERIOD: Duration = Duration::from_secs(1);
 
 /// SRAM heap size reserved for the runtime.
 const SRAM_HEAP_BYTES: usize = 64 * 1024;
+
+/// I2C bus device handle shared by all on-board peripherals.
+type Bus = RefCellDevice<'static, I2c<'static, esp_hal::Blocking>>;
 
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) {
@@ -70,8 +74,21 @@ async fn main(_spawner: Spawner) {
         None => println!("[pm] cold boot"),
     }
 
-    let mut power = power_bringup(peripherals.I2C0, peripherals.GPIO15, peripherals.GPIO14).await;
+    let bus = open_bus(peripherals.I2C0, peripherals.GPIO15, peripherals.GPIO14).await;
 
+    let mut pmic = match Axp2101::new(RefCellDevice::new(bus), board::PMIC_I2C_ADDR) {
+        Ok(pmic) => pmic,
+        Err(error) => {
+            println!("[pm] AXP2101 probe failed: {}", error);
+            halt().await
+        }
+    };
+    println!("[pm] AXP2101 id 0x{:02X}", pmic.read_chip_id().unwrap_or(0));
+
+    let mut clock = Pcf85063a::new(RefCellDevice::new(bus), board::RTC_I2C_ADDR);
+    report_time(&mut clock);
+
+    let mut power = PowerManager::new(pmic, Mode::Watch);
     if let Err(error) = power.sync() {
         println!("[pm] rail sync failed: {}", error.to_common());
         halt().await
@@ -119,6 +136,51 @@ async fn main(_spawner: Spawner) {
     rtc.sleep_deep(&[&timer, &button]);
 }
 
+/// Reads the RTC time; seeds a default if the oscillator had stopped.
+fn report_time(clock: &mut Pcf85063a<Bus>) {
+    if let Err(error) = clock.init() {
+        println!("[rtc] init failed: {}", error);
+        return;
+    }
+    match clock.read_datetime() {
+        Ok(dt) => print_datetime("time", &dt),
+        Err(_) => {
+            let default = DateTime::new(2000, 1, 1, 0, 0, 0);
+            if clock.set_datetime(&default).is_ok() {
+                print_datetime("time set", &default);
+            } else {
+                println!("[rtc] set failed");
+            }
+        }
+    }
+}
+
+/// Prints a date/time.
+fn print_datetime(label: &str, dt: &DateTime) {
+    println!(
+        "[rtc] {} {:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        label, dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
+    );
+}
+
+/// Opens and leaks the shared I2C bus so device handles can be `'static`.
+async fn open_bus(
+    i2c: esp_hal::peripherals::I2C0<'static>,
+    sda: esp_hal::peripherals::GPIO15<'static>,
+    scl: esp_hal::peripherals::GPIO14<'static>,
+) -> &'static RefCell<I2c<'static, esp_hal::Blocking>> {
+    let config = I2cConfig::default().with_frequency(Rate::from_khz(board::I2C_FREQ_HZ / 1000));
+    match I2c::new(i2c, config) {
+        Ok(bus) => alloc::boxed::Box::leak(alloc::boxed::Box::new(RefCell::new(
+            bus.with_sda(sda).with_scl(scl),
+        ))),
+        Err(error) => {
+            println!("[pm] i2c init failed: {:?}", error);
+            halt().await
+        }
+    }
+}
+
 /// Stays awake in desk mode until USB is removed.
 async fn desk_keepalive<P: Power>(power: &mut PowerManager<P>) {
     let start = Instant::now();
@@ -142,39 +204,6 @@ fn wake_reason() -> Option<WakeReason> {
     }
 }
 
-/// Sets up the shared I2C bus and probes the AXP2101, returning a power manager.
-async fn power_bringup(
-    i2c: esp_hal::peripherals::I2C0<'static>,
-    sda: esp_hal::peripherals::GPIO15<'static>,
-    scl: esp_hal::peripherals::GPIO14<'static>,
-) -> PowerManager<Axp2101<RefCellDevice<'static, I2c<'static, esp_hal::Blocking>>>> {
-    let config = I2cConfig::default().with_frequency(Rate::from_khz(board::I2C_FREQ_HZ / 1000));
-    let bus = match I2c::new(i2c, config) {
-        Ok(bus) => bus.with_sda(sda).with_scl(scl),
-        Err(error) => {
-            println!("[pm] i2c init failed: {:?}", error);
-            halt().await
-        }
-    };
-
-    // Leak the bus so the device handle can be `'static`; it lives for the
-    // whole program.
-    let bus: &'static RefCell<I2c<'static, esp_hal::Blocking>> =
-        alloc::boxed::Box::leak(alloc::boxed::Box::new(RefCell::new(bus)));
-    let device = RefCellDevice::new(bus);
-
-    let mut pmic = match Axp2101::new(device, board::PMIC_I2C_ADDR) {
-        Ok(pmic) => pmic,
-        Err(error) => {
-            println!("[pm] AXP2101 probe failed: {}", error);
-            halt().await
-        }
-    };
-
-    println!("[pm] AXP2101 id 0x{:02X}", pmic.read_chip_id().unwrap_or(0));
-    PowerManager::new(pmic, Mode::Watch)
-}
-
 /// Idles forever after a fatal bring-up error.
 async fn halt() -> ! {
     loop {
@@ -187,7 +216,7 @@ fn report_boot(psram_bytes: usize) {
     let revision = Efuse::chip_revision();
     let mac = Efuse::mac_address();
 
-    println!("=== wv2 firmware (Phase 1.4 mode detection) ===");
+    println!("=== wv2 firmware (Phase 1.5 RTC bring-up) ===");
     println!(
         "chip:  {} rev v{}.{}",
         esp_hal::chip!(),
