@@ -5,7 +5,12 @@ target = "xtensa-esp32s3-none-elf"
 
 [target.xtensa-esp32s3-none-elf]
 runner = "espflash flash --monitor"
+rustflags = ["-C", "link-arg=-Tlinkall.x"]
 
-# The esp toolchain ships no precompiled `core` for Xtensa, so build it.
+# The esp toolchain ships no precompiled core/alloc for Xtensa, so build them.
 [unstable]
-build-std = ["core"]
+build-std = ["core", "alloc"]
+
+[env]
+# The board uses octal PSRAM (ESP32-S3R8).
+ESP_HAL_CONFIG_PSRAM_MODE = "octal"

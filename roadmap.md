@@ -12,15 +12,17 @@
 
 **Test:** `cargo build` succeeds with empty crates for the ESP32-S3 target. `cargo fmt --check` and `cargo clippy` are clean.
 
-### 0.2 Hardware Bring-Up
-- Smoke test the toolchain: `espflash board-info` connects and reads the chip. (Done: ESP32-S3 rev v0.2, 32 MB flash, 40 MHz xtal, MAC read, secure boot off.)
-- Turn `firmware` into a `#[esp_hal::main]` binary with an `esp-backtrace` panic handler.
-- Bring up `embassy-executor` + `esp-rtos` for the executor and time driver.
-- On boot, print chip model, revision, flash size, PSRAM size, and MAC over USB serial (`esp-println`).
+### 0.2 Hardware Bring-Up (Done)
+- Smoke test the toolchain: `espflash board-info` connects and reads the chip.
+- Turn `firmware` into a `#[esp_rtos::main]` binary with an `esp-backtrace` panic handler and `esp_app_desc!`.
+- Bring up `esp-rtos` for the executor and the embassy time driver.
+- On boot, print chip model, revision, CPU clock, MAC, PSRAM size, and reset reason over USB serial (`esp-println`).
 - Run a periodic heartbeat with uptime on an embassy timer. No busy-waiting.
 - Flash with `espflash` through the configured runner.
 
-**Test:** Serial prints boot, chip info, and a heartbeat, with no panics. There is no user LED; bring-up is verified over serial.
+**Test:** Serial prints `chip: esp32s3 rev v0.2`, `cpu: 160 MHz`, the MAC, `psram: 8388608 bytes` (8 MB, matching the S3R8), a reset reason, and a 1 Hz heartbeat with rising uptime. `cargo fmt --check` and `cargo clippy` are clean. Flash size (32 MB) is reported by `espflash`, not at runtime. There is no user LED; bring-up is verified over serial.
+
+**Note:** esp-rtos pins `esp-hal` to 1.0.0, so the crate APIs are the 1.0.0 ones (e.g. `Efuse::mac_address`, `psram::psram_raw_parts`).
 
 ### 0.3 Core Types
 - Define `Mode`, `Error`, `Event`, `Timestamp`, `LogEntry` in `common`.

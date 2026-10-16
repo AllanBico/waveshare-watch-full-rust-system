@@ -17,3 +17,10 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+
+[profile.dev]
+opt-level = "s"
+
+[profile.release]
+opt-level = "s"
+lto = true
