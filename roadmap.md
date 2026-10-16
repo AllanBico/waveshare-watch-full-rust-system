@@ -13,11 +13,14 @@
 **Test:** `cargo build` succeeds with empty crates for the ESP32-S3 target. `cargo fmt --check` and `cargo clippy` are clean.
 
 ### 0.2 Hardware Bring-Up
-- Blink an LED or toggle a GPIO using `esp-hal`.
-- Verify flashing and serial output work.
-- Verify `defmt` or equivalent logging over UART.
+- Smoke test the toolchain: `espflash board-info` connects and reads the chip. (Done: ESP32-S3 rev v0.2, 32 MB flash, 40 MHz xtal, MAC read, secure boot off.)
+- Turn `firmware` into a `#[esp_hal::main]` binary with an `esp-backtrace` panic handler.
+- Bring up `embassy-executor` + `esp-rtos` for the executor and time driver.
+- On boot, print chip model, revision, flash size, PSRAM size, and MAC over USB serial (`esp-println`).
+- Run a periodic heartbeat with uptime on an embassy timer. No busy-waiting.
+- Flash with `espflash` through the configured runner.
 
-**Test:** LED blinks. Serial prints "boot".
+**Test:** Serial prints boot, chip info, and a heartbeat, with no panics. There is no user LED; bring-up is verified over serial.
 
 ### 0.3 Core Types
 - Define `Mode`, `Error`, `Event`, `Timestamp`, `LogEntry` in `common`.
@@ -57,6 +60,13 @@
 - Set `Mode::Watch` or `Mode::Desk` accordingly.
 
 **Test:** Plug USB, mode switches to Desk. Unplug, mode switches to Watch.
+
+### 1.5 PCF85063A RTC Driver
+- I2C communication with PCF85063A.
+- Read and write time and date (BCD registers).
+- Expose it through the `Time` HAL trait.
+
+**Test:** Set the time, read it back, and confirm it advances. Timestamps are available for logs.
 
 ---
 

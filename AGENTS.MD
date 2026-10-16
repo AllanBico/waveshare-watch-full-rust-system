@@ -96,7 +96,7 @@
 ## Code Structure Rules
 - Dependencies point inward. Never outward.
 - `common` depends on nothing. (Named `common`, not `core`, since a crate named `core` shadows the `core` prelude.)
-- `hal` defines traits only.
+- `hal` defines traits only: `Display`, `Touch`, `IMU`, `Power`, `Storage`, `Audio`, `Time`.
 - `drivers` implement traits.
 - `power` owns rails and the render policy.
 - `storage` owns flash.
@@ -178,7 +178,8 @@
 ## No Hardcoding
 - No magic numbers. Use named constants.
 - No hardcoded paths, URLs, keys, or timeouts. Use the compile-time config struct.
-- No hardcoded pin numbers or I2C addresses outside `drivers`.
+- No hardcoded pin numbers or I2C addresses outside `drivers`. The single pin map lives in `drivers/src/board.rs`.
+- Read chip identity (model, revision, flash size, PSRAM size, MAC) at runtime. Never hardcode what the silicon reports.
 - If it might change, make it configurable. Config is a typed struct with safe, documented defaults.
 - Secrets never live on the watch. If it is a secret, it belongs on the VPS.
 

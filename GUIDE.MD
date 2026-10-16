@@ -10,10 +10,15 @@ Shipping two firmwares is a maintenance nightmare and breaks the "plug in → de
 
 **Consequence: the compiler is no longer the safety net.** Because voice and sync are always linked, watch-mode purity moves to a runtime state machine. Watch boot never initializes voice/sync and `PowerManager` keeps their rails off. This is verified by tests, not by feature flags.
 
+### ⏱️ Runtime & Async: Embassy on esp-rtos
+
+**Decision: `embassy-executor` + `embassy-time`, with `esp-rtos` as the glue.**
+We do not hand-roll a scheduler. `embassy-executor` gives a cooperative async runtime with no busy-waiting, which is exactly what the power rules demand. `esp-rtos` provides the executor start and the timer integration on `esp-hal`, and is where the radio stack plugs in later. Logging is `esp-println`, panics and backtraces are `esp-backtrace`. Every timer wait is `Timer::after(..).await`, never a blocking delay.
+
 ### 🧩 Abstraction Boundaries: Device-Level Traits, Not Registers
 
 **Decision: HAL abstracts at the device level.**
-Define `Display`, `Touch`, `IMU`, `Power`, `Storage`, and `Audio` as traits. Register-level abstraction is too granular and locks you into one chip. Device-level traits let you swap the CO5300 for a different panel later, or swap TicKV for something else, without touching app code. The cost is a thin wrapper layer, but it pays for itself the first time you debug a hardware issue.
+Define `Display`, `Touch`, `IMU`, `Power`, `Storage`, `Audio`, and `Time` (RTC) as traits. Register-level abstraction is too granular and locks you into one chip. Device-level traits let you swap the CO5300 for a different panel later, or swap TicKV for something else, without touching app code. The cost is a thin wrapper layer, but it pays for itself the first time you debug a hardware issue.
 
 ### ⚡ Power Management: Central Manager, Enforced Sleep
 
@@ -59,3 +64,14 @@ Every abstraction has a cost. If you're not going to swap the display, don't abs
 
 **Decision: pure Rust applies to the watch, not the server.**
 The watch is the constrained device: it must stay pure Rust, `no_std`, and free of C. The VPS is a normal Rust service on a machine that has room for C crates, Opus, and ML. Pushing weight to the VPS is the whole point: the watch stays thin, the server stays capable.
+
+### 📚 Reference Material
+
+**Decision: study, don't copy.**
+`infinition/waveshare-watch-rs` (MIT/Apache-2.0) is the same board, already solved for one architecture. We use it for facts and gotchas, not as a blueprint; we reimplement in our own structure. It diverges from us in three important ways: it never implements deep sleep (it stays in light sleep, which is not enough for us), it uses immediate-mode `embedded-graphics` (we build a retained engine), and it has no watch/desk mode split. Its value is the hard-won hardware detail:
+
+- CO5300 init sequence, the QSPI half-duplex *quad* write, and the strict even-width rule for partial writes.
+- AXP2101 requires DC1 (0x80) and ALDO1 (0x92) enabled, or the panel stays black despite a correct display init.
+- ES8311 needs the `0x00 = 0x80` power-on after reset, and the PA amp enable on GPIO46.
+- FT3168 monitor mode asserts INT only on touch, which fits our wake-budget model.
+- TE on GPIO13 for tear-free flushes.

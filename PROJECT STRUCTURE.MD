@@ -18,12 +18,33 @@ wv2/
 │   ├── logging/            # ring buffer, wake reason tracking
 │   └── common/             # shared types, errors, events
 ├── firmware/               # ONE crate, ONE binary; main branches to watch_init/desk_init
-├── drivers/                # chip-specific drivers (CO5300, FT3168, QMI8658, AXP2101, ES8311)
+├── drivers/                # chip drivers (CO5300, FT3168, QMI8658, AXP2101, PCF85063A, ES8311); board.rs pin map
 ├── vps/                    # companion Rust server (separate binary, separate rules)
 ├── assets/                 # fonts, icons, wake word model weights
 ├── tools/                  # host-side utilities (log parser, sim)
 └── simulator/              # desktop UI simulator
 ```
+
+### 🔌 Hardware Target
+
+**Board: Waveshare ESP32-S3-Touch-AMOLED-2.06 (confirmed on silicon).**
+
+| Component | Part | Bus | Notes |
+|-----------|------|-----|-------|
+| SoC | ESP32-S3R8, rev v0.2, dual Xtensa LX7, 40 MHz xtal | — | 8 MB octal PSRAM, 32 MB flash |
+| Display | CO5300 AMOLED 410×502 | QSPI 80 MHz | rounded edge, RGB565 |
+| PMIC | AXP2101 | I2C 400 kHz | rails, charging, battery |
+| Touch | FT3168 | I2C + INT | INT on GPIO38 |
+| IMU | QMI8658 | I2C | accel + gyro + temp |
+| RTC | PCF85063A | I2C | BCD time/date |
+| Audio | ES8311 + PA amp | I2C + I2S | amp enable on GPIO46 |
+| Tearing | TE signal | GPIO13 | VSync for flush |
+| Button | boot button | GPIO0 | also a wake source |
+
+- **No user LED.** Bring-up is verified over USB serial, not by blinking.
+- Serial enumerates as `/dev/ttyACM0` (native USB Serial/JTAG).
+- All pins live in `drivers/src/board.rs`. No pin or address is hardcoded elsewhere.
+- Chip identity (model, flash size, MAC) is read at runtime, never hardcoded.
 
 ### 🔀 One Binary, Two Modes
 
@@ -40,7 +61,7 @@ Shared types that every other crate needs: `Mode` enum, `Error` types, `Event` e
 Trait definitions only. `Display`, `Touch`, `IMU`, `Power`, `Storage`, `Audio`. No implementations. This is the contract that drivers fulfill and apps consume. Keeps app code hardware-agnostic.
 
 **`drivers`**
-Concrete implementations of the HAL traits for your specific chips: CO5300 display, FT3168 touch, QMI8658 IMU, AXP2101 PMIC, ES8311 codec. Each driver is a separate module. Drivers know about registers and I2C addresses. They do not know about modes or power budgets.
+Concrete implementations of the HAL traits for your specific chips: CO5300 display, FT3168 touch, QMI8658 IMU, AXP2101 PMIC, PCF85063A RTC, ES8311 codec. `board.rs` holds the single pin map. Each driver is a separate module. Drivers know about registers and I2C addresses. They do not know about modes or power budgets.
 
 **`power`**
 The `PowerManager`. Owns the AXP2101 handle and the runtime `RenderPolicy`. Exposes `request_awake(reason, budget_ms)` and `enter_sleep()`. Knows which rails to cut, which peripherals to disable, and when to force sleep. Owns the single mode-switch checklist. Every wake path and every mode transition goes through here. This is the single source of truth for power state and render behavior.
