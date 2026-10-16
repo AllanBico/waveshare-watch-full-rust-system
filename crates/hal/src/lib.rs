@@ -3,4 +3,5 @@
 //! Device-level contracts only: `Display`, `Touch`, `IMU`, `Power`,
 //! `Storage`, `Audio`. No implementations live here.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+#![forbid(unsafe_code)]

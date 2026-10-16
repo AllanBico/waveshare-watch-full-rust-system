@@ -18,6 +18,9 @@ members = [
 version = "0.1.0"
 edition = "2021"
 
+[workspace.dependencies]
+defmt = "1.2"
+
 [profile.dev]
 opt-level = "s"
 

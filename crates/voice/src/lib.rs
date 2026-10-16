@@ -3,4 +3,5 @@
 //! Desk mode only. The wake word is a hand-rolled `no_std` pipeline gated by
 //! VAD. Opus and endpointing live on the VPS.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+#![forbid(unsafe_code)]

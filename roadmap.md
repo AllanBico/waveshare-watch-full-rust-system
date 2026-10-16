@@ -24,11 +24,12 @@
 
 **Note:** esp-rtos pins `esp-hal` to 1.0.0, so the crate APIs are the 1.0.0 ones (e.g. `Efuse::mac_address`, `psram::psram_raw_parts`).
 
-### 0.3 Core Types
-- Define `Mode`, `Error`, `Event`, `Timestamp`, `LogEntry` in `common`.
-- No hardware dependencies.
+### 0.3 Core Types (Done)
+- `Mode`, `Error` (stable numeric codes), `Event`, `WakeReason`, `Timestamp`, and a schema-versioned `LogEntry` in `common`.
+- Optional `defmt` feature for `Format` derives. No hardware dependencies.
+- Crates use `#![cfg_attr(not(test), no_std)]` and `#![forbid(unsafe_code)]` so they can be host-tested.
 
-**Test:** Unit tests for type construction and conversion.
+**Test:** 17 unit tests pass (construction, conversion, edge cases, and error-code stability/uniqueness). `cargo fmt --check` and `cargo clippy` are clean. Host tests run via `./tools/test-host.sh`.
 
 ---
 
@@ -469,6 +470,7 @@
 - Mode-switch transitions are tested both directions, repeatedly.
 - Watch-mode purity is tested: no voice/sync task exists and the mic rail is off.
 - Logs reviewed after every phase.
+- Host unit tests: `./tools/test-host.sh`. It uses the stable toolchain, because the esp toolchain rebuilds `core` via `build-std` and clashes with the host's prebuilt std. A cargo alias cannot switch toolchains.
 
 ---
 

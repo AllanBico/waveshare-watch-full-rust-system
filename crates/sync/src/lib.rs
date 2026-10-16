@@ -3,4 +3,5 @@
 //! Checkpoint tracking and conflict resolution over records read from
 //! `storage`. Active in desk mode only.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+#![forbid(unsafe_code)]

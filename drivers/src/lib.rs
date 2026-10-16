@@ -5,4 +5,4 @@
 //! pin map will live in a `board` module. Only this crate touches registers,
 //! pins, and I2C addresses.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]

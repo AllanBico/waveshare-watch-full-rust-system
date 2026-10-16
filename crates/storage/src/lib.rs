@@ -3,4 +3,5 @@
 //! Wraps TicKV with a raw KV API and a time-series API on top. Owns the flash
 //! partition and the retention policy.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+#![forbid(unsafe_code)]

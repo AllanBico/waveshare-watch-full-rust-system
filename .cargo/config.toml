@@ -14,3 +14,8 @@ build-std = ["core", "alloc"]
 [env]
 # The board uses octal PSRAM (ESP32-S3R8).
 ESP_HAL_CONFIG_PSRAM_MODE = "octal"
+
+# Host unit tests run via `./tools/test-host.sh`. They must use the stable
+# toolchain: it ignores `build-std`, while the esp toolchain would rebuild
+# `core` and clash with the host's prebuilt std. A cargo alias cannot switch
+# toolchains, so a small script does it instead.

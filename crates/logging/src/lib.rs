@@ -4,4 +4,5 @@
 //! `storage` only on significant events. Compiles to nothing when the
 //! `logging` feature is off.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+#![forbid(unsafe_code)]

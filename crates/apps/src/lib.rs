@@ -3,4 +3,5 @@
 //! Each app implements the shared `App` trait and owns its own state. Apps
 //! never touch hardware and never branch on `Mode`.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+#![forbid(unsafe_code)]
