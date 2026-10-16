@@ -1,7 +1,7 @@
-//! Temporary monochrome clock renderer.
+//! Temporary monochrome clock and number renderer.
 //!
-//! Draws a fixed "HH:MM" into a [`MonoBuffer`] so the Phase 3.3 pixel-budget
-//! test exercises real digit rendering. It hardcodes a 5x7 font and no layout.
+//! Draws "HH:MM" and a zero-padded number into a [`MonoBuffer`] so the display
+//! bring-up can show real stats. It hardcodes a 5x7 font and no layout.
 // TODO(phase-5): replace with the clock app on the shared render/font system.
 
 use common::Region;
@@ -14,10 +14,20 @@ const GLYPH_GAP: u16 = 1;
 /// Character cells in "HH:MM".
 const CELL_COUNT: u16 = 5;
 
+/// The rendered size of `cells` glyphs at `scale`.
+fn text_size(cells: u16, scale: u16) -> (u16, u16) {
+    let width = (cells * GLYPH_WIDTH + cells.saturating_sub(1) * GLYPH_GAP) * scale;
+    (width, GLYPH_HEIGHT * scale)
+}
+
 /// The rendered size of "HH:MM" at `scale`.
 pub fn clock_size(scale: u16) -> (u16, u16) {
-    let width = (CELL_COUNT * GLYPH_WIDTH + (CELL_COUNT - 1) * GLYPH_GAP) * scale;
-    (width, GLYPH_HEIGHT * scale)
+    text_size(CELL_COUNT, scale)
+}
+
+/// The rendered size of `digits` decimal digits at `scale`.
+pub fn digits_size(digits: u8, scale: u16) -> (u16, u16) {
+    text_size(u16::from(digits), scale)
 }
 
 /// The region "HH:MM" occupies at `origin` and `scale`.
@@ -38,6 +48,26 @@ pub fn draw_time(buffer: &mut MonoBuffer, hour: u8, minute: u8, origin: (u16, u1
     for (cell, &character) in text.iter().enumerate() {
         let x = origin.0 + cell as u16 * (GLYPH_WIDTH + GLYPH_GAP) * scale;
         draw_glyph(buffer, character, (x, origin.1), scale);
+    }
+}
+
+/// Draws `value` as `digits` zero-padded decimal digits at `origin`.
+pub fn draw_digits(
+    buffer: &mut MonoBuffer,
+    value: u16,
+    digits: u8,
+    origin: (u16, u16),
+    scale: u16,
+) {
+    let mut remaining = u32::from(value);
+    let mut divisor = 10u32.pow(u32::from(digits.saturating_sub(1)));
+    let mut x = origin.0;
+    for _ in 0..digits {
+        let digit = ((remaining / divisor) % 10) as u8;
+        draw_glyph(buffer, b'0' + digit, (x, origin.1), scale);
+        remaining %= divisor;
+        divisor = (divisor / 10).max(1);
+        x += (GLYPH_WIDTH + GLYPH_GAP) * scale;
     }
 }
 
@@ -78,6 +108,12 @@ mod tests {
     }
 
     #[test]
+    fn digits_size_scales_with_the_scale() {
+        assert_eq!(digits_size(4, 1), (23, 7));
+        assert_eq!(digits_size(4, 2), (46, 14));
+    }
+
+    #[test]
     fn drawn_clock_stays_under_the_pixel_budget() {
         let mut buffer = MonoBuffer::new(PANEL_WIDTH, PANEL_HEIGHT);
         draw_time(&mut buffer, 10, 9, centered_origin(), SCALE);
@@ -86,6 +122,27 @@ mod tests {
         let total = buffer.total_pixels();
         assert!(lit > 0, "clock drew nothing");
         assert!(lit * 100 < total * 5, "{lit} of {total} lit exceeds 5%");
+    }
+
+    #[test]
+    fn digits_draw_within_their_size() {
+        let mut buffer = MonoBuffer::new(PANEL_WIDTH, PANEL_HEIGHT);
+        let origin = (10u16, 10u16);
+        draw_digits(&mut buffer, 3872, 4, origin, SCALE);
+
+        let (width, height) = digits_size(4, SCALE);
+        let mut outside_lit = 0;
+        for y in 0..PANEL_HEIGHT {
+            for x in 0..PANEL_WIDTH {
+                let inside =
+                    x >= origin.0 && x < origin.0 + width && y >= origin.1 && y < origin.1 + height;
+                if !inside && buffer.is_lit(x, y) {
+                    outside_lit += 1;
+                }
+            }
+        }
+        assert_eq!(outside_lit, 0);
+        assert!(buffer.lit_pixels() > 0);
     }
 
     #[test]

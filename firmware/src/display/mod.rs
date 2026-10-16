@@ -6,9 +6,7 @@
 //! The AMOLED has no dedicated rail: its power ties to VCC3V3 and its enable
 //! `DSI_PWR_EN` is pulled up to ALDO2 (VL2). Power-down is therefore `SLPIN`
 //! first, then `power` cuts ALDO2; because the panel loses power, wake re-runs
-//! the full init and re-flushes. The transport, confirmed against ChipOne's
-//! datasheet, is one-line `0x02` register access and one-line instruction and
-//! address with four-line pixel data for `0x32`.
+//! the full init and re-flushes.
 
 use alloc::vec;
 
@@ -16,19 +14,19 @@ use esp_hal::delay::Delay;
 use esp_hal::dma::{DmaBufError, DmaRxBuf, DmaTxBuf};
 use esp_hal::dma_buffers;
 use esp_hal::gpio::{Level, Output, OutputConfig};
-use esp_hal::spi::master::{
-    Address, Command, Config as SpiConfig, ConfigError, DataMode, Spi, SpiDmaBus,
-};
+use esp_hal::spi::master::{Config as SpiConfig, ConfigError, Spi};
 use esp_hal::spi::{Error as SpiError, Mode};
 use esp_hal::time::Rate;
 
 use common::{Region, Rgb565};
 use drivers::board;
-use drivers::co5300::{
-    Bus, Co5300, DisplayError, Geometry, OP_WRITE_COMMAND, OP_WRITE_PIXELS, PIXEL_WRITE_ADDRESS,
-};
+use drivers::co5300::{Co5300, DisplayError, Geometry};
 use hal::Display as _;
-use ui::{clock_region, clock_size, draw_time, MonoBuffer};
+use ui::{clock_size, digits_size, draw_digits, draw_time, MonoBuffer};
+
+mod bus;
+
+use bus::EspQspiBus;
 
 /// SPI clock. The vendor uses 40 MHz.
 const SPI_FREQUENCY_MHZ: u32 = 40;
@@ -36,12 +34,17 @@ const SPI_FREQUENCY_MHZ: u32 = 40;
 /// DMA staging buffer and pixel chunk, in bytes (even).
 const CHUNK_BYTES: usize = 2048;
 
-/// Integer scale for the demo clock.
+/// Integer scale for the clock line.
 const CLOCK_SCALE: u16 = 3;
 
-/// Fixed demo time, so the render is deterministic.
-const DEMO_HOUR: u8 = 10;
-const DEMO_MINUTE: u8 = 9;
+/// Integer scale for the battery line.
+const BATTERY_SCALE: u16 = 2;
+
+/// Vertical gap between the clock and battery lines, in pixels.
+const LINE_GAP: u16 = 8;
+
+/// Battery readout width, in decimal digits (millivolts).
+const BATTERY_DIGITS: u8 = 4;
 
 /// The display's exclusive peripherals, grouped to keep the API small.
 pub struct Peripherals<'d> {
@@ -88,103 +91,6 @@ pub struct DisplayStat {
     pub total_pixels: u32,
 }
 
-/// An SPI2 quad transport implementing the driver's [`Bus`].
-struct EspQspiBus<'d> {
-    bus: SpiDmaBus<'d, esp_hal::Blocking>,
-    cs: Output<'d>,
-}
-
-impl Bus for EspQspiBus<'_> {
-    type Error = SpiError;
-
-    fn write_command(&mut self, command: u8) -> Result<(), Self::Error> {
-        self.cs.set_low();
-        let result = self.bus.half_duplex_write(
-            DataMode::Single,
-            Command::_8Bit(OP_WRITE_COMMAND.into(), DataMode::Single),
-            Address::_24Bit(u32::from(command) << 8, DataMode::Single),
-            0,
-            &[],
-        );
-        self.cs.set_high();
-        result
-    }
-
-    fn write_command_data(&mut self, command: u8, data: &[u8]) -> Result<(), Self::Error> {
-        self.cs.set_low();
-        let result = self.bus.half_duplex_write(
-            DataMode::Single,
-            Command::_8Bit(OP_WRITE_COMMAND.into(), DataMode::Single),
-            Address::_24Bit(u32::from(command) << 8, DataMode::Single),
-            0,
-            data,
-        );
-        self.cs.set_high();
-        result
-    }
-
-    fn write_pixels(&mut self, pixels: &[u8]) -> Result<(), Self::Error> {
-        self.cs.set_low();
-        let result = self.stream_pixels(pixels);
-        self.cs.set_high();
-        result
-    }
-
-    fn fill_pixels(&mut self, color: Rgb565, count: u32) -> Result<(), Self::Error> {
-        self.cs.set_low();
-        let result = self.stream_fill(color, count);
-        self.cs.set_high();
-        result
-    }
-}
-
-impl EspQspiBus<'_> {
-    /// Sends the `0x32` pixel-write instruction and address prefix.
-    fn pixel_prefix(&mut self) -> Result<(), SpiError> {
-        self.bus.half_duplex_write(
-            DataMode::Single,
-            Command::_8Bit(OP_WRITE_PIXELS.into(), DataMode::Single),
-            Address::_24Bit(PIXEL_WRITE_ADDRESS, DataMode::Single),
-            0,
-            &[],
-        )
-    }
-
-    /// Streams pixel bytes in one chip-select window.
-    fn stream_pixels(&mut self, pixels: &[u8]) -> Result<(), SpiError> {
-        self.pixel_prefix()?;
-        for chunk in pixels.chunks(CHUNK_BYTES) {
-            self.bus
-                .half_duplex_write(DataMode::Quad, Command::None, Address::None, 0, chunk)?;
-        }
-        Ok(())
-    }
-
-    /// Streams a repeated color in one chip-select window.
-    fn stream_fill(&mut self, color: Rgb565, mut count: u32) -> Result<(), SpiError> {
-        let bytes = color.to_be_bytes();
-        let mut chunk = [0u8; CHUNK_BYTES];
-        for pair in chunk.chunks_exact_mut(2) {
-            pair.copy_from_slice(&bytes);
-        }
-
-        let per_chunk = (CHUNK_BYTES / 2) as u32;
-        self.pixel_prefix()?;
-        while count > 0 {
-            let pixels = count.min(per_chunk) as usize;
-            self.bus.half_duplex_write(
-                DataMode::Quad,
-                Command::None,
-                Address::None,
-                0,
-                &chunk[..pixels * 2],
-            )?;
-            count -= pixels as u32;
-        }
-        Ok(())
-    }
-}
-
 /// The board's CO5300 panel, reusable across one awake window.
 pub struct Display {
     panel: Co5300<EspQspiBus<'static>, Output<'static>, Delay>,
@@ -228,23 +134,48 @@ impl Display {
         })
     }
 
-    /// Re-runs the full init (the panel lost power) and paints the demo clock.
-    pub fn init_and_draw(&mut self) -> Result<DisplayStat, BringUpError> {
+    /// Re-runs the full init (the panel lost power) and paints the live clock
+    /// and battery readout.
+    pub fn init_and_draw(
+        &mut self,
+        hour: u8,
+        minute: u8,
+        battery_mv: u16,
+    ) -> Result<DisplayStat, BringUpError> {
         self.panel.init().map_err(BringUpError::Display)?;
 
         let mut frame = MonoBuffer::new(self.geometry.width, self.geometry.height);
-        let (clock_width, clock_height) = clock_size(CLOCK_SCALE);
-        let origin = (
-            (self.geometry.width - clock_width) / 2,
-            (self.geometry.height - clock_height) / 2,
-        );
-        draw_time(&mut frame, DEMO_HOUR, DEMO_MINUTE, origin, CLOCK_SCALE);
 
-        let clock = self
-            .geometry
-            .align_region(clock_region(origin, CLOCK_SCALE));
-        let mut expanded = vec![0u8; clock.rgb565_len()];
-        frame.expand_region(clock, &mut expanded);
+        let (clock_width, clock_height) = clock_size(CLOCK_SCALE);
+        let (battery_width, battery_height) = digits_size(BATTERY_DIGITS, BATTERY_SCALE);
+        let block_width = clock_width.max(battery_width);
+        let block_height = clock_height + LINE_GAP + battery_height;
+        let block_x = (self.geometry.width - block_width) / 2;
+        let block_y = (self.geometry.height - block_height) / 2;
+
+        draw_time(
+            &mut frame,
+            hour,
+            minute,
+            (block_x + (block_width - clock_width) / 2, block_y),
+            CLOCK_SCALE,
+        );
+        draw_digits(
+            &mut frame,
+            battery_mv,
+            BATTERY_DIGITS,
+            (
+                block_x + (block_width - battery_width) / 2,
+                block_y + clock_height + LINE_GAP,
+            ),
+            BATTERY_SCALE,
+        );
+
+        let block =
+            self.geometry
+                .align_region(Region::new(block_x, block_y, block_width, block_height));
+        let mut expanded = vec![0u8; block.rgb565_len()];
+        frame.expand_region(block, &mut expanded);
 
         self.panel
             .fill_region(
@@ -253,7 +184,7 @@ impl Display {
             )
             .map_err(BringUpError::Display)?;
         self.panel
-            .write_region(clock, &expanded)
+            .write_region(block, &expanded)
             .map_err(BringUpError::Display)?;
 
         Ok(DisplayStat {

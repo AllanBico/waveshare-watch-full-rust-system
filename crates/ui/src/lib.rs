@@ -16,5 +16,5 @@ mod clock;
 mod font;
 mod mono;
 
-pub use clock::{clock_region, clock_size, draw_time};
+pub use clock::{clock_region, clock_size, digits_size, draw_digits, draw_time};
 pub use mono::MonoBuffer;

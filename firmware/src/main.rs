@@ -88,7 +88,7 @@ async fn main(_spawner: Spawner) {
     println!("[pm] AXP2101 id 0x{:02X}", pmic.read_chip_id().unwrap_or(0));
 
     let mut clock = Pcf85063a::new(RefCellDevice::new(bus), board::RTC_I2C_ADDR);
-    report_time(&mut clock);
+    let datetime = report_time(&mut clock);
 
     let mut power = PowerManager::new(pmic, Mode::Watch);
     if let Err(error) = power.sync() {
@@ -124,11 +124,16 @@ async fn main(_spawner: Spawner) {
         }
     };
     if let Some(display) = display.as_mut() {
-        match display.init_and_draw() {
-            Ok(stat) => println!(
-                "[lcd] clock lit {}/{} pixels",
-                stat.lit_pixels, stat.total_pixels
-            ),
+        let battery_mv = match power.pmic_mut().read_battery_millivolts() {
+            Ok(millivolts) => millivolts.value(),
+            Err(error) => {
+                println!("[pm] battery read failed: {:?}", error);
+                0
+            }
+        };
+        println!("[pm] battery {} mV", battery_mv);
+        match display.init_and_draw(datetime.hour, datetime.minute, battery_mv) {
+            Ok(stat) => println!("[lcd] lit {}/{} pixels", stat.lit_pixels, stat.total_pixels),
             Err(error) => println!("[lcd] draw failed: {:?}", error),
         }
     }
@@ -174,21 +179,26 @@ async fn main(_spawner: Spawner) {
     rtc.sleep_deep(&[&timer, &button]);
 }
 
-/// Reads the RTC time; seeds a default if the oscillator had stopped.
-fn report_time(clock: &mut Pcf85063a<Bus>) {
+/// Reads the RTC time; seeds a default if the oscillator had stopped, and
+/// returns the effective date/time.
+fn report_time(clock: &mut Pcf85063a<Bus>) -> DateTime {
+    let default = DateTime::new(2000, 1, 1, 0, 0, 0);
     if let Err(error) = clock.init() {
         println!("[rtc] init failed: {}", error);
-        return;
+        return default;
     }
     match clock.read_datetime() {
-        Ok(dt) => print_datetime("time", &dt),
+        Ok(dt) => {
+            print_datetime("time", &dt);
+            dt
+        }
         Err(_) => {
-            let default = DateTime::new(2000, 1, 1, 0, 0, 0);
             if clock.set_datetime(&default).is_ok() {
                 print_datetime("time set", &default);
             } else {
                 println!("[rtc] set failed");
             }
+            default
         }
     }
 }
