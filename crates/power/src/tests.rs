@@ -156,3 +156,28 @@ fn pmic_error_propagates() {
 fn enable_order_covers_every_rail() {
     assert_eq!(ENABLE_ORDER.len(), 11);
 }
+
+#[test]
+fn plan_sleep_returns_policy_and_cuts_rails() {
+    let mut pm = manager();
+    let plan = pm.plan_sleep().unwrap();
+    assert_eq!(plan.timer_ms, 10_000);
+    assert!(plan.wake_on_button);
+    assert!(plan.rails.wants_on(Rail::Dcdc1));
+    assert!(!plan.rails.wants_on(Rail::Aldo3));
+    assert_eq!(pm.state(), PowerState::DeepSleep);
+}
+
+#[test]
+fn sync_reads_actual_state_and_sleep_cuts_extras() {
+    let mut pm = PowerManager::new(FakePower::new(), Mode::Watch);
+    // The PMIC powers up with DCDC2 on; the manager must not assume it is off.
+    let dcdc2 = Rail::Dcdc2.index() as usize;
+    pm.pmic_mut().enabled[dcdc2] = true;
+
+    pm.sync().unwrap();
+    assert!(pm.plan().wants_on(Rail::Dcdc2));
+
+    pm.enter_sleep().unwrap();
+    assert!(!pm.pmic_mut().enabled[dcdc2]);
+}

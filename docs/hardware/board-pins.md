@@ -75,6 +75,15 @@ pub const PWR_BUTTON: u8 = 10;
   comes from **ALDO3 (VCC3V3)** through `R7 0R` to connector `J1/J2`, switched
   low-side by `Q1 MMBT3904` driven by **GPIO18 (`MOTOR`)**. So roadmap 6.3
   (alarm vibrate) is feasible, and the motor must be off (GPIO18 low) in sleep.
+- **Button wiring (`KEYS` block).**
+  - `Key1 BOOT` ties **GPIO0** to GND (10K pull-up to VCC3V3) and shares a node
+    with `CHIP_PU`. GPIO0 is a strapping pin, so a low level at reset risks
+    download mode — do not use it as a deep-sleep wake pin casually.
+  - `Key3 PWR` drives the **AXP2101 `PWRON`** pin directly and, through an
+    NMOS (`Q T1`, BSS138) inverter, sets **`SYS OUT` = GPIO10**. So the PWR
+    button is both an AXP input and a GPIO10 signal.
+  - Both buttons land on RTC-capable pins (GPIO0, GPIO10). See `power-strategy.md`
+    for wake-source policy.
 - **Display enable is a GPIO.** Schematic `AMOLED` block: the panel's `DSI_PWR_EN`
   (J3 pin 21) is pulled up to **ALDO2 (VL2_3.3V)** via `R10 10K`. Panel power pins
   tie to **VCC3V3**. See `axp2101-reference.md` for the display-rail question.

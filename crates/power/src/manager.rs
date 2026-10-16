@@ -6,6 +6,10 @@ use hal::Power;
 use super::budget::{Budget, BudgetStatus};
 use super::error::PowerError;
 use super::plan::{PowerState, RailPlan, ENABLE_ORDER};
+use super::sleep::SleepPlan;
+
+/// Default deep-sleep timer interval.
+const DEFAULT_SLEEP_TIMER_MS: u32 = 10_000;
 
 /// Owns the PMIC handle, the runtime mode, the render policy, and the wake
 /// budget. Every wake and sleep transition goes through here.
@@ -17,6 +21,7 @@ pub struct PowerManager<P> {
     last_wake: Option<WakeReason>,
     budget: Budget,
     plan: RailPlan,
+    sleep_timer_ms: u32,
 }
 
 impl<P: Power> PowerManager<P> {
@@ -31,7 +36,25 @@ impl<P: Power> PowerManager<P> {
             last_wake: None,
             budget: Budget::idle(),
             plan: RailPlan::none(),
+            sleep_timer_ms: DEFAULT_SLEEP_TIMER_MS,
         }
+    }
+
+    /// Reads the actual rail state from the PMIC into the manager's plan.
+    ///
+    /// Must be called once after construction: the PMIC powers up with rails
+    /// already enabled, and rails persist across deep sleep. Assuming an
+    /// initial "all off" state would make the audit fail on the first
+    /// transition.
+    pub fn sync(&mut self) -> Result<(), PowerError<P::Error>> {
+        let mut mask = 0u16;
+        for rail in ENABLE_ORDER {
+            if self.pmic.is_rail_enabled(rail).map_err(PowerError::Pmic)? {
+                mask |= 1 << rail.index();
+            }
+        }
+        self.plan = RailPlan::from_mask(mask);
+        Ok(())
     }
 
     /// Marks the device awake for `reason`, applies the awake plan, and starts
@@ -55,6 +78,17 @@ impl<P: Power> PowerManager<P> {
         self.policy = RenderPolicy::WATCH;
         self.budget.stop();
         self.apply_plan(PowerState::DeepSleep.rail_plan())
+    }
+
+    /// Applies the deep-sleep rail plan and returns the SoC sleep policy for
+    /// the firmware to execute.
+    pub fn plan_sleep(&mut self) -> Result<SleepPlan, PowerError<P::Error>> {
+        self.enter_sleep()?;
+        Ok(SleepPlan {
+            timer_ms: self.sleep_timer_ms,
+            wake_on_button: true,
+            rails: self.plan,
+        })
     }
 
     /// Evaluates the awake budget at `now_ms`.
@@ -113,6 +147,16 @@ impl<P: Power> PowerManager<P> {
     /// The reason recorded for the most recent wake.
     pub const fn last_wake(&self) -> Option<WakeReason> {
         self.last_wake
+    }
+
+    /// The configured RTC-timer sleep interval.
+    pub const fn sleep_timer_ms(&self) -> u32 {
+        self.sleep_timer_ms
+    }
+
+    /// Sets the RTC-timer sleep interval.
+    pub fn set_sleep_timer_ms(&mut self, millis: u32) {
+        self.sleep_timer_ms = millis;
     }
 
     /// The rails the manager believes are enabled.

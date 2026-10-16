@@ -11,6 +11,7 @@ mod budget;
 mod error;
 mod manager;
 mod plan;
+mod sleep;
 
 #[cfg(test)]
 mod tests;
@@ -19,3 +20,4 @@ pub use budget::{Budget, BudgetStatus};
 pub use error::PowerError;
 pub use manager::PowerManager;
 pub use plan::{PowerState, RailPlan};
+pub use sleep::SleepPlan;

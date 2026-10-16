@@ -60,6 +60,11 @@ impl RailPlan {
         self
     }
 
+    /// Builds a plan from a raw bitmask.
+    pub const fn from_mask(mask: u16) -> Self {
+        Self(mask)
+    }
+
     /// Whether `rail` should be enabled under this plan.
     pub const fn wants_on(self, rail: Rail) -> bool {
         self.0 & (1 << rail.index()) != 0

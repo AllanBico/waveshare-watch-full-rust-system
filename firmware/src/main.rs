@@ -1,8 +1,8 @@
 //! Firmware entry point.
 //!
-//! Phase 1.2: bring up the shared I2C bus and the AXP2101, then drive the
-//! power manager through a sleep/awake transition. Mode dispatch
-//! (`watch_init` / `desk_init`) and real deep sleep arrive in later phases.
+//! Phase 1.3: read the wake cause, bring up the shared I2C bus and AXP2101,
+//! run a short awake window, then enter deep sleep with an RTC-timer and
+//! power-button wake source. Deep sleep is a reboot: `main` re-runs on wake.
 
 #![no_std]
 #![no_main]
@@ -12,10 +12,14 @@ extern crate alloc;
 use core::cell::RefCell;
 
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::efuse::Efuse;
+use esp_hal::gpio::RtcPin;
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
+use esp_hal::rtc_cntl::sleep::{Ext1WakeupSource, TimerWakeupSource, WakeupLevel};
+use esp_hal::rtc_cntl::{wakeup_cause, Rtc};
+use esp_hal::system::SleepSource;
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
@@ -34,8 +38,11 @@ esp_bootloader_esp_idf::esp_app_desc!();
 /// CPU clock for bring-up. Mode-based clock switching comes later.
 const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
 
-/// Heartbeat period.
-const HEARTBEAT_PERIOD: Duration = Duration::from_secs(1);
+/// Awake time budget granted on each wake.
+const AWAKE_BUDGET_MS: u32 = 5_000;
+
+/// How long to stay awake before sleeping, for the 1.3 bring-up.
+const AWAKE_WINDOW: Duration = Duration::from_secs(2);
 
 /// SRAM heap size reserved for the runtime.
 const SRAM_HEAP_BYTES: usize = 64 * 1024;
@@ -53,24 +60,55 @@ async fn main(_spawner: Spawner) {
 
     report_boot(psram_bytes);
 
+    let wake = wake_reason();
+    match wake {
+        Some(reason) => println!("[pm] woke by {:?}", reason),
+        None => println!("[pm] cold boot"),
+    }
+
     let mut power = power_bringup(peripherals.I2C0, peripherals.GPIO15, peripherals.GPIO14).await;
 
-    match power.enter_sleep() {
-        Ok(()) => println!("[pm] applied watch sleep rail plan"),
-        Err(error) => println!("[pm] sleep plan failed: {}", error.to_common()),
-    }
-    Timer::after(Duration::from_secs(3)).await;
-
-    match power.request_awake(WakeReason::Timer, 10_000, 0) {
-        Ok(()) => println!("[pm] awake, state {:?}", power.state()),
-        Err(error) => println!("[pm] awake failed: {}", error.to_common()),
+    if let Err(error) = power.sync() {
+        println!("[pm] rail sync failed: {}", error.to_common());
+        halt().await
     }
 
-    let start = Instant::now();
-    loop {
-        Timer::after(HEARTBEAT_PERIOD).await;
-        let uptime_ms = (Instant::now() - start).as_millis();
-        println!("[hb] uptime {} ms", uptime_ms);
+    if let Some(reason) = wake {
+        match power.request_awake(reason, AWAKE_BUDGET_MS, 0) {
+            Ok(()) => println!("[pm] awake, budget {} ms", AWAKE_BUDGET_MS),
+            Err(error) => println!("[pm] awake failed: {}", error.to_common()),
+        }
+    }
+
+    Timer::after(AWAKE_WINDOW).await;
+
+    let plan = match power.plan_sleep() {
+        Ok(plan) => plan,
+        Err(error) => {
+            println!("[pm] plan_sleep failed: {}", error.to_common());
+            halt().await
+        }
+    };
+    println!(
+        "[pm] sleeping {} ms (button wake: {})",
+        plan.timer_ms, plan.wake_on_button
+    );
+
+    let mut rtc = Rtc::new(peripherals.LPWR);
+    let timer = TimerWakeupSource::new(core::time::Duration::from_millis(u64::from(plan.timer_ms)));
+    let mut pwr_button = peripherals.GPIO10;
+    let mut wake_pins: [&mut dyn RtcPin; 1] = [&mut pwr_button];
+    let button = Ext1WakeupSource::new(&mut wake_pins, WakeupLevel::High);
+    rtc.sleep_deep(&[&timer, &button]);
+}
+
+/// Maps the SoC wake cause onto a shared wake reason.
+fn wake_reason() -> Option<WakeReason> {
+    match wakeup_cause() {
+        SleepSource::Timer => Some(WakeReason::Timer),
+        SleepSource::Ext0 | SleepSource::Ext1 => Some(WakeReason::Button),
+        SleepSource::Undefined => None,
+        _ => Some(WakeReason::Unknown),
     }
 }
 
@@ -119,7 +157,7 @@ fn report_boot(psram_bytes: usize) {
     let revision = Efuse::chip_revision();
     let mac = Efuse::mac_address();
 
-    println!("=== wv2 firmware (Phase 1.2 power bring-up) ===");
+    println!("=== wv2 firmware (Phase 1.3 deep-sleep bring-up) ===");
     println!(
         "chip:  {} rev v{}.{}",
         esp_hal::chip!(),
