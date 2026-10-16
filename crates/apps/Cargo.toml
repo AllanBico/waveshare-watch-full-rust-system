@@ -1,0 +1,6 @@
+[package]
+name = "apps"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

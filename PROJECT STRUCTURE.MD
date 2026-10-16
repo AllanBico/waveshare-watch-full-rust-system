@@ -2,7 +2,7 @@
 
 ```
 wv2/
-├── Cargo.toml              # workspace root, feature flags live here
+├── Cargo.toml              # workspace root (virtual manifest)
 ├── .cargo/config.toml      # target, runner, linker config
 ├── rust-toolchain.toml     # pin toolchain version
 ├── build.rs                # top-level build orchestration
@@ -16,7 +16,7 @@ wv2/
 │   ├── voice/              # wake word, audio capture, VPS client
 │   ├── sync/               # VPS sync protocol, checkpoints
 │   ├── logging/            # ring buffer, wake reason tracking
-│   └── core/               # shared types, errors, events
+│   └── common/             # shared types, errors, events
 ├── firmware/               # ONE crate, ONE binary; main branches to watch_init/desk_init
 ├── drivers/                # chip-specific drivers (CO5300, FT3168, QMI8658, AXP2101, ES8311)
 ├── vps/                    # companion Rust server (separate binary, separate rules)
@@ -29,10 +29,12 @@ wv2/
 
 `firmware/` builds a single binary. `main` reads VBUS from the AXP2101 and calls either `watch_init` or `desk_init`. `watch_init` brings up only the minimum peripherals and enters the sleep loop; it never starts voice, sync, or radios. `desk_init` brings up the full set. Mode is runtime state owned by `power`, never a compile-time feature.
 
+Until Phase 0.2, `firmware` is a `no_std` library exposing `watch_init` and `desk_init`. Linking a bare-metal binary needs the Xtensa GCC linker and `esp-hal`, both introduced with hardware bring-up.
+
 ### 🎯 Purpose of Each Crate
 
-**`core`**
-Shared types that every other crate needs: `Mode` enum, `Error` types, `Event` enum, `Timestamp`, `LogEntry` struct. No hardware, no allocation beyond what's necessary. This is the vocabulary of the system. Every other crate depends on it, and it depends on nothing.
+**`common`**
+Shared types that every other crate needs: `Mode` enum, `Error` types, `Event` enum, `Timestamp`, `LogEntry` struct. No hardware, no allocation beyond what's necessary. This is the vocabulary of the system. Every other crate depends on it, and it depends on nothing. It is named `common` rather than `core` because a crate named `core` shadows the `core` prelude and breaks every dependent crate.
 
 **`hal`**
 Trait definitions only. `Display`, `Touch`, `IMU`, `Power`, `Storage`, `Audio`. No implementations. This is the contract that drivers fulfill and apps consume. Keeps app code hardware-agnostic.
@@ -50,13 +52,13 @@ Wraps TicKV. Provides two layers: a raw KV API (`set`, `get`, `delete`) and a ti
 A RAM ring buffer for runtime events (wake reasons, mode switches, errors). Flushes to `storage` only in desk mode or on significant events. Provides the `log!` macro that compiles to nothing when the `logging` feature is off. This is what feeds your power analysis.
 
 **`ui`**
-The custom engine: theme tokens, widget tree, layout, renderer backend, dirty-rect diffing, animation. Depends on `hal` for the display trait and `core` for events. Does not know about storage, power, or voice. Receives a `RenderPolicy` and a `Surface` and renders the current app state. Backend-agnostic: hardware display on target, SDL on desktop.
+The custom engine: theme tokens, widget tree, layout, renderer backend, dirty-rect diffing, animation. Depends on `hal` for the display trait and `common` for events. Does not know about storage, power, or voice. Receives a `RenderPolicy` and a `Surface` and renders the current app state. Backend-agnostic: hardware display on target, SDL on desktop.
 
 **`apps`**
-Each app is a module implementing a common `App` trait: `render()`, `handle_event()`, `on_enter()`, `on_exit()`. Apps depend on `ui` for widgets, `core` for events, and optionally `storage` or `voice` if they need data. The clock app needs nothing but `ui`. The settings app needs `storage`. The voice app needs `voice`. Apps never touch hardware directly, and never branch on `Mode`.
+Each app is a module implementing a common `App` trait: `render()`, `handle_event()`, `on_enter()`, `on_exit()`. Apps depend on `ui` for widgets, `common` for events, and optionally `storage` or `voice` if they need data. The clock app needs nothing but `ui`. The settings app needs `storage`. The voice app needs `voice`. Apps never touch hardware directly, and never branch on `Mode`.
 
 **`voice`**
-Wake word, audio capture, PCM streaming, VPS client, TTS playback. The wake word is a hand-rolled `no_std` pipeline (I2S, `microfft`, MFCC, small NN with `const` weights) gated by VAD. Contains no Opus; the VPS does that. Only activated in desk mode. Depends on `hal` for the audio trait and `core` for events.
+Wake word, audio capture, PCM streaming, VPS client, TTS playback. The wake word is a hand-rolled `no_std` pipeline (I2S, `microfft`, MFCC, small NN with `const` weights) gated by VAD. Contains no Opus; the VPS does that. Only activated in desk mode. Depends on `hal` for the audio trait and `common` for events.
 
 **`sync`**
 VPS sync protocol, checkpoint tracking, conflict resolution. Depends on `storage` to read unsynced records and the network layer to transmit. Only active in desk mode.
@@ -70,7 +72,7 @@ The companion Rust service. WebSocket server, LLM agent, tool registry, Opus enc
 ### 🔗 Dependency Direction
 
 ```
-core ← everything
+common ← everything
 hal ← drivers, ui, voice
 drivers ← power, firmware
 power ← firmware
@@ -83,7 +85,9 @@ sync ← firmware
 
 **Rule: dependencies point inward, never outward.** `ui` does not depend on `apps`. `apps` does not depend on `firmware`. `drivers` do not depend on `power`. This keeps the graph acyclic and every crate testable in isolation.
 
-### 🚩 Feature Flags (Workspace Level)
+### 🚩 Feature Flags (Defined on `firmware`)
+
+A virtual workspace manifest cannot declare `[features]`, so the flags live on the `firmware` package and propagate to members from there.
 
 ```toml
 [features]

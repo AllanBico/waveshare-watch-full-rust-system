@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/common",
+    "crates/hal",
+    "crates/power",
+    "crates/storage",
+    "crates/ui",
+    "crates/apps",
+    "crates/voice",
+    "crates/sync",
+    "crates/logging",
+    "drivers",
+    "firmware",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"

@@ -3,12 +3,14 @@
 **Goal:** Project skeleton compiles, flashes, and runs on hardware.
 
 ### 0.1 Workspace Setup
-- Create workspace with empty crates: `core`, `hal`, `drivers`, `power`, `storage`, `ui`, `apps`, `voice`, `sync`, `logging`, `firmware`.
-- Set up feature flags: `logging`, `trace`, `simulator`. Mode is runtime, not a feature.
-- Pin toolchain in `rust-toolchain.toml`.
-- Configure `.cargo/config.toml` for the ESP32-S3 target.
+- Create workspace with empty crates: `common`, `hal`, `drivers`, `power`, `storage`, `ui`, `apps`, `voice`, `sync`, `logging`, `firmware`.
+- `core` is named `common` because a crate named `core` shadows the `core` prelude.
+- Set up feature flags on the `firmware` package: `logging`, `trace`, `simulator`. Mode is runtime, not a feature. (A virtual workspace root cannot declare `[features]`.)
+- Pin the `esp` toolchain in `rust-toolchain.toml`.
+- Configure `.cargo/config.toml` for the ESP32-S3 target, with `build-std = ["core"]` since the esp toolchain ships no prebuilt `core` for Xtensa.
+- Keep `firmware` a `no_std` library for now; it becomes a binary in Phase 0.2.
 
-**Test:** `cargo build` succeeds with empty crates for the ESP32-S3 target.
+**Test:** `cargo build` succeeds with empty crates for the ESP32-S3 target. `cargo fmt --check` and `cargo clippy` are clean.
 
 ### 0.2 Hardware Bring-Up
 - Blink an LED or toggle a GPIO using `esp-hal`.
@@ -18,7 +20,7 @@
 **Test:** LED blinks. Serial prints "boot".
 
 ### 0.3 Core Types
-- Define `Mode`, `Error`, `Event`, `Timestamp`, `LogEntry` in `core`.
+- Define `Mode`, `Error`, `Event`, `Timestamp`, `LogEntry` in `common`.
 - No hardware dependencies.
 
 **Test:** Unit tests for type construction and conversion.

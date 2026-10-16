@@ -1,0 +1,6 @@
+[package]
+name = "voice"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

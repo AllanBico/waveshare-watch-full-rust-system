@@ -1,0 +1,6 @@
+//! Screens: clock, settings, logs, voice.
+//!
+//! Each app implements the shared `App` trait and owns its own state. Apps
+//! never touch hardware and never branch on `Mode`.
+
+#![no_std]

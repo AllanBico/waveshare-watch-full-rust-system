@@ -95,7 +95,7 @@
 
 ## Code Structure Rules
 - Dependencies point inward. Never outward.
-- `core` depends on nothing.
+- `common` depends on nothing. (Named `common`, not `core`, since a crate named `core` shadows the `core` prelude.)
 - `hal` defines traits only.
 - `drivers` implement traits.
 - `power` owns rails and the render policy.
