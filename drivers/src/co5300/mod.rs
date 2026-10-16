@@ -9,6 +9,9 @@
 //! `0x02` instruction on one line with a 24-bit address `{8'h00, command,
 //! 8'h00}`; pixel data uses the `0x32` instruction on one line for instruction
 //! and address, then four-line data.
+//!
+//! The controller's CASET/RASET require even start coordinates and even
+//! extents, so windows are aligned outward (see [`Geometry::align_region`]).
 
 use common::{Region, Rgb565};
 use embedded_hal::delay::DelayNs;
@@ -48,6 +51,35 @@ pub struct Geometry {
     pub column_offset: u16,
     /// Row address offset.
     pub row_offset: u16,
+}
+
+impl Geometry {
+    /// Expands `region` so its panel window meets the controller's alignment.
+    ///
+    /// CASET/RASET require both the start coordinate and the extent to be even,
+    /// so an odd edge is grown outward by one pixel. The caller must supply
+    /// pixels for the returned region, not the original.
+    pub fn align_region(&self, region: Region) -> Region {
+        let x0 = region.x + self.column_offset;
+        let x1 = x0 + region.width.saturating_sub(1);
+        let y0 = region.y + self.row_offset;
+        let y1 = y0 + region.height.saturating_sub(1);
+        let ax0 = x0 & !1;
+        let ax1 = x1 | 1;
+        let ay0 = y0 & !1;
+        let ay1 = y1 | 1;
+        Region::new(
+            ax0.saturating_sub(self.column_offset),
+            ay0.saturating_sub(self.row_offset),
+            ax1 - ax0 + 1,
+            ay1 - ay0 + 1,
+        )
+    }
+
+    /// Whether a region already satisfies the panel's alignment.
+    pub fn is_aligned(&self, region: Region) -> bool {
+        self.align_region(region) == region
+    }
 }
 
 /// A CO5300 AMOLED panel.
@@ -154,15 +186,22 @@ impl<B: Bus, R, D: DelayNs> Display for Co5300<B, R, D> {
     }
 
     fn fill_region(&mut self, region: Region, color: Rgb565) -> Result<(), Self::Error> {
-        self.set_window(region)?;
+        if region.is_empty() {
+            return Ok(());
+        }
+        let aligned = self.geometry.align_region(region);
+        self.set_window(aligned)?;
         self.bus
-            .fill_pixels(color, region.pixel_count())
+            .fill_pixels(color, aligned.pixel_count())
             .map_err(DisplayError::Bus)
     }
 
     fn write_region(&mut self, region: Region, pixels: &[u8]) -> Result<(), Self::Error> {
         if pixels.len() != region.rgb565_len() {
             return Err(DisplayError::LengthMismatch);
+        }
+        if !self.geometry.is_aligned(region) {
+            return Err(DisplayError::RegionMisaligned);
         }
         self.set_window(region)?;
         self.bus.write_pixels(pixels).map_err(DisplayError::Bus)

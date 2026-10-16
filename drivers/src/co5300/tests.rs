@@ -122,20 +122,21 @@ fn init_sends_the_vendor_sequence() {
 }
 
 #[test]
-fn fill_region_sets_window_with_offsets_and_fills() {
+fn fill_region_aligns_the_window_to_even_pixels() {
     let mut panel = panel();
     panel
         .fill_region(common::Region::new(5, 6, 10, 20), common::Rgb565::RED)
         .unwrap();
 
     use Event::{Command, CommandData, Fill};
+    // Panel columns 27..36 grow to 26..37, rows 6..25 stay even.
     assert_eq!(
         panel.bus.events,
         vec![
-            CommandData(CMD_CASET, vec![0x00, 0x1B, 0x00, 0x24]),
+            CommandData(CMD_CASET, vec![0x00, 0x1A, 0x00, 0x25]),
             CommandData(CMD_PASET, vec![0x00, 0x06, 0x00, 0x19]),
             Command(CMD_RAMWR),
-            Fill(common::Rgb565::RED.raw(), 200),
+            Fill(common::Rgb565::RED.raw(), 12 * 20),
         ]
     );
 }
@@ -143,8 +144,8 @@ fn fill_region_sets_window_with_offsets_and_fills() {
 #[test]
 fn write_region_streams_bytes_into_the_window() {
     let mut panel = panel();
-    let region = common::Region::new(0, 0, 2, 1);
-    let pixels = [0xF8, 0x00, 0x07, 0xE0];
+    let region = common::Region::new(0, 0, 2, 2);
+    let pixels = [0xF8, 0x00, 0x07, 0xE0, 0xF8, 0x00, 0x07, 0xE0];
     panel.write_region(region, &pixels).unwrap();
 
     use Event::{Command, CommandData, Pixels};
@@ -152,11 +153,32 @@ fn write_region_streams_bytes_into_the_window() {
         panel.bus.events,
         vec![
             CommandData(CMD_CASET, vec![0x00, 0x16, 0x00, 0x17]),
-            CommandData(CMD_PASET, vec![0x00, 0x00, 0x00, 0x00]),
+            CommandData(CMD_PASET, vec![0x00, 0x00, 0x00, 0x01]),
             Command(CMD_RAMWR),
             Pixels(pixels.to_vec()),
         ]
     );
+}
+
+#[test]
+fn align_region_grows_odd_edges_to_even() {
+    let region = common::Region::new(161, 240, 87, 21);
+    assert_eq!(
+        GEOMETRY.align_region(region),
+        common::Region::new(160, 240, 88, 22)
+    );
+    assert!(!GEOMETRY.is_aligned(region));
+    assert!(GEOMETRY.is_aligned(common::Region::new(160, 240, 88, 22)));
+}
+
+#[test]
+fn write_region_rejects_a_misaligned_window() {
+    let mut panel = panel();
+    // Height 1 leaves the row extent odd, which the controller rejects.
+    let region = common::Region::new(0, 0, 2, 1);
+    let error = panel.write_region(region, &[0u8; 4]).unwrap_err();
+    assert_eq!(error, DisplayError::RegionMisaligned);
+    assert!(panel.bus.events.is_empty());
 }
 
 #[test]

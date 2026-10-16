@@ -105,8 +105,8 @@ async fn main(_spawner: Spawner) {
     }
     println!("[pm] mode {:?} (vbus: {})", mode, vbus);
 
-    // Phase 3.2: fill red, then push one green region to prove partial refresh.
-    if let Err(error) = display::run(display::Peripherals {
+    // Phase 3.3: render the demo clock and flush only its region.
+    match display::run(display::Peripherals {
         spi: peripherals.SPI2,
         dma: peripherals.DMA_CH0,
         sclk: peripherals.GPIO11,
@@ -117,9 +117,11 @@ async fn main(_spawner: Spawner) {
         sio3: peripherals.GPIO7,
         reset: peripherals.GPIO8,
     }) {
-        println!("[lcd] bring-up failed: {:?}", error);
-    } else {
-        println!("[lcd] red fill plus green region written");
+        Ok(stat) => println!(
+            "[lcd] clock lit {}/{} pixels",
+            stat.lit_pixels, stat.total_pixels
+        ),
+        Err(error) => println!("[lcd] bring-up failed: {:?}", error),
     }
 
     if let Some(reason) = wake {

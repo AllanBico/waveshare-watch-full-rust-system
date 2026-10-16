@@ -1,12 +1,15 @@
-//! CO5300 bring-up on the board (Phase 3.2).
+//! CO5300 bring-up on the board (Phase 3.3).
 //!
-//! Wires the board's SPI2 quad bus to the generic [`Co5300`] driver and
-//! demonstrates partial refresh: fill the panel red, then push a single green
-//! region. Only that region is transmitted, so the rest stays red.
+//! Wires the board's SPI2 quad bus to the generic [`Co5300`] driver and shows
+//! monochrome partial refresh: render a fixed "10:09" clock into the 1-bit
+//! [`MonoBuffer`], expand only the clock region to RGB565, and push it over a
+//! black background. The rest of the panel is never transmitted.
 //!
 //! The transport, confirmed against ChipOne's datasheet and the vendor
 //! databus, is one-line `0x02` register access and one-line instruction and
 //! address with four-line pixel data for `0x32`.
+
+use alloc::vec;
 
 use esp_hal::delay::Delay;
 use esp_hal::dma::{DmaBufError, DmaRxBuf, DmaTxBuf};
@@ -24,6 +27,7 @@ use drivers::co5300::{
     Bus, Co5300, DisplayError, Geometry, OP_WRITE_COMMAND, OP_WRITE_PIXELS, PIXEL_WRITE_ADDRESS,
 };
 use hal::Display;
+use ui::{clock_region, clock_size, draw_time, MonoBuffer};
 
 /// SPI clock. The vendor uses 40 MHz.
 const SPI_FREQUENCY_MHZ: u32 = 40;
@@ -31,11 +35,12 @@ const SPI_FREQUENCY_MHZ: u32 = 40;
 /// DMA staging buffer and pixel chunk, in bytes (even).
 const CHUNK_BYTES: usize = 2048;
 
-/// Side of the demo square, in pixels.
-const DEMO_SQUARE_SIDE: u16 = 32;
+/// Integer scale for the demo clock.
+const CLOCK_SCALE: u16 = 3;
 
-/// The demo square side as an index width.
-const SIDE: usize = DEMO_SQUARE_SIDE as usize;
+/// Fixed demo time, so the render is deterministic.
+const DEMO_HOUR: u8 = 10;
+const DEMO_MINUTE: u8 = 9;
 
 /// The display's exclusive peripherals, grouped to keep the API small.
 pub struct Peripherals<'d> {
@@ -170,8 +175,17 @@ impl EspQspiBus<'_> {
     }
 }
 
-/// Brings up the panel, fills it red, and paints one green region.
-pub fn run(pins: Peripherals<'static>) -> Result<(), BringUpError> {
+/// Lit-pixel accounting for the rendered demo frame.
+#[derive(Debug)]
+pub struct DisplayStat {
+    /// Number of lit (white) pixels in the frame.
+    pub lit_pixels: u32,
+    /// Total pixels in the frame.
+    pub total_pixels: u32,
+}
+
+/// Brings up the panel, draws the demo clock, and flushes only its region.
+pub fn run(pins: Peripherals<'static>) -> Result<DisplayStat, BringUpError> {
     let config = SpiConfig::default()
         .with_frequency(Rate::from_mhz(SPI_FREQUENCY_MHZ))
         .with_mode(Mode::_0);
@@ -203,16 +217,28 @@ pub fn run(pins: Peripherals<'static>) -> Result<(), BringUpError> {
     let mut panel = Co5300::new(bus, reset, Delay::new(), geometry);
 
     panel.init().map_err(BringUpError::Display)?;
+
+    let mut frame = MonoBuffer::new(geometry.width, geometry.height);
+    let (clock_width, clock_height) = clock_size(CLOCK_SCALE);
+    let origin = (
+        (geometry.width - clock_width) / 2,
+        (geometry.height - clock_height) / 2,
+    );
+    draw_time(&mut frame, DEMO_HOUR, DEMO_MINUTE, origin, CLOCK_SCALE);
+
+    let clock = geometry.align_region(clock_region(origin, CLOCK_SCALE));
+    let mut expanded = vec![0u8; clock.rgb565_len()];
+    frame.expand_region(clock, &mut expanded);
+
     panel
-        .fill_region(Region::full(geometry.width, geometry.height), Rgb565::RED)
+        .fill_region(Region::full(geometry.width, geometry.height), Rgb565::BLACK)
+        .map_err(BringUpError::Display)?;
+    panel
+        .write_region(clock, &expanded)
         .map_err(BringUpError::Display)?;
 
-    let mut square = [0u8; SIDE * SIDE * 2];
-    for pair in square.chunks_exact_mut(2) {
-        pair.copy_from_slice(&Rgb565::GREEN.to_be_bytes());
-    }
-    let region = Region::new(120, 120, DEMO_SQUARE_SIDE, DEMO_SQUARE_SIDE);
-    panel
-        .write_region(region, &square)
-        .map_err(BringUpError::Display)
+    Ok(DisplayStat {
+        lit_pixels: frame.lit_pixels(),
+        total_pixels: frame.total_pixels(),
+    })
 }

@@ -14,6 +14,7 @@ common = { path = "../crates/common" }
 hal = { path = "../crates/hal" }
 power = { path = "../crates/power" }
 drivers = { path = "../drivers" }
+ui = { path = "../crates/ui" }
 embedded-hal-bus = "0.3"
 
 esp-hal = { version = "1.0.0", default-features = true, features = ["esp32s3", "unstable", "psram"] }

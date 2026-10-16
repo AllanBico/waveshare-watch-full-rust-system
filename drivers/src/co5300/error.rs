@@ -15,6 +15,8 @@ pub enum DisplayError<E> {
     Reset,
     /// The region is empty, inverted, or outside the panel.
     RegionOutOfBounds,
+    /// The window start or extent is not an even number of pixels.
+    RegionMisaligned,
     /// The pixel byte count does not match the region.
     LengthMismatch,
 }
@@ -25,7 +27,9 @@ impl<E> DisplayError<E> {
         match self {
             DisplayError::Bus(_) => Error::HardwareFailure,
             DisplayError::Reset => Error::HardwareFailure,
-            DisplayError::RegionOutOfBounds | DisplayError::LengthMismatch => Error::InvalidInput,
+            DisplayError::RegionOutOfBounds
+            | DisplayError::RegionMisaligned
+            | DisplayError::LengthMismatch => Error::InvalidInput,
         }
     }
 }
@@ -36,6 +40,7 @@ impl<E> fmt::Display for DisplayError<E> {
             DisplayError::Bus(_) => "display transport error",
             DisplayError::Reset => "display reset failed",
             DisplayError::RegionOutOfBounds => "region out of bounds",
+            DisplayError::RegionMisaligned => "region is not 2-pixel aligned",
             DisplayError::LengthMismatch => "pixel length mismatch",
         })
     }

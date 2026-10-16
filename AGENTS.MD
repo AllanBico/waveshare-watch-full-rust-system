@@ -168,6 +168,7 @@
 - Do comment tricky logic, workarounds, and trade-offs.
 - Keep comments short. One line if possible.
 - Delete stale comments immediately.
+- Mark temporary or placeholder code with a `TODO(phase-N):` comment naming the phase that removes or completes it. Remove the comment when the work is done.
 - Every public trait must have a doc comment.
 - Every public item must have a doc comment.
 - Every module must have a module-level doc comment.
