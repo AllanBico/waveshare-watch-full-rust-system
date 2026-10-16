@@ -58,6 +58,16 @@ Lifecycle
 - `power_off() -> Result<(), AxpError>` (reg `0x10` bit 0)
 - `reset_pmic() -> Result<(), AxpError>` (reg `0x10` bit 1)
 
+Power levers (mechanical; `power` owns policy)
+- `set_low_battery_warning(percent: Percent) -> Result<(), AxpError>` (reg `0x1A` high nibble, 5–20%)
+- `set_low_battery_shutdown(percent: Percent) -> Result<(), AxpError>` (reg `0x1A` low nibble, 0–15%)
+- `set_system_shutdown_voltage(mv: Millivolts) -> Result<(), AxpError>` (reg `0x24`, VSYS floor)
+- `set_dcdc_mode(rail: Rail, mode: DcdcMode) -> Result<(), AxpError>` (reg `0x81`, `Auto` | `Pwm`)
+- `set_internal_discharge(on: bool) -> Result<(), AxpError>` (reg `0x10` bit 5; bleeds unused outputs)
+- `set_dvm_ramp(ramp: DvmRamp) -> Result<(), AxpError>` (reg `0x80` bit 5; slew for inrush control)
+- `read_die_temperature() -> Result<u16, AxpError>` (regs `0x3C..0x3D`)
+- `set_pwron_long_press(config: PwronLongPress) -> Result<(), AxpError>` (reg `0x22`)
+
 ## Types
 - Newtypes: `Millivolts(u16)`, `Percent(u8)` (clamped 0..=100).
 - `Status { vbus_good, vbus_in, battery_present, charging, charge_state, power_on }`
