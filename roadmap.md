@@ -206,7 +206,7 @@ battery records); plugging USB (desk) flushes them and `LOG` advances with
 - Black and white only.
 - Pixel budget tracking.
 
-**Test:** Draw a clock. Count lit pixels. Under 5%.
+**Test:** Draw a digit test pattern. Count lit pixels. Under 5%.
 
 ### 3.4 Display Power Control
 - The AMOLED has no dedicated rail. Its power pins tie to VCC3V3 (DCDC1, shared
@@ -266,42 +266,93 @@ measurable power.
 
 ---
 
-## Phase 5: UI Foundation
+## Phase 5: Monochrome UI Foundation
 
-**Goal:** The custom engine renders, the theme/policy system works, one app renders.
+**Goal:** Both modes render through one monochrome engine, the shell owns
+navigation and overlays, and Home is the base screen.
 
-### 5.1 UI Engine Skeleton
-- Define the `Surface` trait and a software renderer backend.
-- Define the `RenderPolicy` (color mode, animations, pixel budget).
-- Render a static label to the display.
+### 5.1 Luminance Core
+- Delete the temporary `clock`, `font`, `mono`, `debug`, and firmware viewer.
+- Define `Theme` structs `WATCH` (1-bit) and `DESK` (8-bit grayscale).
+- Define tone, type, spacing, radius, border, and motion tokens.
+- Replace color policy with pixel mode, animations, and pixel budget.
+- Implement `MonoSurface` and `GraySurface` with fill, stroke, rounded rect,
+  line, and clip.
+- Add the host golden-frame harness.
 
-**Test:** "Hello" appears on screen.
+**Test:** Fills and clips in both surfaces; no out-of-bounds; token snapshots.
 
-### 5.2 Theme System
-- Define theme tokens: colors, spacing, fonts.
-- Two themes: watch (monochrome), desk (16-bit).
-- Runtime switch driven by the render policy.
+### 5.2 Text & Assets (depends on 5.1)
+- Build `tools/assetgen` with `assets/manifest.toml`.
+- Generate 4-bit font masks from an OFL Google Font at exact token sizes.
+- Generate a tabular numeric subset for clock and data.
+- Generate icon coverage masks and an `IconId` enum from SVG sources.
+- Implement text measure, wrap, ellipsis, align, and a fixed-size measurement cache.
+- Watch thresholds coverage to 1-bit; desk blends into Gray8.
+- Report asset sizes; fail assets over 64 KB without approval.
 
-**Test:** Switch theme, UI updates.
+**Test:** Glyph metrics, cache hits and misses, missing glyph fallback, asset-size
+gate, text golden frames.
 
-### 5.3 App Trait
-- `App` trait: `render()`, `handle_event()`, `on_enter()`, `on_exit()`.
-- App registry with names.
+### 5.3 Layout Engine (depends on 5.2)
+- Implement integer constraints and `Fixed`, `Fill`, `Percent`, `Fit`.
+- Add `Row`, `Column`, `Stack`, `Grid`, `List`, `Scroll`, and `Spacer`.
+- Run measure then arrange; no layout during paint.
+- Integrate safe area and cached text measurement.
+- Enforce max depth 32.
+- Lay out only visible rows in fixed-height lists.
 
-**Test:** Register two apps, switch between them.
+**Test:** Deterministic layout snapshots, grow/shrink, depth cap, overflow and
+clip, scroll viewport.
 
-### 5.4 Clock App
-- Monochrome clock.
-- Updates once per minute.
-- Dirty rect only.
+### 5.4 Scene, Diff & Damage (depends on 5.3)
+- Build a fixed-capacity node arena with stable `WidgetId`s.
+- Implement build, layout, diff, damage, paint, and flush passes.
+- Store a previous-frame snapshot of id, rect, and fingerprint.
+- Dirty = old rect union new rect; merge, coalesce, and cap the rect count.
+- Collapse a moving container to one dirty rect.
+- Repair damage inside one framebuffer, clipped to the damage rect.
+- Expand Mono bits and convert Gray8 through a luma LUT.
+- Sync flushes to TE; cap desk at 60 fps.
+- Full redraw only on boot, mode switch, or theme switch.
 
-**Test:** Clock displays correct time. Updates without full redraw.
+**Test:** Move, insert, and remove produce expected dirty rects; no full-screen
+damage; watch path allocates zero; dirty-rect cap holds; theme switch redraws all.
 
-### 5.5 Simulator
-- Desktop target for UI.
-- Same code renders to SDL window.
+### 5.5 Components & Patterns (depends on 5.2-5.4)
+- Implement the common widget behavior over enum-backed widget kinds.
+- Add Button, IconButton, ListItem, Toggle, Slider, Checkbox, Radio, Input,
+  Progress, Badge, Dialog, Toast, ContextMenu, Tabs, and StatusIndicator.
+- Support normal, focused, pressed, disabled, error, and selected states.
+- Draw a visible focus ring and register hit rects.
+- Add ScreenScaffold, EmptyState, LoadingState, ErrorState, and Confirm patterns.
 
-**Test:** Run clock app on desktop.
+**Test:** State rendering, pure props, focus traversal, hit testing, no app logic,
+and per-component watch pixel budget.
+
+### 5.6 Shell & Navigation (depends on 5.5)
+- Define the `App` trait and `AppContext`; the registry is implemented by firmware.
+- Add app lifecycle: enter, exit, tick, action.
+- Add layers: app, app drawer, quick settings, dialog, toast.
+- Add the route stack and abstract actions.
+- Enforce back order: dialog, overlay, app route, home.
+- Add the edge-gesture state machine with slop, threshold, and velocity.
+- Snap in watch; animate in desk.
+- Block input behind modal dialogs; toasts never take focus.
+- Move status ownership into the shell.
+
+**Test:** Back order, gesture traces, modal blocking, lifecycle, app isolation.
+
+### 5.7 Home + System UI (depends on 5.6)
+- Pin `Home` as the base app for both modes; the clock is a complication.
+- Watch Home: light clock, date, battery, minimal chrome.
+- Desk Home: grayscale dashboard using the same components.
+- Open the app drawer from the bottom edge; use three columns.
+- Open quick settings from the top edge; use two columns.
+- Switch theme and mode at runtime without reboot.
+
+**Test:** Boot to Home, drawer and quick-settings gestures, theme switch, mode
+switch, watch under 5% lit pixels, desk 60 fps budget, no full flush after boot.
 
 ---
 
@@ -314,12 +365,12 @@ measurable power.
 - Initialize minimum peripherals.
 - Enter deep sleep.
 
-**Test:** Watch boots, shows clock, sleeps.
+**Test:** Watch boots, shows Home, sleeps.
 
 ### 6.2 Wake Cycle
 - Wake on motion, button, or timer.
 - Verify wake reason.
-- Show clock if appropriate.
+- Show Home if appropriate.
 - Return to sleep.
 
 **Test:** 100 wake cycles. No crashes. Battery voltage logged each time.
@@ -349,7 +400,7 @@ measurable power.
 - Initialize full peripherals.
 - Flip the render policy to desk mode.
 
-**Test:** Plug USB, UI switches to color theme.
+**Test:** Plug USB, UI switches to desk monochrome theme.
 
 ### 7.2 Mode Switch
 - Graceful switch from watch to desk.

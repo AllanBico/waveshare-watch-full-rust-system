@@ -26,8 +26,8 @@
 ## Mode Rules
 - One binary. Mode is chosen at runtime from AXP2101 VBUS detection only.
 - Both modes are `no_std`. The compiler cannot separate them; the runtime state machine does.
-- Watch mode: 80 MHz max, radios off, deep sleep default, monochrome only, no animations, no background jobs.
-- Desk mode: 240 MHz allowed, radios on, animations on, voice active, sync active.
+- Watch mode: 80 MHz max, radios off, deep sleep default, 1-bit monochrome only, no animations, no background jobs.
+- Desk mode: 240 MHz allowed, radios on, 8-bit grayscale monochrome, animations on, voice active, sync active.
 - Watch boot must never initialize voice, sync, or radios. Their tasks are never spawned, and `power` keeps their rails off.
 - Desk boot initializes the full set of subsystems.
 - Mode switch must be graceful: flush state, finish the operation, then switch.
@@ -41,30 +41,55 @@
 - Sleep is the default state. Awake is the exception.
 - Pre-sleep checklist must run before every sleep.
 - `PowerManager` is the single owner of all power rails and of the render policy.
-- On switch to watch: kill the mic/model rail, stop the wake task, flip the render policy to mono/no-anim, clamp CPU to 80 MHz.
+- On switch to watch: kill the mic/model rail, stop the wake task, flip the render policy to 1-bit/no-anim, clamp CPU to 80 MHz.
 - Battery figures are goals, not gates. Measure current in every state and never regress.
 - Logging only in desk mode. Never in watch mode.
 
 ## Memory Rules
 - `no_std` does not mean no heap. An allocator (`esp-alloc`) is available in the one binary.
-- Heap is a policy: allowed in desk mode for the UI, never used in the wake/sleep/render hot path.
+- Heap is a policy: allowed in desk mode for app data, never in the UI build, layout, paint, or flush path, and never in watch mode.
+- The UI scene arena is fixed-capacity and reused. No per-frame allocation in either mode.
 - `heapless` for queues and buffers on hot paths.
-- PSRAM for framebuffers and large assets only.
+- Desk framebuffer (8-bit grayscale) in PSRAM. Watch framebuffer (1-bit) in internal SRAM.
 - Internal SRAM for hot paths.
 - Wake stub uses RTC memory only.
 - No dynamic allocation in the wake path.
 
 ## UI Rules
-- One in-house engine serves both modes. No mirui, no ECS.
-- Backend-agnostic: draw calls target a `Surface` trait, so watch (1-bit SRAM) and desk (16-bit PSRAM) share code.
-- Behavior is driven by a runtime `RenderPolicy`: color mode, animations, pixel budget.
-- Widgets never branch on `Mode`. They read the policy.
-- Dirty rects only. Full redraw only on mode switch.
-- Theme tokens, not hardcoded values.
-- Watch mode: monochrome, no animations, under 5% lit pixels.
-- Desk mode: 16-bit color, animations allowed.
-- Desk-only assets must be gated by the policy at load time, not just at draw time.
-- No layout changes without testing in the simulator first.
+- One in-house engine serves both modes. No mirui, no ECS, no retained widget tree with state.
+- Both modes are monochrome on true black. Watch renders 1-bit; desk renders 8-bit grayscale with antialiasing.
+- Draw calls target a `Surface` trait. `MonoSurface` (1-bit SRAM) and `GraySurface` (8-bit PSRAM) share one luminance painter.
+- Behavior is driven by a runtime `RenderPolicy`: pixel mode, animations, pixel budget.
+- Widgets never branch on `Mode`. They read the policy and the theme.
+- Widgets are pure functions of props. Application state lives in apps, never in widgets.
+- Widgets never touch hardware and never allocate.
+- Build and layout first, then paint. Layout is deterministic and integer-only.
+- Widget tree depth is capped at 32.
+- The scene arena is fixed-capacity. No dynamic allocation in build, layout, paint, or flush.
+- Stable widget IDs plus a previous-frame fingerprint snapshot drive damage automatically.
+- Dirty rects only. Merge and coalesce before paint and cap the rect count. No full-screen dirty rect except boot, mode switch, or theme switch.
+- Single framebuffer in both modes. The CO5300 has its own GRAM and TE; add an MCU double buffer only after measured tearing.
+- Paint only inside damage rects. Never paint or flush what is not visible.
+- No full framebuffer push except boot, mode switch, or theme switch. Use TE-synced partial writes.
+- Watch: no animations, repaint only on state change, under 5% lit pixels.
+- Desk: 60 fps cap, damage-based animation, 80 MHz QSPI target.
+- Theme tokens only. No hardcoded tones, spacing, radii, borders, or motion values.
+- Themes are compiled-in structs, never trait objects or globals. Runtime switch without reboot. A theme switch dirties all visible widgets.
+- Fonts and icons are compiled in. No runtime font, icon, SVG, or theme parsing or loading.
+- Text rendering lives only in `ui`. Text measurement is cached. Clock and data digits are tabular.
+- Assets use 4-bit coverage masks. Watch thresholds to 1-bit; desk blends. Watch icon output is 1-bit, with no animated icons.
+- Report asset sizes at build time; no asset over 64 KB without approval.
+- No shadows, blur, gradients, or filters in v1.
+- No layout changes without host golden-frame tests in both watch and desk.
+
+## Display Rules
+- All panel writes go through `hal::Display`; only the display adapter and the `ui` flush path touch the panel.
+- Use TE to synchronize partial flushes. Never tear a frame.
+- Flush only damaged regions. Mono expands to RGB565 in chunks; desk converts Gray8 through a luma LUT.
+- Keep the desk framebuffer in PSRAM and the watch framebuffer in internal SRAM.
+- Never drive QSPI into an unpowered panel. Sleep the panel before cutting its enable.
+- After panel power loss, re-run full init and re-flush the retained frame.
+- Target 80 MHz QSPI in desk. Keep watch at the lowest rate that meets the wake budget.
 
 ## Storage Rules
 - TicKV as KV engine. Custom time-series on top.
@@ -100,17 +125,21 @@
 - `drivers` implement traits.
 - `power` owns rails and the render policy.
 - `storage` owns flash.
-- `ui` owns the framebuffer.
-- `apps` own their state.
-- `firmware` is one crate, one binary. `main` branches to `watch_init` or `desk_init` after the VBUS read.
+- `ui` owns tokens, surfaces, layout, widgets, renderer, damage, and the framebuffer.
+- `shell` owns the app trait, navigation, overlays, focus routing, dialogs, toasts, and app lifecycle. `shell` depends on `ui`, never on concrete apps.
+- `apps` own their state and depend on `shell` and `ui`. Apps never implement global navigation.
+- `firmware` is one crate, one binary. `main` branches to `watch_init` or `desk_init` after the VBUS read, and wires apps and services into the shell.
 
 ## Testing Rules
-- Simulator first. Hardware second.
+- Host tests first. Hardware second.
 - Unit tests for logic. Integration tests for drivers.
 - Power measurements on hardware only.
 - Every feature must be testable in isolation.
 - No feature ships without a way to verify it.
 - Every mode-switch transition has a test.
+- UI changes require golden-frame tests for both watch and desk.
+- Damage-rect behavior is tested for move, insert, remove, and theme switch.
+- Watch UI must pass the 5% lit-pixel budget.
 
 ## Logging Rules
 - Logging is a feature flag. Off by default in watch mode.
@@ -132,6 +161,7 @@
 ## Feature Flag Rules
 - There are no `watch` or `desk` feature flags. Mode is runtime, not compile-time.
 - Only genuine variants are features: `simulator`, `logging`, `trace`.
+- The simulator is a host tool and test target, not a watch or desk mode.
 - The simulator must never compile hardware drivers.
 - Feature flags must be documented in the workspace `Cargo.toml`.
 
