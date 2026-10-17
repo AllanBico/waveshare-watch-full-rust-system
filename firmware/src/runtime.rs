@@ -97,6 +97,8 @@ pub struct InputState<'a, T: Touch, I: Imu> {
     pub wake: Option<WakeReason>,
     /// IMU Wake-on-Motion flag, when it could be read before init.
     pub wom: Option<bool>,
+    /// PWR button state after the boot debounce.
+    pub button: bool,
     report: TouchReport,
     motion: MotionSample,
     touch_error: Option<u16>,
@@ -118,6 +120,7 @@ impl<'a, T: Touch, I: Imu> InputState<'a, T, I> {
             imu,
             wake: None,
             wom: None,
+            button: false,
             report: TouchReport::empty(),
             motion: MotionSample::ZERO,
             touch_error,
@@ -217,6 +220,7 @@ fn redraw_input<T: Touch, I: Imu>(display: &mut Option<Panel>, input: &InputStat
             motion: &input.motion,
             wake: input.wake,
             wom: input.wom,
+            button: input.button,
             error: input.error(),
         };
         let _ = panel.draw_input_viewer(&viewer);
@@ -260,7 +264,7 @@ pub fn report_boot(psram_bytes: usize) {
     let revision = Efuse::chip_revision();
     let mac = Efuse::mac_address();
 
-    println!("=== wv2 firmware (Phase 4.3 wake-on-motion) ===");
+    println!("=== wv2 firmware (Phase 4.4 button wake) ===");
     println!(
         "chip:  {} rev v{}.{}",
         esp_hal::chip!(),

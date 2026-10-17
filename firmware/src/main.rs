@@ -15,7 +15,7 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
-use esp_hal::gpio::{Level, Output, OutputConfig, RtcPin};
+use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull, RtcPin};
 use esp_hal::rtc_cntl::sleep::{Ext1WakeupSource, TimerWakeupSource, WakeupLevel};
 use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
@@ -58,6 +58,11 @@ const WOM_THRESHOLD_MG: u8 = 80;
 /// Accelerometer samples ignored after entering Wake-on-Motion.
 const WOM_BLANKING_SAMPLES: u8 = 10;
 
+/// Number of PWR button samples used for the boot debounce.
+const BUTTON_SAMPLES: u8 = 4;
+/// Spacing between PWR button samples.
+const BUTTON_SAMPLE_PERIOD: Duration = Duration::from_millis(5);
+
 /// SRAM heap size reserved for the runtime.
 const SRAM_HEAP_BYTES: usize = 64 * 1024;
 
@@ -72,9 +77,19 @@ async fn main(_spawner: Spawner) {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
-    report_boot(psram_bytes);
-
     let raw_wake = wake_reason();
+    let mut pwr_button = peripherals.GPIO10;
+    let button_pressed = if matches!(raw_wake, Some(WakeReason::Button)) {
+        let input = Input::new(
+            pwr_button.reborrow(),
+            InputConfig::default().with_pull(Pull::None),
+        );
+        debounce_button(&input).await
+    } else {
+        false
+    };
+
+    report_boot(psram_bytes);
 
     let bus = open_bus(peripherals.I2C0, peripherals.GPIO15, peripherals.GPIO14).await;
 
@@ -102,23 +117,27 @@ async fn main(_spawner: Spawner) {
     let vbus = power.is_vbus_present().unwrap_or(false);
     let mode = if vbus { Mode::Desk } else { Mode::Watch };
 
-    // Ext1 is shared by the PWR button and the IMU INT1. Read the IMU
-    // Wake-on-Motion flag before init clears it, so a motion wake is logged as
-    // Motion instead of Button.
+    // Read the IMU Wake-on-Motion flag before init clears it, so a motion wake
+    // is logged as Motion instead of Button.
     let mut imu = Qmi8658::new(RefCellDevice::new(bus), board::IMU_I2C_ADDR, Delay::new());
     let wom = if raw_wake.is_some() {
         imu.take_wake_event().ok()
     } else {
         None
     };
-    let motion_wake = matches!(raw_wake, Some(WakeReason::Button)) && wom == Some(true);
+    // A held PWR button takes precedence over a coincident WoM event.
+    let motion_wake =
+        matches!(raw_wake, Some(WakeReason::Button)) && wom == Some(true) && !button_pressed;
     let wake = if motion_wake {
         Some(WakeReason::Motion)
     } else {
         raw_wake
     };
     match wake {
-        Some(reason) => println!("[pm] woke by {:?} (wom {:?})", reason, wom),
+        Some(reason) => println!(
+            "[pm] woke by {:?} (wom {:?}, btn {})",
+            reason, wom, button_pressed
+        ),
         None => println!("[pm] cold boot"),
     }
 
@@ -221,6 +240,7 @@ async fn main(_spawner: Spawner) {
                 motion: &motion,
                 wake,
                 wom,
+                button: button_pressed,
                 error: touch_error.or(imu_error),
             };
             if let Err(error) = panel.draw_input_viewer(&viewer) {
@@ -245,6 +265,7 @@ async fn main(_spawner: Spawner) {
         );
         input.wake = wake;
         input.wom = wom;
+        input.button = button_pressed;
 
         if mode == Mode::Desk {
             desk_keepalive(&mut power, &mut display, &mut input).await;
@@ -291,9 +312,19 @@ async fn main(_spawner: Spawner) {
 
     let mut rtc = Rtc::new(peripherals.LPWR);
     let timer = TimerWakeupSource::new(core::time::Duration::from_millis(u64::from(plan.timer_ms)));
-    let mut pwr_button = peripherals.GPIO10;
     let mut imu_int = peripherals.GPIO21;
     let mut wake_pins: [&mut dyn RtcPin; 2] = [&mut pwr_button, &mut imu_int];
     let external = Ext1WakeupSource::new(&mut wake_pins, WakeupLevel::High);
     rtc.sleep_deep(&[&timer, &external]);
+}
+
+async fn debounce_button(pin: &Input<'_>) -> bool {
+    let mut high = 0u8;
+    for _ in 0..BUTTON_SAMPLES {
+        if pin.is_high() {
+            high += 1;
+        }
+        Timer::after(BUTTON_SAMPLE_PERIOD).await;
+    }
+    high * 2 > BUTTON_SAMPLES
 }

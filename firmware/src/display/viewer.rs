@@ -1,8 +1,8 @@
-//! Phase 4.3 input viewer.
+//! Phase 4.4 input and wake viewer.
 //!
-//! Draws the wake reason, WoM state, touch points, and accelerometer/gyroscope
-//! samples so input and wake behavior can be verified on the panel. This is
-//! bring-up output, not the Phase 5 UI.
+//! Draws the wake reason, WoM state, button state, touch points, and
+//! accelerometer/gyroscope samples so input and wake behavior can be verified
+//! on the panel. This is bring-up output, not the Phase 5 UI.
 // TODO(phase-5): replace with the app renderer and shared surface.
 
 use common::{MotionSample, Region, TouchReport, WakeReason, MAX_TOUCH_POINTS};
@@ -29,6 +29,8 @@ pub struct Viewer<'a> {
     pub wake: Option<WakeReason>,
     /// IMU Wake-on-Motion flag; `None` when it could not be read.
     pub wom: Option<bool>,
+    /// PWR button state after the boot debounce.
+    pub button: bool,
     /// Stable error code, when an input read failed.
     pub error: Option<u16>,
 }
@@ -43,10 +45,7 @@ impl Display {
         let (error_label_width, _) = text_size("ERR ", SCALE);
         let (info_digits_width, _) = digits_size(INFO_DIGITS, SCALE);
         let error_width = error_label_width + info_digits_width;
-        let wom_width = text_size("WOM 0", SCALE)
-            .0
-            .max(text_size("WOM --", SCALE).0);
-        let info_width = error_width.max(wom_width);
+        let info_width = error_width.max(text_size("WOM -- BTN 0", SCALE).0);
 
         let (point_label_width, _) = text_size("P0 ", SCALE);
         let (coord_width, _) = digits_size(COORD_DIGITS, SCALE);
@@ -144,10 +143,13 @@ fn draw_info(frame: &mut MonoBuffer, view: &Viewer<'_>, origin: (u16, u16), widt
         return;
     }
 
-    let label = match view.wom {
-        Some(true) => "WOM 1",
-        Some(false) => "WOM 0",
-        None => "WOM --",
+    let label = match (view.wom, view.button) {
+        (Some(true), true) => "WOM 1 BTN 1",
+        (Some(true), false) => "WOM 1 BTN 0",
+        (Some(false), true) => "WOM 0 BTN 1",
+        (Some(false), false) => "WOM 0 BTN 0",
+        (None, true) => "WOM -- BTN 1",
+        (None, false) => "WOM -- BTN 0",
     };
     let (line_width, _) = text_size(label, SCALE);
     draw_text(
