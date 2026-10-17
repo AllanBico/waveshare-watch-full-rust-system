@@ -186,11 +186,11 @@ fn set_mode_applies_policy_and_rails() {
     pm.set_mode(Mode::Desk).unwrap();
     assert_eq!(pm.mode(), Mode::Desk);
     assert_eq!(pm.state(), PowerState::Desk);
-    assert_eq!(pm.policy().color, common::ColorMode::Rgb565);
+    assert_eq!(pm.policy().pixel, common::PixelMode::Gray8);
     assert!(pm.plan().wants_on(Rail::Cpusldo));
 
     pm.set_mode(Mode::Watch).unwrap();
-    assert_eq!(pm.policy().color, common::ColorMode::Mono);
+    assert_eq!(pm.policy().pixel, common::PixelMode::Mono1);
     assert_eq!(pm.state(), PowerState::ActiveWatch);
 }
 

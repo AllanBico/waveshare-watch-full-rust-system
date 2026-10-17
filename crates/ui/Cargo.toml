@@ -3,9 +3,5 @@ name = "ui"
 version.workspace = true
 edition.workspace = true
 
-[features]
-default = []
-debug-text = []
-
 [dependencies]
 common = { path = "../common" }

@@ -4,9 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-default = ["ui/debug-text"]
+default = []
 logging = []
-trace = ["ui/debug-text"]
+trace = []
 simulator = []
 
 [dependencies]

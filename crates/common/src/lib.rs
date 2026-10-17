@@ -31,7 +31,7 @@ pub use log_codec::{decode_log, encode_log, LogError, MAX_ENCODED_LOG_LEN};
 pub use log_entry::{LogEntry, SCHEMA_VERSION};
 pub use mode::Mode;
 pub use motion::{Acceleration, AngularRate, MotionSample, WakeOnMotion};
-pub use render_policy::{ColorMode, RenderPolicy};
+pub use render_policy::{PixelMode, RenderPolicy};
 pub use time::Timestamp;
 pub use touch::{TouchPoint, TouchReport, MAX_TOUCH_POINTS};
 pub use units::{Millivolts, Percent};

@@ -13,7 +13,7 @@ use esp_hal::system::SleepSource;
 use esp_hal::time::Rate;
 use esp_println::println;
 
-use common::{DateTime, MotionSample, Timestamp, TouchReport, WakeReason};
+use common::{DateTime, Timestamp, TouchReport, WakeReason};
 use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
 use embedded_hal_bus::i2c::RefCellDevice;
@@ -21,7 +21,6 @@ use hal::{Imu, Power, Touch};
 use power::PowerManager;
 
 use crate::audio::Audio as AudioDevice;
-use crate::display::{self, Display as Panel};
 
 /// CPU clock for bring-up. Mode-based clock switching comes later.
 pub const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
@@ -89,7 +88,7 @@ fn print_datetime(label: &str, dt: &DateTime) {
     );
 }
 
-/// Input devices plus the latest viewer snapshot.
+/// Input devices plus the latest input snapshot.
 pub struct InputState<'a, T: Touch, I: Imu> {
     /// Touch controller.
     pub touch: &'a mut T,
@@ -102,7 +101,6 @@ pub struct InputState<'a, T: Touch, I: Imu> {
     /// PWR button state after the boot debounce.
     pub button: bool,
     report: TouchReport,
-    motion: MotionSample,
     touch_error: Option<u16>,
     imu_error: Option<u16>,
     log: bool,
@@ -124,7 +122,6 @@ impl<'a, T: Touch, I: Imu> InputState<'a, T, I> {
             wom: None,
             button: false,
             report: TouchReport::empty(),
-            motion: MotionSample::ZERO,
             touch_error,
             imu_error,
             log,
@@ -136,11 +133,9 @@ impl<'a, T: Touch, I: Imu> InputState<'a, T, I> {
     }
 }
 
-/// Stays awake in desk mode until USB is removed, updating the input viewer
-/// and logging PWR button transitions for bring-up debugging.
+/// Stays awake in desk mode until USB is removed, logging input for bring-up.
 pub async fn desk_keepalive<P: Power, T: Touch, I: Imu>(
     power: &mut PowerManager<P>,
-    display: &mut Option<Panel>,
     input: &mut InputState<'_, T, I>,
     button: &Input<'_>,
     mut audio: Option<&mut AudioDevice<Bus>>,
@@ -149,9 +144,9 @@ pub async fn desk_keepalive<P: Power, T: Touch, I: Imu>(
     let mut ticks = 0u32;
     loop {
         Timer::after(INPUT_POLL_PERIOD).await;
-        poll_input(display, input);
+        poll_input(input);
         let was_pressed = input.button;
-        poll_button(display, input, button);
+        poll_button(input, button);
         if input.button && !was_pressed {
             if let Some(audio) = audio.as_mut() {
                 match audio.record_and_play().await {
@@ -180,11 +175,7 @@ pub async fn desk_keepalive<P: Power, T: Touch, I: Imu>(
     }
 }
 
-fn poll_button<T: Touch, I: Imu>(
-    display: &mut Option<Panel>,
-    input: &mut InputState<'_, T, I>,
-    button: &Input<'_>,
-) {
+fn poll_button<T: Touch, I: Imu>(input: &mut InputState<'_, T, I>, button: &Input<'_>) {
     let pressed = button.is_high();
     if pressed == input.button {
         return;
@@ -192,26 +183,20 @@ fn poll_button<T: Touch, I: Imu>(
     input.button = pressed;
     // TODO(phase-5): remove the UART button trace once the UI consumes it.
     println!("[btn] {}", if pressed { "pressed" } else { "released" });
-    redraw_input(display, input);
 }
 
 /// Keeps the panel awake for `window` while sampling touch and motion.
-pub async fn watch_awake<T: Touch, I: Imu>(
-    display: &mut Option<Panel>,
-    input: &mut InputState<'_, T, I>,
-    window: Duration,
-) {
+pub async fn watch_awake<T: Touch, I: Imu>(input: &mut InputState<'_, T, I>, window: Duration) {
     let deadline = Instant::now() + window;
     while Instant::now() < deadline {
         Timer::after(INPUT_POLL_PERIOD).await;
-        poll_input(display, input);
+        poll_input(input);
     }
 }
 
-fn poll_input<T: Touch, I: Imu>(display: &mut Option<Panel>, input: &mut InputState<'_, T, I>) {
+fn poll_input<T: Touch, I: Imu>(input: &mut InputState<'_, T, I>) {
     let previous_error = input.error();
     let mut touch_changed = false;
-    let mut motion_changed = false;
 
     match input.touch.read() {
         Ok(report) => {
@@ -231,36 +216,13 @@ fn poll_input<T: Touch, I: Imu>(display: &mut Option<Panel>, input: &mut InputSt
     }
 
     match input.imu.read_motion() {
-        Ok(motion) => {
-            input.imu_error = None;
-            if motion != input.motion {
-                input.motion = motion;
-                motion_changed = true;
-            }
-        }
+        Ok(_) => input.imu_error = None,
         Err(_) => input.imu_error = Some(common::Error::HardwareFailure.code()),
     }
 
     let error_changed = input.error() != previous_error;
-    if touch_changed || motion_changed || error_changed {
-        redraw_input(display, input);
-    }
     if input.log && (touch_changed || error_changed) {
         log_touch(input);
-    }
-}
-
-fn redraw_input<T: Touch, I: Imu>(display: &mut Option<Panel>, input: &InputState<'_, T, I>) {
-    if let Some(panel) = display.as_mut() {
-        let viewer = display::Viewer {
-            touch: &input.report,
-            motion: &input.motion,
-            wake: input.wake,
-            wom: input.wom,
-            button: input.button,
-            error: input.error(),
-        };
-        let _ = panel.draw_input_viewer(&viewer);
     }
 }
 

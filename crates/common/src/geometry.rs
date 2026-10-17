@@ -53,6 +53,65 @@ impl Region {
         self.x as u32 + self.width as u32 <= width as u32
             && self.y as u32 + self.height as u32 <= height as u32
     }
+
+    /// The right edge, exclusive.
+    pub const fn right(self) -> u16 {
+        self.x.saturating_add(self.width)
+    }
+
+    /// The bottom edge, exclusive.
+    pub const fn bottom(self) -> u16 {
+        self.y.saturating_add(self.height)
+    }
+
+    /// Whether a point lies inside the region.
+    pub const fn contains(self, x: u16, y: u16) -> bool {
+        x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
+    }
+
+    /// The overlap of two regions, or an empty region when they do not overlap.
+    pub const fn intersection(self, other: Self) -> Self {
+        let x = if self.x > other.x { self.x } else { other.x };
+        let y = if self.y > other.y { self.y } else { other.y };
+        let right = if self.right() < other.right() {
+            self.right()
+        } else {
+            other.right()
+        };
+        let bottom = if self.bottom() < other.bottom() {
+            self.bottom()
+        } else {
+            other.bottom()
+        };
+        if right <= x || bottom <= y {
+            Self::new(x, y, 0, 0)
+        } else {
+            Self::new(x, y, right - x, bottom - y)
+        }
+    }
+
+    /// The smallest region covering both inputs.
+    pub const fn union(self, other: Self) -> Self {
+        if self.is_empty() {
+            return other;
+        }
+        if other.is_empty() {
+            return self;
+        }
+        let x = if self.x < other.x { self.x } else { other.x };
+        let y = if self.y < other.y { self.y } else { other.y };
+        let right = if self.right() > other.right() {
+            self.right()
+        } else {
+            other.right()
+        };
+        let bottom = if self.bottom() > other.bottom() {
+            self.bottom()
+        } else {
+            other.bottom()
+        };
+        Self::new(x, y, right - x, bottom - y)
+    }
 }
 
 #[cfg(test)]
@@ -83,5 +142,32 @@ mod tests {
         assert!(Region::new(400, 0, 10, 10).is_within(410, 10));
         assert!(!Region::new(401, 0, 10, 10).is_within(410, 10));
         assert!(!Region::new(0, 5, 10, 6).is_within(10, 10));
+    }
+
+    #[test]
+    fn edges_are_exclusive() {
+        let region = Region::new(2, 3, 4, 5);
+        assert_eq!(region.right(), 6);
+        assert_eq!(region.bottom(), 8);
+        assert!(region.contains(2, 3));
+        assert!(region.contains(5, 7));
+        assert!(!region.contains(6, 7));
+        assert!(!region.contains(5, 8));
+    }
+
+    #[test]
+    fn intersection_is_the_overlap() {
+        let a = Region::new(0, 0, 10, 10);
+        let b = Region::new(5, 5, 10, 10);
+        assert_eq!(a.intersection(b), Region::new(5, 5, 5, 5));
+        assert!(a.intersection(Region::new(20, 20, 5, 5)).is_empty());
+    }
+
+    #[test]
+    fn union_covers_both_inputs() {
+        let a = Region::new(2, 3, 4, 5);
+        let b = Region::new(8, 1, 2, 2);
+        assert_eq!(a.union(b), Region::new(2, 1, 8, 7));
+        assert_eq!(a.union(Region::new(0, 0, 0, 0)), a);
     }
 }

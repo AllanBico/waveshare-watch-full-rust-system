@@ -1,24 +1,27 @@
-//! The custom UI engine.
+//! The custom monochrome UI engine.
 //!
-//! Theme tokens, widget tree, layout, renderer, dirty-rect diffing, and
-//! animation. Renders into a `Surface` under a runtime `RenderPolicy`.
-//!
-//! Phase 3.3 ships only the monochrome render target: the [`MonoBuffer`], a
-//! temporary clock renderer, and the lit-pixel accounting the render policy
-//! budgets against.
+//! Both runtime modes share one luminance painter. Watch renders into a 1-bit
+//! surface, desk into an 8-bit grayscale surface. Themes, surfaces, and drawing
+//! primitives live here; text, layout, components, and the shell arrive in
+//! later Phase 5 steps.
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 
 extern crate alloc;
 
-mod clock;
-#[cfg(feature = "debug-text")]
-mod debug;
-mod font;
-mod mono;
+mod bringup;
+mod luma;
+mod painter;
+mod surface;
+#[cfg(test)]
+mod test_support;
+mod theme;
 
-pub use clock::{clock_region, clock_size, digits_size, draw_digits, draw_time};
-#[cfg(feature = "debug-text")]
-pub use debug::{draw_text, text_size};
-pub use mono::MonoBuffer;
+pub use bringup::draw_bringup;
+pub use luma::Luma;
+pub use painter::{Painter, MAX_CLIP_DEPTH};
+pub use surface::{GraySurface, MonoSurface, Surface, SurfaceError};
+pub use theme::{
+    Borders, FontId, Motion, Radii, Spacing, TextStyle, Theme, Tones, Typography, Weight,
+};

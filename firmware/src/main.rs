@@ -23,7 +23,7 @@ use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
-use common::{Mode, MotionSample, TouchReport, WakeOnMotion, WakeReason};
+use common::{Mode, WakeOnMotion, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
 use drivers::es7210::Es7210;
@@ -52,13 +52,13 @@ esp_bootloader_esp_idf::esp_app_desc!();
 const AWAKE_BUDGET_MS: u32 = 5_000;
 
 /// How long to stay awake before sleeping in watch mode.
-// TODO(phase-5): return to the 2 s watch budget once the input viewer is gone.
+// TODO(phase-5): return to the 2 s watch budget once Home renders.
 const AWAKE_WINDOW: Duration = Duration::from_secs(5);
 
 /// Deep-sleep timer interval. Longer for wake-on-motion debugging.
 const SLEEP_TIMER_MS: u32 = 30_000;
 
-/// Wake-on-Motion threshold. Tune on hardware with the input viewer.
+/// Wake-on-Motion threshold. Tune on hardware during wake verification.
 const WOM_THRESHOLD_MG: u8 = 80;
 /// Accelerometer samples ignored after entering Wake-on-Motion.
 const WOM_BLANKING_SAMPLES: u8 = 10;
@@ -238,20 +238,8 @@ async fn main(_spawner: Spawner) {
     if let Some(panel) = display.as_mut() {
         if let Err(error) = panel.init() {
             println!("[lcd] init failed: {:?}", error);
-        } else {
-            let touch_report = TouchReport::empty();
-            let motion = MotionSample::ZERO;
-            let viewer = display::Viewer {
-                touch: &touch_report,
-                motion: &motion,
-                wake,
-                wom,
-                button: button_pressed,
-                error: touch_error.or(imu_error),
-            };
-            if let Err(error) = panel.draw_input_viewer(&viewer) {
-                println!("[lcd] viewer failed: {:?}", error);
-            }
+        } else if let Err(error) = panel.draw_bringup() {
+            println!("[lcd] bring-up failed: {:?}", error);
         }
     }
 
@@ -310,14 +298,7 @@ async fn main(_spawner: Spawner) {
                 pwr_button.reborrow(),
                 InputConfig::default().with_pull(Pull::Up),
             );
-            desk_keepalive(
-                &mut power,
-                &mut display,
-                &mut input,
-                &button_input,
-                audio.as_mut(),
-            )
-            .await;
+            desk_keepalive(&mut power, &mut input, &button_input, audio.as_mut()).await;
             if let Some(audio) = audio.as_mut() {
                 if let Err(error) = audio.shutdown() {
                     println!("[audio] shutdown failed: {:?}", error);
@@ -329,7 +310,7 @@ async fn main(_spawner: Spawner) {
             }
             Timer::after(AWAKE_WINDOW).await;
         } else {
-            watch_awake(&mut display, &mut input, AWAKE_WINDOW).await;
+            watch_awake(&mut input, AWAKE_WINDOW).await;
         }
     }
 
