@@ -33,8 +33,6 @@ mod runtime;
 use esp_alloc as _;
 use esp_backtrace as _;
 
-#[cfg(not(feature = "trace"))]
-use runtime::refresh;
 use runtime::{desk_keepalive, halt, open_bus, report_boot, report_time, wake_reason};
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -43,11 +41,8 @@ esp_bootloader_esp_idf::esp_app_desc!();
 const AWAKE_BUDGET_MS: u32 = 5_000;
 
 /// How long to stay awake before sleeping in watch mode.
-#[cfg(feature = "trace")]
+// TODO(phase-6): return to the 2 s watch budget once the storage viewer is gone.
 const AWAKE_WINDOW: Duration = Duration::from_secs(5);
-/// How long to stay awake before sleeping in watch mode.
-#[cfg(not(feature = "trace"))]
-const AWAKE_WINDOW: Duration = Duration::from_secs(2);
 
 /// SRAM heap size reserved for the runtime.
 const SRAM_HEAP_BYTES: usize = 64 * 1024;
@@ -105,12 +100,13 @@ async fn main(_spawner: Spawner) {
         .read_battery_millivolts()
         .map(|millivolts| millivolts.value())
         .unwrap_or(0);
-    let report = persist::init(peripherals.FLASH, mode, battery_mv);
+    let report = persist::init(peripherals.FLASH, mode, battery_mv, wake);
     if mode == Mode::Desk {
         println!(
-            "[kv] {} boot {} error {:?}",
+            "[kv] {} boot {} log {:?} error {:?}",
             report.label(),
             report.boot(),
+            report.log(),
             report.error_code()
         );
     }
@@ -136,20 +132,14 @@ async fn main(_spawner: Spawner) {
     if let Some(display) = display.as_mut() {
         if let Err(error) = display.init() {
             println!("[lcd] init failed: {:?}", error);
-        } else {
-            #[cfg(feature = "trace")]
-            {
-                if let Err(error) = display.draw_viewer(
-                    report.label(),
-                    report.boot(),
-                    storage::SCHEMA_VERSION,
-                    report.error_code(),
-                ) {
-                    println!("[lcd] viewer failed: {:?}", error);
-                }
-            }
-            #[cfg(not(feature = "trace"))]
-            refresh(&mut power, &mut clock, Some(display));
+        } else if let Err(error) = display.draw_viewer(
+            report.label(),
+            report.boot(),
+            report.log(),
+            storage::SCHEMA_VERSION,
+            report.error_code(),
+        ) {
+            println!("[lcd] viewer failed: {:?}", error);
         }
     }
 
@@ -160,7 +150,7 @@ async fn main(_spawner: Spawner) {
     }
 
     if mode == Mode::Desk {
-        desk_keepalive(&mut power, &mut clock, display.as_mut()).await;
+        desk_keepalive(&mut power).await;
         if let Err(error) = power.set_mode(Mode::Watch) {
             println!("[pm] set_mode failed: {}", error.to_common());
             halt().await

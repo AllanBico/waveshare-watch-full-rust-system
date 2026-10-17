@@ -11,13 +11,18 @@ mod controller;
 mod error;
 mod hash;
 mod kv;
+mod log_codec;
+mod time_series;
 
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod time_series_tests;
 
 pub use controller::REGION_SIZE;
 pub use error::Error;
 pub use hash::{hash_key, MAIN_KEY_HASH};
 pub use kv::{OpenOutcome, Provisioning, TicKvStorage, MAX_KEY_LEN, MAX_VALUE_LEN, SCHEMA_VERSION};
+pub use time_series::TimeSeries;

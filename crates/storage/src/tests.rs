@@ -156,6 +156,17 @@ fn invalid_region_is_rejected() {
 }
 
 #[test]
+fn force_reformats_non_blank_flash() {
+    let flash = MockFlash::new(FLASH_SIZE);
+    let handle = flash.handle();
+    handle.corrupt(0, 0x00);
+    let (store, outcome) = open(flash, Provisioning::Force).unwrap();
+    assert_eq!(outcome, OpenOutcome::Provisioned);
+    assert!(handle.erase_count() > 0);
+    drop(store);
+}
+
+#[test]
 fn corrupt_store_is_not_reformatted() {
     let (store, handle) = provisioned(FLASH_SIZE);
     drop(store);

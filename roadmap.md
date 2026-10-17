@@ -109,21 +109,32 @@ erase, schema mismatch, full/GC, and flash error mapping. Hardware verified:
 the trace viewer shows `KV OK`, `VER 01`, and a boot counter that increments
 across power cycles. `cargo fmt` and `cargo clippy` are clean.
 
-### 2.2 Time-Series Layer
-- TicKV has no key enumeration, so build an explicit index:
-  `log/latest`, `log/oldest`, and `log/checkpoint`, with fixed-width
-  `log/{sequence}` keys and the timestamp stored in the value.
-- `append_log(entry)` assigns the next sequence and updates `latest`. Writes
-  are batched; never write on every wake.
-- `read_logs_since(checkpoint)` reads forward from checkpoint+1 until a key is
-  missing. `prune_logs(before_timestamp)` invalidates from `oldest` forward,
-  updates `oldest`, then lets GC reclaim.
+### 2.2 Time-Series Layer (Done)
+- TicKV has no key enumeration, so `TimeSeries` keeps explicit `log/latest`
+  and `log/oldest` index keys. Entries use fixed-width `log/{sequence}` keys.
+- `append_log(entry)` encodes the versioned `LogEntry` (binary, schema 1),
+  writes the entry before advancing `latest`, and returns the sequence. A
+  crash between the two writes leaves an orphan that the next append replaces.
+- `read_logs_since(checkpoint)` streams decoded entries and returns the last
+  delivered sequence. Missing/pruned sequences are skipped. The callback can
+  stop early; the returned checkpoint then points at the last accepted entry.
+- `prune_logs(before_timestamp)` invalidates a timestamp prefix, advances
+  `oldest`, and skips already-missing entries. GC reclaims space explicitly or
+  on a `FlashFull` retry. Pruning assumes entries are in timestamp order.
 - Open and format the `logs` partition only in desk mode. Watch mode never
-  formats flash.
+  formats flash. The logs store may be force-formatted because log data is
+  disposable; the settings `kv` partition remains strict and never force-formats.
+- The display is the storage viewer during Phase 2, not the clock. The viewer
+  is compiled by default; the non-trace build shows status, `VER`, and
+  `LOG NONE`. Trace firmware additionally appends one entry per boot and shows
+  the latest sequence as `LOG nnnn`. The display remains a viewer; the store is
+  the log.
 
-**Test:** Append 100 entries, read them back, verify order and content. Prune a
-cutoff, verify only newer entries remain and a later append still works.
-Reboot and verify checkpoints and ordering survive.
+**Test:** Host tests append 100 entries, read them back, and verify order and
+content; they also cover checkpoints, early stop, prefix/all pruning, reopen,
+sequence gaps, corrupt records, and schema mismatches. On hardware, the first
+trace desk boot provisions the 2 MiB `logs` partition and the viewer should
+show an incrementing `LOG` sequence. The log partition is not touched on production watch boots.
 
 ### 2.3 Logging Crate
 - RAM ring buffer in retained memory (RTC) for watch-mode events; normal SRAM

@@ -8,8 +8,6 @@
 //! first, then `power` cuts ALDO2; because the panel loses power, wake re-runs
 //! the full init and re-flushes.
 
-use alloc::vec;
-
 use esp_hal::delay::Delay;
 use esp_hal::dma::{DmaBufError, DmaRxBuf, DmaTxBuf};
 use esp_hal::dma_buffers;
@@ -22,11 +20,9 @@ use common::{Region, Rgb565};
 use drivers::board;
 use drivers::co5300::{Co5300, DisplayError, Geometry};
 use hal::Display as _;
-use ui::{clock_size, digits_size, draw_digits, draw_time, MonoBuffer};
-#[cfg(feature = "trace")]
-use ui::{draw_text, text_size};
 
 mod bus;
+mod viewer;
 
 use bus::EspQspiBus;
 
@@ -35,34 +31,6 @@ const SPI_FREQUENCY_MHZ: u32 = 40;
 
 /// DMA staging buffer and pixel chunk, in bytes (even).
 const CHUNK_BYTES: usize = 2048;
-
-/// Integer scale for the clock line.
-const CLOCK_SCALE: u16 = 3;
-
-/// Integer scale for the battery line.
-const BATTERY_SCALE: u16 = 2;
-
-/// Vertical gap between the clock and battery lines, in pixels.
-const LINE_GAP: u16 = 8;
-
-/// Battery readout width, in decimal digits (millivolts).
-const BATTERY_DIGITS: u8 = 4;
-
-/// Debug viewer glyph scale.
-#[cfg(feature = "trace")]
-const VIEWER_SCALE: u16 = 2;
-/// Vertical gap between viewer lines.
-#[cfg(feature = "trace")]
-const VIEWER_GAP: u16 = 6;
-/// Boot counter width.
-#[cfg(feature = "trace")]
-const BOOT_DIGITS: u8 = 4;
-/// Schema version width.
-#[cfg(feature = "trace")]
-const VERSION_DIGITS: u8 = 2;
-/// Error code width.
-#[cfg(feature = "trace")]
-const ERROR_DIGITS: u8 = 3;
 
 /// The display's exclusive peripherals, grouped to keep the API small.
 pub struct Peripherals<'d> {
@@ -151,138 +119,6 @@ impl Display {
                 Region::full(self.geometry.width, self.geometry.height),
                 Rgb565::BLACK,
             )
-            .map_err(BringUpError::Display)
-    }
-
-    /// Redraws the clock and battery readout. Call after [`Self::init`].
-    pub fn draw(
-        &mut self,
-        hour: u8,
-        minute: u8,
-        second: u8,
-        battery_mv: u16,
-    ) -> Result<(), BringUpError> {
-        let mut frame = MonoBuffer::new(self.geometry.width, self.geometry.height);
-
-        let (clock_width, clock_height) = clock_size(CLOCK_SCALE);
-        let (battery_width, battery_height) = digits_size(BATTERY_DIGITS, BATTERY_SCALE);
-        let block_width = clock_width.max(battery_width);
-        let block_height = clock_height + LINE_GAP + battery_height;
-        let block_x = (self.geometry.width - block_width) / 2;
-        let block_y = (self.geometry.height - block_height) / 2;
-
-        draw_time(
-            &mut frame,
-            hour,
-            minute,
-            second,
-            (block_x + (block_width - clock_width) / 2, block_y),
-            CLOCK_SCALE,
-        );
-        draw_digits(
-            &mut frame,
-            u32::from(battery_mv),
-            BATTERY_DIGITS,
-            (
-                block_x + (block_width - battery_width) / 2,
-                block_y + clock_height + LINE_GAP,
-            ),
-            BATTERY_SCALE,
-        );
-
-        let block =
-            self.geometry
-                .align_region(Region::new(block_x, block_y, block_width, block_height));
-        let mut expanded = vec![0u8; block.rgb565_len()];
-        frame.expand_region(block, &mut expanded);
-
-        // The block covers every changed pixel, so writing it fully replaces it.
-        self.panel
-            .write_region(block, &expanded)
-            .map_err(BringUpError::Display)
-    }
-
-    /// Draws the trace storage viewer: status, boot counter, and version or
-    /// error code. Temporary bring-up output, not the Phase 5 UI.
-    #[cfg(feature = "trace")]
-    pub fn draw_viewer(
-        &mut self,
-        status: &str,
-        boot: u32,
-        version: u16,
-        error: Option<u16>,
-    ) -> Result<(), BringUpError> {
-        let mut frame = MonoBuffer::new(self.geometry.width, self.geometry.height);
-
-        let (status_width, status_height) = text_size(status, VIEWER_SCALE);
-        let (boot_label_width, _) = text_size("BOOT ", VIEWER_SCALE);
-        let (boot_width, line_height) = digits_size(BOOT_DIGITS, VIEWER_SCALE);
-        let boot_line_width = boot_label_width + boot_width;
-
-        let (last_label, last_value, last_digits, last_label_width, last_width) = match error {
-            Some(code) => {
-                let (label_width, _) = text_size("ERR ", VIEWER_SCALE);
-                let (value_width, _) = digits_size(ERROR_DIGITS, VIEWER_SCALE);
-                (
-                    "ERR ",
-                    u32::from(code),
-                    ERROR_DIGITS,
-                    label_width,
-                    label_width + value_width,
-                )
-            }
-            None => {
-                let (label_width, _) = text_size("VER ", VIEWER_SCALE);
-                let (value_width, _) = digits_size(VERSION_DIGITS, VIEWER_SCALE);
-                (
-                    "VER ",
-                    u32::from(version),
-                    VERSION_DIGITS,
-                    label_width,
-                    label_width + value_width,
-                )
-            }
-        };
-
-        let width = status_width.max(boot_line_width).max(last_width);
-        let height = status_height + VIEWER_GAP + line_height + VIEWER_GAP + line_height;
-        let x = self.geometry.width.saturating_sub(width) / 2;
-        let y = self.geometry.height.saturating_sub(height) / 2;
-
-        draw_text(
-            &mut frame,
-            status,
-            (x + (width - status_width) / 2, y),
-            VIEWER_SCALE,
-        );
-        let boot_y = y + status_height + VIEWER_GAP;
-        let boot_x = x + (width - boot_line_width) / 2;
-        draw_text(&mut frame, "BOOT ", (boot_x, boot_y), VIEWER_SCALE);
-        draw_digits(
-            &mut frame,
-            boot,
-            BOOT_DIGITS,
-            (boot_x + boot_label_width, boot_y),
-            VIEWER_SCALE,
-        );
-
-        let last_y = boot_y + line_height + VIEWER_GAP;
-        let last_x = x + (width - last_width) / 2;
-        draw_text(&mut frame, last_label, (last_x, last_y), VIEWER_SCALE);
-        draw_digits(
-            &mut frame,
-            last_value,
-            last_digits,
-            (last_x + last_label_width, last_y),
-            VIEWER_SCALE,
-        );
-
-        let block = self.geometry.align_region(Region::new(x, y, width, height));
-        let mut expanded = vec![0u8; block.rgb565_len()];
-        frame.expand_region(block, &mut expanded);
-
-        self.panel
-            .write_region(block, &expanded)
             .map_err(BringUpError::Display)
     }
 

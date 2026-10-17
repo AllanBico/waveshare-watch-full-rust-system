@@ -27,10 +27,13 @@ const SCHEMA_KEY: &[u8] = b"meta/schema";
 /// Whether a missing store may be formatted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provisioning {
-    /// Format a blank partition and write the schema marker.
+    /// Format only a fully erased partition.
     Allowed,
     /// Refuse to format; report not ready instead.
     Forbidden,
+    /// Format even a non-blank partition. Destructive; use only for
+    /// disposable stores such as logs.
+    Force,
 }
 
 /// Result of opening a store.
@@ -51,8 +54,8 @@ impl<'a, F: NorFlash + ReadStorage> TicKvStorage<'a, F> {
     /// Opens the store.
     ///
     /// A missing super key on a non-blank partition is treated as corruption,
-    /// never as permission to erase. Only a fully erased partition is
-    /// provisioned, and only when `provisioning` allows it.
+    /// never as permission to erase, unless the caller explicitly chooses
+    /// `Provisioning::Force` for a disposable store.
     pub fn open(
         region: F,
         buffer: &'a mut [u8; REGION_SIZE],
@@ -67,11 +70,14 @@ impl<'a, F: NorFlash + ReadStorage> TicKvStorage<'a, F> {
         let outcome = match kv.get_key(MAIN_KEY_HASH, &mut []) {
             Ok(_) => OpenOutcome::Ready,
             Err(ErrorCode::KeyNotFound) => {
-                if provisioning == Provisioning::Forbidden {
-                    return Err(Error::NotReady);
-                }
-                if !kv.controller.is_blank().map_err(map_tickv)? {
-                    return Err(Error::Corrupt);
+                match provisioning {
+                    Provisioning::Forbidden => return Err(Error::NotReady),
+                    Provisioning::Allowed => {
+                        if !kv.controller.is_blank().map_err(map_tickv)? {
+                            return Err(Error::Corrupt);
+                        }
+                    }
+                    Provisioning::Force => {}
                 }
                 kv.initialise(MAIN_KEY_HASH).map_err(map_tickv)?;
                 OpenOutcome::Provisioned

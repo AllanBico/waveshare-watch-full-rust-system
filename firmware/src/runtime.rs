@@ -19,8 +19,6 @@ use embedded_hal_bus::i2c::RefCellDevice;
 use hal::Power;
 use power::PowerManager;
 
-use crate::display::Display;
-
 /// CPU clock for bring-up. Mode-based clock switching comes later.
 pub const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
 
@@ -75,45 +73,8 @@ fn print_datetime(label: &str, dt: &DateTime) {
     );
 }
 
-/// Reads the RTC and battery, redraws the panel, and logs one line.
-pub fn refresh<P: Power>(
-    power: &mut PowerManager<P>,
-    clock: &mut Pcf85063a<Bus>,
-    display: Option<&mut Display>,
-) {
-    let datetime = match clock.read_datetime() {
-        Ok(datetime) => datetime,
-        Err(error) => {
-            println!("[rtc] read failed: {}", error);
-            return;
-        }
-    };
-    let battery_mv = match power.pmic_mut().read_battery_millivolts() {
-        Ok(millivolts) => millivolts.value(),
-        Err(_) => {
-            println!("[pm] battery read failed");
-            0
-        }
-    };
-    if let Some(display) = display {
-        if let Err(error) =
-            display.draw(datetime.hour, datetime.minute, datetime.second, battery_mv)
-        {
-            println!("[lcd] draw failed: {:?}", error);
-        }
-    }
-    println!(
-        "[ui] {:02}:{:02}:{:02} battery {} mV",
-        datetime.hour, datetime.minute, datetime.second, battery_mv
-    );
-}
-
-/// Stays awake in desk mode until USB is removed, refreshing once per second.
-pub async fn desk_keepalive<P: Power>(
-    power: &mut PowerManager<P>,
-    clock: &mut Pcf85063a<Bus>,
-    mut display: Option<&mut Display>,
-) {
+/// Stays awake in desk mode until USB is removed, keeping the viewer on screen.
+pub async fn desk_keepalive<P: Power>(power: &mut PowerManager<P>) {
     let start = Instant::now();
     loop {
         Timer::after(POLL_PERIOD).await;
@@ -121,7 +82,6 @@ pub async fn desk_keepalive<P: Power>(
             println!("[pm] USB removed");
             return;
         }
-        refresh(power, clock, display.as_deref_mut());
         println!("[hb] uptime {} ms", (Instant::now() - start).as_millis());
     }
 }
