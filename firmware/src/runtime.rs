@@ -154,8 +154,12 @@ pub async fn desk_keepalive<P: Power, T: Touch, I: Imu>(
         poll_button(display, input, button);
         if input.button && !was_pressed {
             if let Some(audio) = audio.as_mut() {
-                if let Err(error) = audio.play_test_tone().await {
-                    println!("[audio] test failed: {:?}", error);
+                match audio.record_and_play().await {
+                    Ok(report) => println!(
+                        "[audio] loopback {} bytes peak {}",
+                        report.bytes, report.peak
+                    ),
+                    Err(error) => println!("[audio] loopback failed: {:?}", error),
                 }
             }
         }

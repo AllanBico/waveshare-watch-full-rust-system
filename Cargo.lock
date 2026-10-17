@@ -878,6 +878,7 @@ dependencies = [
 name = "firmware"
 version = "0.1.0"
 dependencies = [
+ "allocator-api2",
  "common",
  "drivers",
  "embassy-executor",

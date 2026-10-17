@@ -26,6 +26,7 @@ use esp_println::println;
 use common::{Mode, MotionSample, TouchReport, WakeOnMotion, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
+use drivers::es7210::Es7210;
 use drivers::es8311::Es8311;
 use drivers::ft3168::Ft3168;
 use drivers::pcf85063a::Pcf85063a;
@@ -77,6 +78,7 @@ async fn main(_spawner: Spawner) {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::_160MHz));
 
     let (_, psram_bytes) = esp_hal::psram::psram_raw_parts(&peripherals.PSRAM);
+    esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
@@ -280,13 +282,15 @@ async fn main(_spawner: Spawner) {
                     bclk: peripherals.GPIO41,
                     ws: peripherals.GPIO45,
                     dout: peripherals.GPIO40,
+                    din: peripherals.GPIO42,
                     pa: peripherals.GPIO46,
                 },
                 Es8311::new(RefCellDevice::new(bus), board::ES8311_I2C_ADDR),
+                Es7210::new(RefCellDevice::new(bus), board::ES7210_I2C_ADDR),
             ) {
                 Ok(mut audio) => match audio.init() {
                     Ok(()) => {
-                        println!("[audio] ES8311 ready");
+                        println!("[audio] codecs ready");
                         Some(audio)
                     }
                     Err(error) => {

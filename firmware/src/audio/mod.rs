@@ -1,73 +1,54 @@
-//! Desk-mode audio playback.
+//! Desk-mode audio capture and playback.
 //!
-//! Owns the I2S transmitter, the ES8311 codec, and the speaker-amplifier
-//! enable. The codec is an I2S slave; the ESP32-S3 drives MCLK, BCLK, and
-//! LRCK. PA_CTRL is kept low except while a tone is playing.
+//! Owns the full-duplex I2S bus, the ES8311 playback codec, the ES7210
+//! microphone ADC, and the speaker-amplifier enable. The codecs are I2S
+//! slaves; the ESP32-S3 drives MCLK, BCLK, and LRCK. TX keeps the shared
+//! clocks alive during capture, and PA_CTRL is low except during playback.
 
 use alloc::vec::Vec;
 
-use embassy_time::{Duration, Timer};
+use allocator_api2::vec::Vec as ExternalVec;
+use embassy_time::{Duration, Instant, Timer};
+use esp_alloc::ExternalMemory;
 use esp_hal::dma::DmaError;
-use esp_hal::dma_circular_descriptors;
+use esp_hal::dma_circular_buffers;
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::i2s::master::{
-    Channels, Config as I2sConfig, ConfigError, DataFormat, Error as I2sError, I2s, I2sTx,
+    Channels, Config as I2sConfig, ConfigError, DataFormat, Error as I2sError, I2s, I2sRx, I2sTx,
 };
 use esp_hal::time::Rate;
 use esp_hal::Blocking;
-use hal::Audio as _;
+use esp_println::println;
+use hal::{Audio as _, AudioCapture as _};
 
+use drivers::es7210::{Es7210, Es7210Error};
 use drivers::es8311::{Es8311, Es8311Error, SAMPLE_RATE_HZ};
 
-/// Frequency of the bring-up tone.
-const TONE_FREQ_HZ: u32 = 1_000;
-/// Peak sample of the bring-up tone, about -18 dBFS.
-const TONE_AMPLITUDE: i16 = 4_000;
-/// Length of one DMA buffer of tone data.
-const TONE_CHUNK_MS: u32 = 250;
-/// Total length of the bring-up tone.
-const TEST_TONE_MS: u32 = 1_000;
+/// Length of the bring-up recording.
+pub const RECORD_MS: u32 = 5_000;
+/// Bytes captured per second of mono 16-bit audio.
+const BYTES_PER_SECOND: usize = SAMPLE_RATE_HZ as usize * 2;
+/// One recording in bytes.
+const CLIP_BYTES: usize = BYTES_PER_SECOND * RECORD_MS as usize / 1000;
+/// Internal-SRAM ring used by the RX DMA.
+const RX_RING_BYTES: usize = 4096;
+/// Internal-SRAM ring used by the TX DMA.
+const TX_RING_BYTES: usize = 16_384;
 /// Time for the amplifier to settle after a level change.
 const PA_SETTLE_MS: u64 = 5;
-/// Samples in one DMA buffer.
-const TONE_SAMPLES: usize = (SAMPLE_RATE_HZ as usize * TONE_CHUNK_MS as usize) / 1000;
-/// Bytes in one mono 16-bit DMA buffer.
-const TONE_CHUNK_BYTES: usize = TONE_SAMPLES * 2;
-
-/// One period of a 1 kHz sine at 16 kHz, as signed 16-bit samples.
-const SINE_16: [i16; 16] = [
-    0,
-    sine(3827),
-    sine(7071),
-    sine(9239),
-    TONE_AMPLITUDE,
-    sine(9239),
-    sine(7071),
-    sine(3827),
-    0,
-    sine(-3827),
-    sine(-7071),
-    sine(-9239),
-    -TONE_AMPLITUDE,
-    sine(-9239),
-    sine(-7071),
-    sine(-3827),
-];
-
-const fn sine(ratio: i32) -> i16 {
-    (TONE_AMPLITUDE as i32 * ratio / 10_000) as i16
-}
+/// Capture polling interval while the RX ring has no data.
+const POLL_MS: u64 = 2;
 
 const _: () = {
-    assert!(SAMPLE_RATE_HZ / TONE_FREQ_HZ == SINE_16.len() as u32);
-    assert!(TONE_SAMPLES.is_multiple_of(SINE_16.len()));
+    assert!(CLIP_BYTES > 0);
+    assert!(CLIP_BYTES.is_multiple_of(2));
 };
 
 /// The audio subsystem's exclusive peripherals.
 pub struct Peripherals<'d> {
     /// I2S peripheral.
     pub i2s: esp_hal::peripherals::I2S0<'d>,
-    /// DMA channel for playback.
+    /// DMA channel shared by playback and capture.
     pub dma: esp_hal::peripherals::DMA_CH1<'d>,
     /// I2S master clock.
     pub mclk: esp_hal::peripherals::GPIO16<'d>,
@@ -77,20 +58,20 @@ pub struct Peripherals<'d> {
     pub ws: esp_hal::peripherals::GPIO45<'d>,
     /// I2S DAC data.
     pub dout: esp_hal::peripherals::GPIO40<'d>,
+    /// I2S ADC data.
+    pub din: esp_hal::peripherals::GPIO42<'d>,
     /// Speaker-amplifier enable.
     pub pa: esp_hal::peripherals::GPIO46<'d>,
 }
 
 /// Errors from audio bring-up.
-// The payloads are surfaced through `Debug`; rustc's dead-code pass does not
+// The payload is surfaced through `Debug`; rustc's dead-code pass does not
 // count derived formatters, so silence it here.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub enum BringUpError {
     /// I2S configuration was rejected.
     Config(ConfigError),
-    /// The tone buffer could not be allocated.
-    Alloc,
 }
 
 /// Errors from audio operations.
@@ -99,14 +80,20 @@ pub enum BringUpError {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub enum AudioError<E> {
-    /// The codec rejected an operation.
+    /// The playback codec rejected an operation.
     Codec(Es8311Error<E>),
+    /// The capture codec rejected an operation.
+    Capture(Es7210Error<E>),
     /// The I2S peripheral rejected an operation.
     I2s(I2sError),
     /// The DMA transfer failed.
     Dma(DmaError),
+    /// The clip buffers could not be allocated.
+    Alloc,
     /// The codec has not been initialized.
     NotReady,
+    /// Capture produced no samples.
+    CaptureEmpty,
 }
 
 impl<E> From<Es8311Error<E>> for AudioError<E> {
@@ -115,18 +102,40 @@ impl<E> From<Es8311Error<E>> for AudioError<E> {
     }
 }
 
-/// Desk-mode playback path.
+impl<E> From<Es7210Error<E>> for AudioError<E> {
+    fn from(error: Es7210Error<E>) -> Self {
+        AudioError::Capture(error)
+    }
+}
+
+/// Result of one loopback test.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoopbackReport {
+    /// Captured bytes.
+    pub bytes: usize,
+    /// Largest absolute 16-bit sample.
+    pub peak: u16,
+}
+
+/// Desk-mode audio endpoint.
 pub struct Audio<I> {
     codec: Es8311<I>,
+    mic: Es7210<I>,
     tx: I2sTx<'static, Blocking>,
+    rx: I2sRx<'static, Blocking>,
+    tx_buffer: &'static mut [u8; TX_RING_BYTES],
+    rx_buffer: &'static mut [u8; RX_RING_BYTES],
     pa: Output<'static>,
-    tone: Vec<u8>,
     ready: bool,
 }
 
 impl<I: embedded_hal::i2c::I2c> Audio<I> {
-    /// Builds the I2S transport and tone buffer. Touches no codec registers.
-    pub fn new(pins: Peripherals<'static>, codec: Es8311<I>) -> Result<Self, BringUpError> {
+    /// Builds the I2S transport and DMA rings. Touches no codec registers.
+    pub fn new(
+        pins: Peripherals<'static>,
+        codec: Es8311<I>,
+        mic: Es7210<I>,
+    ) -> Result<Self, BringUpError> {
         let config = I2sConfig::default()
             .with_sample_rate(Rate::from_hz(SAMPLE_RATE_HZ))
             .with_channels(Channels::MONO)
@@ -134,83 +143,193 @@ impl<I: embedded_hal::i2c::I2c> Audio<I> {
         let i2s = I2s::new(pins.i2s, pins.dma, config)
             .map_err(BringUpError::Config)?
             .with_mclk(pins.mclk);
-        let (_rx_descriptors, tx_descriptors) = dma_circular_descriptors!(0, TONE_CHUNK_BYTES);
+        let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) =
+            dma_circular_buffers!(RX_RING_BYTES, TX_RING_BYTES);
         let tx = i2s
             .i2s_tx
             .with_bclk(pins.bclk)
             .with_ws(pins.ws)
             .with_dout(pins.dout)
             .build(tx_descriptors);
-
+        let rx = i2s.i2s_rx.with_din(pins.din).build(rx_descriptors);
         let pa = Output::new(pins.pa, Level::Low, OutputConfig::default());
-        let mut tone = Vec::new();
-        tone.try_reserve_exact(TONE_CHUNK_BYTES)
-            .map_err(|_| BringUpError::Alloc)?;
-        tone.resize(TONE_CHUNK_BYTES, 0);
 
         Ok(Self {
             codec,
+            mic,
             tx,
+            rx,
+            tx_buffer,
+            rx_buffer,
             pa,
-            tone,
             ready: false,
         })
     }
 
-    /// Initializes the codec while keeping MCLK alive for its power-up state
-    /// machine.
+    /// Initializes both codecs while TX keeps the shared clocks alive.
     pub fn init(&mut self) -> Result<(), AudioError<I::Error>> {
-        self.tone.fill(0);
-        let buffer = self.tone.as_slice();
+        self.tx_buffer.fill(0);
+        let buffer: &[u8] = &self.tx_buffer[..];
         let silence = self
             .tx
             .write_dma_circular(&buffer)
             .map_err(AudioError::I2s)?;
-        let init = self.codec.init().map_err(AudioError::Codec);
+        let codec = self.codec.init().map_err(AudioError::Codec);
+        let mic = match &codec {
+            Ok(()) => self.mic.init().map_err(AudioError::Capture),
+            Err(_) => Ok(()),
+        };
         let stop = silence.stop().map_err(AudioError::Dma);
-        init?;
+        codec?;
+        mic?;
         stop?;
-        fill_tone(&mut self.tone);
         self.ready = true;
         Ok(())
     }
 
-    /// Plays the one-second bring-up tone.
-    pub async fn play_test_tone(&mut self) -> Result<(), AudioError<I::Error>> {
+    /// Records the test clip and immediately plays it back.
+    pub async fn record_and_play(&mut self) -> Result<LoopbackReport, AudioError<I::Error>> {
         if !self.ready {
             return Err(AudioError::NotReady);
         }
-        let result = self.play_tone().await;
+        let result = self.loopback_inner().await;
         self.pa.set_low();
         let _ = self.codec.mute();
         result
     }
 
-    /// Powers the codec and amplifier down.
+    /// Powers both codecs and the amplifier down.
     pub fn shutdown(&mut self) -> Result<(), AudioError<I::Error>> {
         self.ready = false;
         self.pa.set_low();
-        self.codec.shutdown().map_err(AudioError::Codec)
+        let mic = self.mic.shutdown().map_err(AudioError::Capture);
+        let codec = self.codec.shutdown().map_err(AudioError::Codec);
+        mic?;
+        codec
     }
 
-    async fn play_tone(&mut self) -> Result<(), AudioError<I::Error>> {
+    async fn loopback_inner(&mut self) -> Result<LoopbackReport, AudioError<I::Error>> {
+        let mut clip = ExternalVec::new_in(ExternalMemory);
+        clip.try_reserve_exact(CLIP_BYTES)
+            .map_err(|_| AudioError::Alloc)?;
+        clip.resize(CLIP_BYTES, 0);
+        let mut scratch = Vec::new();
+        scratch
+            .try_reserve_exact(RX_RING_BYTES)
+            .map_err(|_| AudioError::Alloc)?;
+        scratch.resize(RX_RING_BYTES, 0);
+
+        println!("[audio] recording {} ms", RECORD_MS);
+        let bytes = self.capture(&mut clip[..], &mut scratch).await?;
+        if bytes == 0 {
+            return Err(AudioError::CaptureEmpty);
+        }
+        let peak = peak_amplitude(&clip[..bytes]);
+        println!("[audio] playing {} ms", duration_ms(bytes));
+        self.play_clip(&clip[..bytes]).await?;
+        Ok(LoopbackReport { bytes, peak })
+    }
+
+    async fn capture(
+        &mut self,
+        clip: &mut [u8],
+        scratch: &mut [u8],
+    ) -> Result<usize, AudioError<I::Error>> {
+        self.tx_buffer.fill(0);
+        let buffer: &[u8] = &self.tx_buffer[..];
+        let tx_silence = self
+            .tx
+            .write_dma_circular(&buffer)
+            .map_err(AudioError::I2s)?;
+        let mut rx_transfer = self
+            .rx
+            .read_dma_circular(&mut self.rx_buffer)
+            .map_err(AudioError::I2s)?;
+        let deadline = Instant::now() + Duration::from_millis(u64::from(RECORD_MS));
+        let mut written = 0;
+
+        while written < clip.len() && Instant::now() < deadline {
+            let available = rx_transfer.available().map_err(AudioError::Dma)?;
+            if available == 0 {
+                Timer::after(Duration::from_millis(POLL_MS)).await;
+                continue;
+            }
+            let take = available.min(scratch.len());
+            let popped = rx_transfer
+                .pop(&mut scratch[..take])
+                .map_err(AudioError::Dma)?;
+            let copy = popped.min(clip.len() - written);
+            clip[written..written + copy].copy_from_slice(&scratch[..copy]);
+            written += copy;
+        }
+
+        drop(rx_transfer);
+        tx_silence.stop().map_err(AudioError::Dma)?;
+        Ok(written)
+    }
+
+    async fn play_clip(&mut self, clip: &[u8]) -> Result<(), AudioError<I::Error>> {
         self.codec.unmute()?;
         self.pa.set_high();
         Timer::after(Duration::from_millis(PA_SETTLE_MS)).await;
-        let buffer = self.tone.as_slice();
+        if clip.len() <= TX_RING_BYTES {
+            self.play_short(clip).await
+        } else {
+            self.play_streaming(clip).await
+        }
+    }
+
+    async fn play_short(&mut self, clip: &[u8]) -> Result<(), AudioError<I::Error>> {
+        let length = clip.len();
+        self.tx_buffer[..length].copy_from_slice(clip);
+        let buffer: &[u8] = &self.tx_buffer[..length];
         let transfer = self
             .tx
             .write_dma_circular(&buffer)
             .map_err(AudioError::I2s)?;
-        Timer::after(Duration::from_millis(u64::from(TEST_TONE_MS))).await;
+        Timer::after(Duration::from_millis(duration_ms(length))).await;
+        transfer.stop().map_err(AudioError::Dma)
+    }
+
+    async fn play_streaming(&mut self, clip: &[u8]) -> Result<(), AudioError<I::Error>> {
+        let first = TX_RING_BYTES.min(clip.len());
+        self.tx_buffer[..first].copy_from_slice(&clip[..first]);
+        let buffer: &[u8] = &self.tx_buffer[..];
+        let mut transfer = self
+            .tx
+            .write_dma_circular(&buffer)
+            .map_err(AudioError::I2s)?;
+        let start = Instant::now();
+        let mut offset = first;
+        while offset < clip.len() {
+            let available = transfer.available().map_err(AudioError::Dma)?;
+            if available == 0 {
+                Timer::after(Duration::from_millis(POLL_MS)).await;
+                continue;
+            }
+            let take = available.min(clip.len() - offset);
+            let pushed = transfer
+                .push(&clip[offset..offset + take])
+                .map_err(AudioError::Dma)?;
+            offset += pushed;
+        }
+        let total = duration_ms(clip.len());
+        let elapsed = (Instant::now() - start).as_millis();
+        if elapsed < total {
+            Timer::after(Duration::from_millis(total - elapsed)).await;
+        }
         transfer.stop().map_err(AudioError::Dma)
     }
 }
 
-fn fill_tone(buffer: &mut [u8]) {
-    for (index, sample) in buffer.chunks_exact_mut(2).enumerate() {
-        let bytes = SINE_16[index % SINE_16.len()].to_le_bytes();
-        sample[0] = bytes[0];
-        sample[1] = bytes[1];
-    }
+fn duration_ms(bytes: usize) -> u64 {
+    bytes as u64 * 1000 / BYTES_PER_SECOND as u64
+}
+
+fn peak_amplitude(samples: &[u8]) -> u16 {
+    samples
+        .chunks_exact(2)
+        .map(|pair| i16::from_le_bytes([pair[0], pair[1]]).unsigned_abs())
+        .max()
+        .unwrap_or(0)
 }

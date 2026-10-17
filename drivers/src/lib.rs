@@ -11,6 +11,7 @@
 pub mod axp2101;
 pub mod board;
 pub mod co5300;
+pub mod es7210;
 pub mod es8311;
 #[cfg(feature = "hardware")]
 pub mod flash;

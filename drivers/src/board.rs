@@ -77,6 +77,8 @@ pub const I2S_DSDIN: u8 = 40;
 pub const I2S_ASDOUT: u8 = 42;
 /// ES8311 playback codec I2C address.
 pub const ES8311_I2C_ADDR: u8 = 0x18;
+/// ES7210 microphone ADC I2C address.
+pub const ES7210_I2C_ADDR: u8 = 0x40;
 /// Audio power-amplifier enable.
 pub const PA_CTRL: u8 = 46;
 
