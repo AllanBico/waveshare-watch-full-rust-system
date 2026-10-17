@@ -15,7 +15,9 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
-use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull, RtcPin};
+use esp_hal::gpio::{
+    Input, InputConfig, Level, Output, OutputConfig, Pull, RtcPin, RtcPinWithResistors,
+};
 use esp_hal::rtc_cntl::sleep::{Ext1WakeupSource, TimerWakeupSource, WakeupLevel};
 use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
@@ -82,7 +84,7 @@ async fn main(_spawner: Spawner) {
     let button_pressed = if matches!(raw_wake, Some(WakeReason::Button)) {
         let input = Input::new(
             pwr_button.reborrow(),
-            InputConfig::default().with_pull(Pull::None),
+            InputConfig::default().with_pull(Pull::Up),
         );
         debounce_button(&input).await
     } else {
@@ -268,7 +270,11 @@ async fn main(_spawner: Spawner) {
         input.button = button_pressed;
 
         if mode == Mode::Desk {
-            desk_keepalive(&mut power, &mut display, &mut input).await;
+            let button_input = Input::new(
+                pwr_button.reborrow(),
+                InputConfig::default().with_pull(Pull::Up),
+            );
+            desk_keepalive(&mut power, &mut display, &mut input, &button_input).await;
             if let Err(error) = power.set_mode(Mode::Watch) {
                 println!("[pm] set_mode failed: {}", error.to_common());
                 halt().await
@@ -312,6 +318,10 @@ async fn main(_spawner: Spawner) {
 
     let mut rtc = Rtc::new(peripherals.LPWR);
     let timer = TimerWakeupSource::new(core::time::Duration::from_millis(u64::from(plan.timer_ms)));
+    // The PWR button needs the RTC pull-up: the external network alone did not
+    // produce a reliable high when tested with the digital input.
+    pwr_button.rtcio_pullup(true);
+    pwr_button.rtcio_pulldown(false);
     let mut imu_int = peripherals.GPIO21;
     let mut wake_pins: [&mut dyn RtcPin; 2] = [&mut pwr_button, &mut imu_int];
     let external = Ext1WakeupSource::new(&mut wake_pins, WakeupLevel::High);

@@ -6,6 +6,7 @@ use core::cell::RefCell;
 
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::efuse::Efuse;
+use esp_hal::gpio::Input;
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::rtc_cntl::wakeup_cause;
 use esp_hal::system::SleepSource;
@@ -134,17 +135,20 @@ impl<'a, T: Touch, I: Imu> InputState<'a, T, I> {
     }
 }
 
-/// Stays awake in desk mode until USB is removed, updating the input viewer.
+/// Stays awake in desk mode until USB is removed, updating the input viewer
+/// and logging PWR button transitions for bring-up debugging.
 pub async fn desk_keepalive<P: Power, T: Touch, I: Imu>(
     power: &mut PowerManager<P>,
     display: &mut Option<Panel>,
     input: &mut InputState<'_, T, I>,
+    button: &Input<'_>,
 ) {
     let start = Instant::now();
     let mut ticks = 0u32;
     loop {
         Timer::after(INPUT_POLL_PERIOD).await;
         poll_input(display, input);
+        poll_button(display, input, button);
 
         ticks += 1;
         if !ticks.is_multiple_of(INPUT_POLLS_PER_SECOND) {
@@ -154,8 +158,27 @@ pub async fn desk_keepalive<P: Power, T: Touch, I: Imu>(
             println!("[pm] USB removed");
             return;
         }
-        println!("[hb] uptime {} ms", (Instant::now() - start).as_millis());
+        println!(
+            "[hb] uptime {} ms btn {}",
+            (Instant::now() - start).as_millis(),
+            if button.is_high() { 1 } else { 0 }
+        );
     }
+}
+
+fn poll_button<T: Touch, I: Imu>(
+    display: &mut Option<Panel>,
+    input: &mut InputState<'_, T, I>,
+    button: &Input<'_>,
+) {
+    let pressed = button.is_high();
+    if pressed == input.button {
+        return;
+    }
+    input.button = pressed;
+    // TODO(phase-5): remove the UART button trace once the UI consumes it.
+    println!("[btn] {}", if pressed { "pressed" } else { "released" });
+    redraw_input(display, input);
 }
 
 /// Keeps the panel awake for `window` while sampling touch and motion.
