@@ -211,6 +211,16 @@
 - Comments explain why. Public items documented.
 - Tests pass. Clippy clean. Rustfmt clean.
 
+## Context Hygiene
+- Never read screenshots, PDFs, or other binary assets inline. Convert to text or crop to the region needed. Never attach a full datasheet.
+- Extract datasheets once with `pdftotext -layout` into `/tmp`, then search with targeted `grep` or `sed -n 'A,Bp'`.
+- Do not dump whole files or directories. Search first with `grep` or `glob`, then read only the relevant line range.
+- Keep command output small: `cargo check -q`, pipe through `tail` or `head`, and never paste full build logs.
+- Cap tool output at roughly 4 KB. Summarize longer output and cite line numbers instead.
+- One session per phase. Start a fresh session or compact at phase boundaries.
+- Do not re-read `AGENTS.MD`, `GUIDE.MD`, or `roadmap.md` in full. Grep the section you need.
+- Never search `target/`, `/tmp`, or `~/.cargo/registry` broadly. Scope every search to the relevant source or docs directory.
+
 ## Commit Rules
 - Do not commit to git. Suggest commit messages only.
 - A suggested message says what and why.
