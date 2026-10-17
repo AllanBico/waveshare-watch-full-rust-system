@@ -1,10 +1,11 @@
-//! Phase 4.2 input viewer.
+//! Phase 4.3 input viewer.
 //!
-//! Draws touch points plus accelerometer and gyroscope samples so input can be
-//! verified on the panel. This is bring-up output, not the Phase 5 UI.
+//! Draws the wake reason, WoM state, touch points, and accelerometer/gyroscope
+//! samples so input and wake behavior can be verified on the panel. This is
+//! bring-up output, not the Phase 5 UI.
 // TODO(phase-5): replace with the app renderer and shared surface.
 
-use common::{MotionSample, Region, TouchReport, MAX_TOUCH_POINTS};
+use common::{MotionSample, Region, TouchReport, WakeReason, MAX_TOUCH_POINTS};
 use hal::Display as _;
 use ui::{digits_size, draw_digits, draw_text, text_size, MonoBuffer};
 
@@ -24,26 +25,28 @@ pub struct Viewer<'a> {
     pub touch: &'a TouchReport,
     /// Latest accelerometer and gyroscope snapshot.
     pub motion: &'a MotionSample,
-    /// IMU chip identity, when it could be read.
-    pub imu_id: Option<u8>,
-    /// IMU revision, when it could be read.
-    pub revision: Option<u8>,
+    /// What woke the device; `None` means a cold boot.
+    pub wake: Option<WakeReason>,
+    /// IMU Wake-on-Motion flag; `None` when it could not be read.
+    pub wom: Option<bool>,
     /// Stable error code, when an input read failed.
     pub error: Option<u16>,
 }
 
 impl Display {
-    /// Draws the combined touch and motion report centered on the panel.
+    /// Draws the combined input and wake report centered on the panel.
     pub fn draw_input_viewer(&mut self, view: &Viewer<'_>) -> Result<(), BringUpError> {
-        let title = "INPUT";
+        let title = wake_label(view.wake);
         let (title_width, line_height) = text_size(title, SCALE);
+        let (max_title_width, _) = text_size("WAKE UNKNOWN", SCALE);
 
         let (error_label_width, _) = text_size("ERR ", SCALE);
-        let (id_label_width, _) = text_size("IMU ", SCALE);
-        let (id_digits_width, _) = digits_size(INFO_DIGITS, SCALE);
-        let (slash_width, _) = text_size("/", SCALE);
-        let info_width = (error_label_width + id_digits_width)
-            .max(id_label_width + id_digits_width * 2 + slash_width);
+        let (info_digits_width, _) = digits_size(INFO_DIGITS, SCALE);
+        let error_width = error_label_width + info_digits_width;
+        let wom_width = text_size("WOM 0", SCALE)
+            .0
+            .max(text_size("WOM --", SCALE).0);
+        let info_width = error_width.max(wom_width);
 
         let (point_label_width, _) = text_size("P0 ", SCALE);
         let (coord_width, _) = digits_size(COORD_DIGITS, SCALE);
@@ -56,7 +59,7 @@ impl Display {
         let axis_width = axis_label_width + sign_width + axis_digits_width;
 
         let (empty_width, _) = text_size("NO TOUCH", SCALE);
-        let width = title_width
+        let width = max_title_width
             .max(info_width)
             .max(point_width)
             .max(axis_width)
@@ -141,35 +144,18 @@ fn draw_info(frame: &mut MonoBuffer, view: &Viewer<'_>, origin: (u16, u16), widt
         return;
     }
 
-    let (label_width, _) = text_size("IMU ", SCALE);
-    let (digits_width, _) = digits_size(INFO_DIGITS, SCALE);
-    let (slash_width, _) = text_size("/", SCALE);
-    let line_width = label_width + digits_width * 2 + slash_width;
-    let line_x = origin.0 + (width - line_width) / 2;
-    draw_text(frame, "IMU ", (line_x, origin.1), SCALE);
-
-    let mut cursor = line_x + label_width;
-    match view.imu_id {
-        Some(id) => {
-            draw_digits(frame, u32::from(id), INFO_DIGITS, (cursor, origin.1), SCALE);
-        }
-        None => draw_text(frame, "---", (cursor, origin.1), SCALE),
-    }
-    cursor += digits_width;
-    draw_text(frame, "/", (cursor, origin.1), SCALE);
-    cursor += slash_width;
-    match view.revision {
-        Some(revision) => {
-            draw_digits(
-                frame,
-                u32::from(revision),
-                INFO_DIGITS,
-                (cursor, origin.1),
-                SCALE,
-            );
-        }
-        None => draw_text(frame, "---", (cursor, origin.1), SCALE),
-    }
+    let label = match view.wom {
+        Some(true) => "WOM 1",
+        Some(false) => "WOM 0",
+        None => "WOM --",
+    };
+    let (line_width, _) = text_size(label, SCALE);
+    draw_text(
+        frame,
+        label,
+        (origin.0 + (width - line_width) / 2, origin.1),
+        SCALE,
+    );
 }
 
 fn draw_touch(
@@ -269,5 +255,17 @@ fn point_label(index: usize) -> &'static str {
         0 => "P0 ",
         1 => "P1 ",
         _ => "P? ",
+    }
+}
+
+fn wake_label(wake: Option<WakeReason>) -> &'static str {
+    match wake {
+        None => "WAKE COLD",
+        Some(WakeReason::Timer) => "WAKE TIMER",
+        Some(WakeReason::Button) => "WAKE BUTTON",
+        Some(WakeReason::Motion) => "WAKE MOTION",
+        Some(WakeReason::Usb) => "WAKE USB",
+        Some(WakeReason::Unknown) => "WAKE UNKNOWN",
+        _ => "WAKE UNKNOWN",
     }
 }

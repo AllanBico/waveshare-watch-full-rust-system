@@ -93,10 +93,10 @@ pub struct InputState<'a, T: Touch, I: Imu> {
     pub touch: &'a mut T,
     /// IMU.
     pub imu: &'a mut I,
-    /// IMU chip identity, when it could be read.
-    pub imu_id: Option<u8>,
-    /// IMU revision, when it could be read.
-    pub revision: Option<u8>,
+    /// What woke the device.
+    pub wake: Option<WakeReason>,
+    /// IMU Wake-on-Motion flag, when it could be read before init.
+    pub wom: Option<bool>,
     report: TouchReport,
     motion: MotionSample,
     touch_error: Option<u16>,
@@ -116,8 +116,8 @@ impl<'a, T: Touch, I: Imu> InputState<'a, T, I> {
         Self {
             touch,
             imu,
-            imu_id: None,
-            revision: None,
+            wake: None,
+            wom: None,
             report: TouchReport::empty(),
             motion: MotionSample::ZERO,
             touch_error,
@@ -215,8 +215,8 @@ fn redraw_input<T: Touch, I: Imu>(display: &mut Option<Panel>, input: &InputStat
         let viewer = display::Viewer {
             touch: &input.report,
             motion: &input.motion,
-            imu_id: input.imu_id,
-            revision: input.revision,
+            wake: input.wake,
+            wom: input.wom,
             error: input.error(),
         };
         let _ = panel.draw_input_viewer(&viewer);

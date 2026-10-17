@@ -50,8 +50,11 @@ const AWAKE_BUDGET_MS: u32 = 5_000;
 // TODO(phase-5): return to the 2 s watch budget once the input viewer is gone.
 const AWAKE_WINDOW: Duration = Duration::from_secs(5);
 
+/// Deep-sleep timer interval. Longer for wake-on-motion debugging.
+const SLEEP_TIMER_MS: u32 = 30_000;
+
 /// Wake-on-Motion threshold. Tune on hardware with the input viewer.
-const WOM_THRESHOLD_MG: u8 = 80;
+const WOM_THRESHOLD_MG: u8 = 40;
 /// Accelerometer samples ignored after entering Wake-on-Motion.
 const WOM_BLANKING_SAMPLES: u8 = 10;
 
@@ -89,6 +92,7 @@ async fn main(_spawner: Spawner) {
     let now = runtime::read_timestamp(&mut clock);
 
     let mut power = PowerManager::new(pmic, Mode::Watch);
+    power.set_sleep_timer_ms(SLEEP_TIMER_MS);
     if let Err(error) = power.sync() {
         println!("[pm] rail sync failed: {}", error.to_common());
         halt().await
@@ -102,15 +106,19 @@ async fn main(_spawner: Spawner) {
     // Wake-on-Motion flag before init clears it, so a motion wake is logged as
     // Motion instead of Button.
     let mut imu = Qmi8658::new(RefCellDevice::new(bus), board::IMU_I2C_ADDR, Delay::new());
-    let motion_wake =
-        matches!(raw_wake, Some(WakeReason::Button)) && imu.take_wake_event().unwrap_or(false);
+    let wom = if raw_wake.is_some() {
+        imu.take_wake_event().ok()
+    } else {
+        None
+    };
+    let motion_wake = matches!(raw_wake, Some(WakeReason::Button)) && wom == Some(true);
     let wake = if motion_wake {
         Some(WakeReason::Motion)
     } else {
         raw_wake
     };
     match wake {
-        Some(reason) => println!("[pm] woke by {:?}", reason),
+        Some(reason) => println!("[pm] woke by {:?} (wom {:?})", reason, wom),
         None => println!("[pm] cold boot"),
     }
 
@@ -211,8 +219,8 @@ async fn main(_spawner: Spawner) {
             let viewer = display::Viewer {
                 touch: &touch_report,
                 motion: &motion,
-                imu_id,
-                revision,
+                wake,
+                wom,
                 error: touch_error.or(imu_error),
             };
             if let Err(error) = panel.draw_input_viewer(&viewer) {
@@ -235,8 +243,8 @@ async fn main(_spawner: Spawner) {
             imu_error,
             mode == Mode::Desk,
         );
-        input.imu_id = imu_id;
-        input.revision = revision;
+        input.wake = wake;
+        input.wom = wom;
 
         if mode == Mode::Desk {
             desk_keepalive(&mut power, &mut display, &mut input).await;
