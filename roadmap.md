@@ -68,8 +68,12 @@
 - I2C communication with PCF85063A.
 - Read and write time and date (BCD registers).
 - Expose it through the `Time` HAL trait.
+- `init` configures 24-hour mode and CLKOUT without a soft reset, so the time
+  survives deep sleep and reboots. A soft reset on every boot would clear the
+  time registers.
 
-**Test:** Set the time, read it back, and confirm it advances. Timestamps are available for logs.
+**Test:** Set the time, read it back, and confirm it advances. Timestamps are
+available for logs and survive a deep sleep without being reset.
 
 ---
 
@@ -146,9 +150,9 @@ show an incrementing `LOG` sequence. The log partition is not touched on product
 - The `log!` macro expands to nothing unless the caller's `logging` feature is
   enabled. Core battery/wake telemetry is always compiled; the feature gates
   optional event logs.
-- Flush policy: desk and trace builds flush every boot; production watch builds
+- Flush policy: desk builds flush every boot; watch builds (including trace)
   flush at 32 retained records (about 16 wakes) and only above the write
-  voltage. Never write flash on every wake in production.
+  voltage. Never write flash on every wake in watch mode.
 - The `logs` partition is force-formatted only in desk mode because logs are
   disposable. Watch mode opens it read-only and never formats.
 - Unexpected log open/flush failures are recorded as `Event::Error` entries for
@@ -159,16 +163,17 @@ show an incrementing `LOG` sequence. The log partition is not touched on product
 
 **Test:** Six ring tests cover initialization from garbage, push/peek/pop,
 reopen retention, wraparound/drop accounting, clear, and corrupt slots. Host
-tests verify the codec and time-series. On hardware: watch-mode wakes should
-show `BUF` growing by two records; at the threshold they flush and `LOG`
-advances. Desk boots flush immediately.
+tests verify the codec and time-series. On hardware: unplug USB to enter watch mode;
+wakes should show `BUF` growing by two records; at the threshold they flush and
+`LOG` advances. Desk boots flush immediately, so `BUF` stays zero while USB is
+connected.
 
 ### 2.4 Battery Voltage Logging (Done, combined with 2.3)
 - Every boot reads AXP2101 battery voltage once and appends an
   `Event::Battery(Millivolts)` record to the retained ring with the RTC
   timestamp. Wake reason is recorded in the same pass.
-- Samples flush with the same policy as 2.3: desk/trace every boot, production
-  watch every 32 records. No flash write happens per wake.
+- Samples flush with the same policy as 2.3: desk every boot, watch every 32
+  records. No flash write happens per wake.
 - `Battery` and `Error` are additive event tags under the existing log schema
   version 1; existing wake/mode records remain readable.
 - The viewer shows the current `BATT` sample, the retained `BUF` count, and the

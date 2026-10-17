@@ -13,9 +13,6 @@ pub(super) const SECONDS: u8 = 0x04;
 pub(super) const CTRL1_STOP: u8 = 1 << 5;
 /// Control_1: 12-hour mode (clear for 24-hour).
 pub(super) const CTRL1_12_HOUR: u8 = 1 << 1;
-/// Control_1 value that triggers a software reset.
-pub(super) const CTRL1_SOFT_RESET: u8 = 0x58;
-
 /// Control_2: CLKOUT frequency field mask.
 pub(super) const CTRL2_COF_MASK: u8 = 0x07;
 /// Control_2: CLKOUT off (output low).

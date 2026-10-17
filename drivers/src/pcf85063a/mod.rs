@@ -18,8 +18,8 @@ pub use error::RtcError;
 
 use regs::{
     BLOCK_DAYS, BLOCK_HOURS, BLOCK_MINUTES, BLOCK_MONTHS, BLOCK_SECONDS, BLOCK_YEARS, CTRL1,
-    CTRL1_12_HOUR, CTRL1_SOFT_RESET, CTRL1_STOP, CTRL2, CTRL2_COF_MASK, CTRL2_COF_OFF, DAYS_MASK,
-    HOURS_MASK, MINUTES_MASK, MONTHS_MASK, SECONDS, SECONDS_MASK, SECONDS_OS, TIME_BLOCK_LEN,
+    CTRL1_12_HOUR, CTRL1_STOP, CTRL2, CTRL2_COF_MASK, CTRL2_COF_OFF, DAYS_MASK, HOURS_MASK,
+    MINUTES_MASK, MONTHS_MASK, SECONDS, SECONDS_MASK, SECONDS_OS, TIME_BLOCK_LEN,
 };
 
 /// Base year for the RTC's two-digit year field.
@@ -40,9 +40,12 @@ impl<I: I2c> Pcf85063a<I> {
         Self { i2c, address }
     }
 
-    /// Resets the RTC and configures 24-hour mode with CLKOUT disabled.
+    /// Configures 24-hour mode with CLKOUT disabled, preserving the time.
+    ///
+    /// A soft reset would clear the time registers on every boot, so init only
+    /// touches the control registers. Use [`Self::set_datetime`] to seed a
+    /// stopped oscillator.
     pub fn init(&mut self) -> Result<(), RtcError<I::Error>> {
-        self.write_u8(CTRL1, CTRL1_SOFT_RESET)?;
         let ctrl1 = self.read_u8(CTRL1)? & !(CTRL1_STOP | CTRL1_12_HOUR);
         self.write_u8(CTRL1, ctrl1)?;
         let ctrl2 = self.read_u8(CTRL2)?;

@@ -36,6 +36,16 @@ fn init_forces_24h_and_disables_clkout() {
 }
 
 #[test]
+fn init_preserves_the_time_registers() {
+    let mock = scripted();
+    let mut rtc = Pcf85063a::new(mock, RTC_I2C_ADDR);
+    rtc.init().unwrap();
+    assert_eq!(rtc.i2c.reg(super::regs::SECONDS), 0x56);
+    assert_eq!(rtc.i2c.reg(super::regs::SECONDS + 2), 0x12);
+    assert_eq!(rtc.i2c.reg(super::regs::SECONDS + 6), 0x26);
+}
+
+#[test]
 fn reads_bcd_datetime() {
     let mut rtc = Pcf85063a::new(scripted(), RTC_I2C_ADDR);
     assert_eq!(rtc.read_datetime().unwrap(), SAMPLE);

@@ -28,8 +28,8 @@ pub struct LogReport {
 
 /// Records this boot in the retained ring and flushes according to policy.
 ///
-/// Desk and trace builds flush every boot. Production watch builds flush when
-/// the ring reaches [`WATCH_FLUSH_RECORDS`], and only above the write voltage.
+/// Desk builds flush every boot. Watch builds flush when the ring reaches
+/// [`WATCH_FLUSH_RECORDS`], and only above the write voltage.
 pub fn run(
     device: &FlashDevice,
     mode: Mode,
@@ -64,14 +64,16 @@ pub fn run(
             Err(error) => return fail(ring, mode, error.to_common(), "logs open", now),
         };
 
-        let mut latest = series.latest().ok().filter(|sequence| *sequence > 0);
-        let should_flush =
-            mode == Mode::Desk || cfg!(feature = "trace") || ring.len() >= WATCH_FLUSH_RECORDS;
+        let mut latest = series
+            .latest()
+            .ok()
+            .filter(|sequence| *sequence > 0)
+            .and_then(|sequence| u32::try_from(sequence).ok());
+        let should_flush = mode == Mode::Desk || ring.len() >= WATCH_FLUSH_RECORDS;
         let can_write = mode == Mode::Desk || battery_mv >= STORAGE_WRITE_MIN_MV;
 
         if should_flush && can_write {
-            flush(ring, &mut series);
-            if let Some(sequence) = series.latest().ok().filter(|sequence| *sequence > 0) {
+            if let Some(sequence) = flush(ring, &mut series) {
                 latest = Some(sequence);
             }
         }
@@ -81,24 +83,32 @@ pub fn run(
             ring.clear();
         }
         LogReport {
-            latest: latest.and_then(|sequence| u32::try_from(sequence).ok()),
+            latest,
             buffered: ring.len() as u16,
             dropped,
         }
     })
 }
 
-fn flush(ring: &mut logging::Ring<'_>, series: &mut TimeSeries<'_, PartitionFlash<'_>>) {
+fn flush(
+    ring: &mut logging::Ring<'_>,
+    series: &mut TimeSeries<'_, PartitionFlash<'_>>,
+) -> Option<u32> {
+    let mut last = None;
     loop {
         match ring.peek() {
             Ok(Some(entry)) => match series.append_log(entry) {
-                Ok(_) => ring.pop(),
+                Ok(sequence) => {
+                    last = u32::try_from(sequence).ok();
+                    ring.pop();
+                }
                 Err(_) => break,
             },
             Ok(None) => break,
             Err(_) => ring.pop(),
         }
     }
+    last
 }
 
 fn fail(
