@@ -12,18 +12,23 @@ use esp_hal::system::SleepSource;
 use esp_hal::time::Rate;
 use esp_println::println;
 
-use common::{DateTime, Timestamp, WakeReason};
+use common::{DateTime, Timestamp, TouchReport, WakeReason};
 use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
 use embedded_hal_bus::i2c::RefCellDevice;
-use hal::Power;
+use hal::{Power, Touch};
 use power::PowerManager;
+
+use crate::display::{self, Display as Panel};
 
 /// CPU clock for bring-up. Mode-based clock switching comes later.
 pub const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
 
-/// Desk-mode VBUS poll and refresh period.
-pub const POLL_PERIOD: Duration = Duration::from_secs(1);
+/// Touch poll period while the panel is awake.
+pub const TOUCH_POLL_PERIOD: Duration = Duration::from_millis(50);
+
+/// Touch polls between desk-mode VBUS checks.
+const TOUCH_POLLS_PER_SECOND: u32 = 20;
 
 /// I2C bus device handle shared by all on-board peripherals.
 pub type Bus = RefCellDevice<'static, I2c<'static, esp_hal::Blocking>>;
@@ -82,16 +87,111 @@ fn print_datetime(label: &str, dt: &DateTime) {
     );
 }
 
-/// Stays awake in desk mode until USB is removed, keeping the viewer on screen.
-pub async fn desk_keepalive<P: Power>(power: &mut PowerManager<P>) {
+/// State shared by the touch viewer in both awake modes.
+struct ViewerState {
+    report: TouchReport,
+    chip_id: Option<u8>,
+    error: Option<u16>,
+    log: bool,
+}
+
+impl ViewerState {
+    fn new(chip_id: Option<u8>, error: Option<u16>, log: bool) -> Self {
+        Self {
+            report: TouchReport::empty(),
+            chip_id,
+            error,
+            log,
+        }
+    }
+}
+
+/// Stays awake in desk mode until USB is removed, updating the touch viewer.
+pub async fn desk_keepalive<P: Power, T: Touch>(
+    power: &mut PowerManager<P>,
+    display: &mut Option<Panel>,
+    touch: &mut T,
+    chip_id: Option<u8>,
+    error: Option<u16>,
+) {
     let start = Instant::now();
+    let mut state = ViewerState::new(chip_id, error, true);
+    let mut ticks = 0u32;
     loop {
-        Timer::after(POLL_PERIOD).await;
+        Timer::after(TOUCH_POLL_PERIOD).await;
+        poll_touch(display, touch, &mut state);
+
+        ticks += 1;
+        if !ticks.is_multiple_of(TOUCH_POLLS_PER_SECOND) {
+            continue;
+        }
         if !power.is_vbus_present().unwrap_or(true) {
             println!("[pm] USB removed");
             return;
         }
         println!("[hb] uptime {} ms", (Instant::now() - start).as_millis());
+    }
+}
+
+/// Keeps the panel awake for `window` while sampling touch.
+pub async fn watch_awake<T: Touch>(
+    display: &mut Option<Panel>,
+    touch: &mut T,
+    chip_id: Option<u8>,
+    error: Option<u16>,
+    window: Duration,
+) {
+    let deadline = Instant::now() + window;
+    let mut state = ViewerState::new(chip_id, error, false);
+    while Instant::now() < deadline {
+        Timer::after(TOUCH_POLL_PERIOD).await;
+        poll_touch(display, touch, &mut state);
+    }
+}
+
+fn poll_touch<T: Touch>(display: &mut Option<Panel>, touch: &mut T, state: &mut ViewerState) {
+    let previous_error = state.error;
+    let next = match touch.read() {
+        Ok(report) => {
+            state.error = None;
+            report
+        }
+        Err(_) => {
+            state.error = Some(common::Error::HardwareFailure.code());
+            TouchReport::empty()
+        }
+    };
+
+    if next == state.report && state.error == previous_error {
+        return;
+    }
+    state.report = next;
+    redraw_touch(display, state);
+    if state.log {
+        log_touch(state);
+    }
+}
+
+fn redraw_touch(display: &mut Option<Panel>, state: &ViewerState) {
+    if let Some(panel) = display.as_mut() {
+        let viewer = display::Viewer {
+            report: &state.report,
+            chip_id: state.chip_id,
+            error: state.error,
+        };
+        let _ = panel.draw_touch_viewer(&viewer);
+    }
+}
+
+fn log_touch(state: &ViewerState) {
+    if let Some(code) = state.error {
+        println!("[tp] error {}", code);
+    } else if state.report.is_empty() {
+        println!("[tp] none");
+    } else {
+        for point in state.report.points() {
+            println!("[tp] id {} x {} y {}", point.id, point.x, point.y);
+        }
     }
 }
 
@@ -117,7 +217,7 @@ pub fn report_boot(psram_bytes: usize) {
     let revision = Efuse::chip_revision();
     let mac = Efuse::mac_address();
 
-    println!("=== wv2 firmware (Phase 3.4 display bring-up) ===");
+    println!("=== wv2 firmware (Phase 4.1 touch bring-up) ===");
     println!(
         "chip:  {} rev v{}.{}",
         esp_hal::chip!(),

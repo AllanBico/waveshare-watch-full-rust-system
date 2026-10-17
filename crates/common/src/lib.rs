@@ -18,6 +18,7 @@ mod log_entry;
 mod mode;
 mod render_policy;
 mod time;
+mod touch;
 mod units;
 
 pub use color::Rgb565;
@@ -30,4 +31,5 @@ pub use log_entry::{LogEntry, SCHEMA_VERSION};
 pub use mode::Mode;
 pub use render_policy::{ColorMode, RenderPolicy};
 pub use time::Timestamp;
+pub use touch::{TouchPoint, TouchReport, MAX_TOUCH_POINTS};
 pub use units::{Millivolts, Percent};

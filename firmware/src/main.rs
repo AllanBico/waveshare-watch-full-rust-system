@@ -1,9 +1,9 @@
 //! Firmware entry point.
 //!
-//! Brings up the AXP2101 and the PCF85063A on one I2C bus, chooses the runtime
-//! mode from VBUS (USB -> Desk, else Watch), owns the display across the awake
-//! window, and deep-sleeps. The external RTC keeps wall-clock time. The pieces
-//! `main` calls live in [`runtime`] and [`display`].
+//! Brings up the AXP2101, PCF85063A, and FT3168 on one I2C bus, chooses the
+//! runtime mode from VBUS (USB -> Desk, else Watch), owns the display and touch
+//! panel across the awake window, and deep-sleeps. The external RTC keeps
+//! wall-clock time. The pieces `main` calls live in [`runtime`] and [`display`].
 
 #![no_std]
 #![no_main]
@@ -13,15 +13,17 @@ extern crate alloc;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
-use esp_hal::gpio::RtcPin;
+use esp_hal::delay::Delay;
+use esp_hal::gpio::{Level, Output, OutputConfig, RtcPin};
 use esp_hal::rtc_cntl::sleep::{Ext1WakeupSource, TimerWakeupSource, WakeupLevel};
 use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
-use common::Mode;
+use common::{Mode, TouchReport};
 use drivers::axp2101::Axp2101;
 use drivers::board;
+use drivers::ft3168::Ft3168;
 use drivers::pcf85063a::Pcf85063a;
 use embedded_hal_bus::i2c::RefCellDevice;
 use power::PowerManager;
@@ -35,7 +37,7 @@ mod runtime;
 use esp_alloc as _;
 use esp_backtrace as _;
 
-use runtime::{desk_keepalive, halt, open_bus, report_boot, report_time, wake_reason};
+use runtime::{desk_keepalive, halt, open_bus, report_boot, report_time, wake_reason, watch_awake};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -43,7 +45,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 const AWAKE_BUDGET_MS: u32 = 5_000;
 
 /// How long to stay awake before sleeping in watch mode.
-// TODO(phase-6): return to the 2 s watch budget once the storage viewer is gone.
+// TODO(phase-5): return to the 2 s watch budget once the touch viewer is gone.
 const AWAKE_WINDOW: Duration = Duration::from_secs(5);
 
 /// SRAM heap size reserved for the runtime.
@@ -135,20 +137,42 @@ async fn main(_spawner: Spawner) {
             None
         }
     };
-    if let Some(display) = display.as_mut() {
-        if let Err(error) = display.init() {
+    // Touch stays powered across the awake window; reset and put it to sleep
+    // explicitly so the FT3168 stops scanning before deep sleep.
+    let mut touch = Ft3168::new(
+        RefCellDevice::new(bus),
+        board::TP_I2C_ADDR,
+        Output::new(peripherals.GPIO9, Level::Low, OutputConfig::default()),
+        Delay::new(),
+    );
+    let touch_error = match touch.init() {
+        Ok(()) => None,
+        Err(error) => {
+            if mode == Mode::Desk {
+                println!("[tp] init failed: {}", error);
+            }
+            Some(error.to_common().code())
+        }
+    };
+    let chip_id = touch.read_chip_id().ok();
+    if mode == Mode::Desk {
+        match chip_id {
+            Some(id) => println!("[tp] FT3168 id 0x{:02X}", id),
+            None => println!("[tp] FT3168 id unreadable"),
+        }
+    }
+
+    if let Some(panel) = display.as_mut() {
+        if let Err(error) = panel.init() {
             println!("[lcd] init failed: {:?}", error);
         } else {
+            let report = TouchReport::empty();
             let viewer = display::Viewer {
-                status: report.label(),
-                boot: report.boot(),
-                log: report.log(),
-                battery_mv: report.battery_mv(),
-                buffered: report.buffered(),
-                dropped: report.dropped(),
-                error: report.error_code(),
+                report: &report,
+                chip_id,
+                error: touch_error,
             };
-            if let Err(error) = display.draw_viewer(&viewer) {
+            if let Err(error) = panel.draw_touch_viewer(&viewer) {
                 println!("[lcd] viewer failed: {:?}", error);
             }
         }
@@ -161,15 +185,23 @@ async fn main(_spawner: Spawner) {
     }
 
     if mode == Mode::Desk {
-        desk_keepalive(&mut power).await;
+        desk_keepalive(&mut power, &mut display, &mut touch, chip_id, touch_error).await;
+        if let Err(error) = touch.sleep() {
+            println!("[tp] sleep failed: {}", error);
+        }
         if let Err(error) = power.set_mode(Mode::Watch) {
             println!("[pm] set_mode failed: {}", error.to_common());
             halt().await
         }
+        Timer::after(AWAKE_WINDOW).await;
+    } else {
+        watch_awake(&mut display, &mut touch, chip_id, touch_error, AWAKE_WINDOW).await;
+        if let Err(error) = touch.sleep() {
+            if mode == Mode::Desk {
+                println!("[tp] sleep failed: {}", error);
+            }
+        }
     }
-
-    // Watch mode: a brief awake window, then deep sleep.
-    Timer::after(AWAKE_WINDOW).await;
 
     // Sleep the panel before `power` cuts its enable rail (ALDO2).
     if let Some(display) = display.as_mut() {

@@ -1,12 +1,10 @@
-//! Temporary trace viewer drawn on the panel.
+//! Phase 4.1 touch viewer.
 //!
-//! Shows storage state, the persisted boot counter, the latest log sequence,
-//! the boot battery sample, and either buffered/dropped counts or an error
-//! code. This is bring-up output, not the Phase 5 UI.
+//! Draws the live FT3168 report and chip ID so coordinates can be verified on
+//! the panel. This is bring-up output, not the Phase 5 UI.
+// TODO(phase-5): replace with the app renderer and shared surface.
 
-use alloc::vec;
-
-use common::Region;
+use common::{Region, TouchReport, MAX_TOUCH_POINTS};
 use hal::Display as _;
 use ui::{digits_size, draw_digits, draw_text, text_size, MonoBuffer};
 
@@ -14,154 +12,160 @@ use super::{BringUpError, Display};
 
 const SCALE: u16 = 2;
 const GAP: u16 = 6;
-const BOOT_DIGITS: u8 = 4;
-const LOG_DIGITS: u8 = 4;
-const BATTERY_DIGITS: u8 = 4;
-const COUNT_DIGITS: u8 = 3;
-const ERROR_DIGITS: u8 = 3;
+const INFO_DIGITS: u8 = 3;
+const COORD_DIGITS: u8 = 4;
 
-/// Values shown by the trace viewer.
+/// Values shown by the touch viewer.
 #[derive(Clone, Copy)]
 pub struct Viewer<'a> {
-    /// Key-value store status.
-    pub status: &'a str,
-    /// Persisted trace boot counter.
-    pub boot: u32,
-    /// Latest persisted log sequence.
-    pub log: Option<u32>,
-    /// Battery voltage read this boot.
-    pub battery_mv: u16,
-    /// Records waiting in retained memory.
-    pub buffered: u16,
-    /// Records dropped by ring overflow.
-    pub dropped: u16,
-    /// Storage error code, when the boot failed.
+    /// Latest touch snapshot.
+    pub report: &'a TouchReport,
+    /// Chip identity, when it could be read.
+    pub chip_id: Option<u8>,
+    /// Stable error code, when touch bring-up or a read failed.
     pub error: Option<u16>,
 }
 
 impl Display {
-    /// Draws the storage and logging viewer.
-    pub fn draw_viewer(&mut self, view: &Viewer<'_>) -> Result<(), BringUpError> {
-        let Viewer {
-            status,
-            boot,
-            log,
-            battery_mv,
-            buffered,
-            dropped,
-            error,
-        } = *view;
-        let mut frame = MonoBuffer::new(self.geometry.width, self.geometry.height);
-
-        let (status_width, line_height) = text_size(status, SCALE);
-        let (boot_line_width, boot_label_width) = if boot == 0 {
-            (text_size("BOOT ----", SCALE).0, 0)
+    /// Draws the touch report centered on the panel.
+    pub fn draw_touch_viewer(&mut self, view: &Viewer<'_>) -> Result<(), BringUpError> {
+        let title = if view.error.is_some() {
+            "TOUCH ERR"
         } else {
-            let (label_width, _) = text_size("BOOT ", SCALE);
-            let (value_width, _) = digits_size(BOOT_DIGITS, SCALE);
-            (label_width + value_width, label_width)
+            "TOUCH"
         };
+        let (title_width, line_height) = text_size(title, SCALE);
+        let (max_title_width, _) = text_size("TOUCH ERR", SCALE);
 
-        let (log_label_width, log_line_width) = match log {
-            Some(_) => {
-                let (label_width, _) = text_size("LOG ", SCALE);
-                let (value_width, _) = digits_size(LOG_DIGITS, SCALE);
-                (label_width, label_width + value_width)
-            }
-            None => (0, text_size("LOG NONE", SCALE).0),
-        };
+        let (id_label_width, _) = text_size("ID ", SCALE);
+        let (err_label_width, _) = text_size("ERR ", SCALE);
+        let (info_digits_width, _) = digits_size(INFO_DIGITS, SCALE);
+        let info_width = (id_label_width.max(err_label_width) + info_digits_width)
+            .max(text_size("ID ---", SCALE).0);
 
-        let (battery_label_width, _) = text_size("BATT ", SCALE);
-        let (battery_width, _) = digits_size(BATTERY_DIGITS, SCALE);
-        let battery_line_width = battery_label_width + battery_width;
+        let (point_label_width, _) = text_size("P0 ", SCALE);
+        let (coord_width, _) = digits_size(COORD_DIGITS, SCALE);
+        let (comma_width, _) = text_size(",", SCALE);
+        let point_width = point_label_width + coord_width * 2 + comma_width;
 
-        let (last_label, last_value, last_label_width, last_width) = match error {
-            Some(code) => count_line("ERR ", u32::from(code), ERROR_DIGITS),
-            None if dropped > 0 => count_line("DRP ", u32::from(dropped), COUNT_DIGITS),
-            None => count_line("BUF ", u32::from(buffered), COUNT_DIGITS),
-        };
+        let (empty_width, _) = text_size("NO TOUCH", SCALE);
+        let width = max_title_width
+            .max(info_width)
+            .max(point_width)
+            .max(empty_width);
+        let lines = 2 + MAX_TOUCH_POINTS as u16;
+        let height = line_height * lines + GAP * (lines - 1);
 
-        let width = status_width
-            .max(boot_line_width)
-            .max(log_line_width)
-            .max(battery_line_width)
-            .max(last_width);
-        let height = line_height * 5 + GAP * 4;
         let x = self.geometry.width.saturating_sub(width) / 2;
         let y = self.geometry.height.saturating_sub(height) / 2;
+        let block = self.geometry.align_region(Region::new(x, y, width, height));
+        let origin_x = x - block.x;
+        let origin_y = y - block.y;
+
+        let needs_frame = match self.touch_frame.as_ref() {
+            Some(frame) => frame.width() != block.width || frame.height() != block.height,
+            None => true,
+        };
+        if needs_frame {
+            self.touch_frame = Some(MonoBuffer::new(block.width, block.height));
+        }
+        let Some(frame) = self.touch_frame.as_mut() else {
+            return Ok(());
+        };
+        frame.clear();
 
         draw_text(
-            &mut frame,
-            status,
-            (x + (width - status_width) / 2, y),
+            frame,
+            title,
+            (origin_x + (width - title_width) / 2, origin_y),
             SCALE,
         );
 
-        let boot_y = y + line_height + GAP;
-        let boot_x = x + (width - boot_line_width) / 2;
-        if boot == 0 {
-            draw_text(&mut frame, "BOOT ----", (boot_x, boot_y), SCALE);
-        } else {
-            draw_text(&mut frame, "BOOT ", (boot_x, boot_y), SCALE);
-            draw_digits(
-                &mut frame,
-                boot,
-                BOOT_DIGITS,
-                (boot_x + boot_label_width, boot_y),
-                SCALE,
-            );
-        }
-
-        let log_y = boot_y + line_height + GAP;
-        let log_x = x + (width - log_line_width) / 2;
-        match log {
-            Some(sequence) => {
-                draw_text(&mut frame, "LOG ", (log_x, log_y), SCALE);
+        let info_y = origin_y + line_height + GAP;
+        let info_value = view
+            .error
+            .map(u32::from)
+            .or_else(|| view.chip_id.map(u32::from));
+        match info_value {
+            Some(value) => {
+                let (label, label_width) = if view.error.is_some() {
+                    ("ERR ", err_label_width)
+                } else {
+                    ("ID ", id_label_width)
+                };
+                let line_width = label_width + info_digits_width;
+                let info_x = origin_x + (width - line_width) / 2;
+                draw_text(frame, label, (info_x, info_y), SCALE);
                 draw_digits(
-                    &mut frame,
-                    sequence,
-                    LOG_DIGITS,
-                    (log_x + log_label_width, log_y),
+                    frame,
+                    value,
+                    INFO_DIGITS,
+                    (info_x + label_width, info_y),
                     SCALE,
                 );
             }
-            None => draw_text(&mut frame, "LOG NONE", (log_x, log_y), SCALE),
+            None => {
+                let (label_width, _) = text_size("ID ---", SCALE);
+                draw_text(
+                    frame,
+                    "ID ---",
+                    (origin_x + (width - label_width) / 2, info_y),
+                    SCALE,
+                );
+            }
         }
 
-        let battery_y = log_y + line_height + GAP;
-        let battery_x = x + (width - battery_line_width) / 2;
-        draw_text(&mut frame, "BATT ", (battery_x, battery_y), SCALE);
-        draw_digits(
-            &mut frame,
-            u32::from(battery_mv),
-            BATTERY_DIGITS,
-            (battery_x + battery_label_width, battery_y),
-            SCALE,
+        let body_y = info_y + line_height + GAP;
+        if view.report.is_empty() {
+            draw_text(
+                frame,
+                "NO TOUCH",
+                (origin_x + (width - empty_width) / 2, body_y),
+                SCALE,
+            );
+        } else {
+            for index in 0..MAX_TOUCH_POINTS {
+                let Some(point) = view.report.get(index) else {
+                    continue;
+                };
+                let line_y = body_y + index as u16 * (line_height + GAP);
+                let line_x = origin_x + (width - point_width) / 2;
+                draw_text(frame, point_label(index), (line_x, line_y), SCALE);
+                let x_cursor = line_x + point_label_width;
+                draw_digits(
+                    frame,
+                    u32::from(point.x),
+                    COORD_DIGITS,
+                    (x_cursor, line_y),
+                    SCALE,
+                );
+                draw_text(frame, ",", (x_cursor + coord_width, line_y), SCALE);
+                draw_digits(
+                    frame,
+                    u32::from(point.y),
+                    COORD_DIGITS,
+                    (x_cursor + coord_width + comma_width, line_y),
+                    SCALE,
+                );
+            }
+        }
+
+        let needed = block.rgb565_len();
+        self.touch_pixels.resize(needed, 0);
+        frame.expand_region(
+            Region::full(block.width, block.height),
+            &mut self.touch_pixels[..needed],
         );
-
-        let last_y = battery_y + line_height + GAP;
-        let last_x = x + (width - last_width) / 2;
-        draw_text(&mut frame, last_label, (last_x, last_y), SCALE);
-        draw_digits(
-            &mut frame,
-            last_value,
-            COUNT_DIGITS,
-            (last_x + last_label_width, last_y),
-            SCALE,
-        );
-
-        let block = self.geometry.align_region(Region::new(x, y, width, height));
-        let mut expanded = vec![0u8; block.rgb565_len()];
-        frame.expand_region(block, &mut expanded);
-
         self.panel
-            .write_region(block, &expanded)
+            .write_region(block, &self.touch_pixels[..needed])
             .map_err(BringUpError::Display)
     }
 }
 
-fn count_line(label: &'static str, value: u32, digits: u8) -> (&'static str, u32, u16, u16) {
-    let (label_width, _) = text_size(label, SCALE);
-    let (value_width, _) = digits_size(digits, SCALE);
-    (label, value, label_width, label_width + value_width)
+fn point_label(index: usize) -> &'static str {
+    match index {
+        0 => "P0 ",
+        1 => "P1 ",
+        _ => "P? ",
+    }
 }
