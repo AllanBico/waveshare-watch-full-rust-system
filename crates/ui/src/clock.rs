@@ -64,12 +64,12 @@ pub fn draw_time(
 /// Draws `value` as `digits` zero-padded decimal digits at `origin`.
 pub fn draw_digits(
     buffer: &mut MonoBuffer,
-    value: u16,
+    value: u32,
     digits: u8,
     origin: (u16, u16),
     scale: u16,
 ) {
-    let mut remaining = u32::from(value);
+    let mut remaining = value;
     let mut divisor = 10u32.pow(u32::from(digits.saturating_sub(1)));
     let mut x = origin.0;
     for _ in 0..digits {
@@ -82,7 +82,7 @@ pub fn draw_digits(
 }
 
 /// Draws one glyph as `scale` by `scale` blocks.
-fn draw_glyph(buffer: &mut MonoBuffer, character: u8, origin: (u16, u16), scale: u16) {
+pub(crate) fn draw_glyph(buffer: &mut MonoBuffer, character: u8, origin: (u16, u16), scale: u16) {
     let Some(rows) = glyph(character) else {
         return;
     };

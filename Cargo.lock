@@ -267,6 +267,10 @@ dependencies = [
  "common",
  "defmt",
  "embedded-hal 1.0.0",
+ "embedded-storage",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-storage",
  "hal",
 ]
 
@@ -749,6 +753,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "esp-storage"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1495fc1f5549bdd840b52d9ceb201746200e1620d2636f46958c11e765623b80"
+dependencies = [
+ "document-features",
+ "embedded-storage",
+ "esp-hal",
+ "esp-hal-procmacros",
+ "esp-metadata-generated 0.3.0",
+ "esp-rom-sys",
+ "esp-sync",
+]
+
+[[package]]
 name = "esp-sync"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -872,6 +891,8 @@ dependencies = [
  "esp-rtos",
  "hal",
  "power",
+ "static_cell",
+ "storage",
  "ui",
 ]
 
@@ -1367,8 +1388,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "static_cell"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0530892bb4fa575ee0da4b86f86c667132a94b74bb72160f58ee5a4afec74c23"
+dependencies = [
+ "portable-atomic",
+]
+
+[[package]]
 name = "storage"
 version = "0.1.0"
+dependencies = [
+ "common",
+ "defmt",
+ "embedded-storage",
+ "hal",
+ "tickv",
+]
 
 [[package]]
 name = "strsim"
@@ -1451,6 +1488,12 @@ dependencies = [
  "quote",
  "syn 3.0.9",
 ]
+
+[[package]]
+name = "tickv"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b5b0040c9bcd8866f00bdeabc39c6f426ccb81bf31821a8302b524b1c952b"
 
 [[package]]
 name = "toml_datetime"

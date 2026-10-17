@@ -27,12 +27,15 @@ use embedded_hal_bus::i2c::RefCellDevice;
 use power::PowerManager;
 
 mod display;
+mod persist;
 mod runtime;
 
 use esp_alloc as _;
 use esp_backtrace as _;
 
-use runtime::{desk_keepalive, halt, open_bus, refresh, report_boot, report_time, wake_reason};
+#[cfg(not(feature = "trace"))]
+use runtime::refresh;
+use runtime::{desk_keepalive, halt, open_bus, report_boot, report_time, wake_reason};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -40,6 +43,10 @@ esp_bootloader_esp_idf::esp_app_desc!();
 const AWAKE_BUDGET_MS: u32 = 5_000;
 
 /// How long to stay awake before sleeping in watch mode.
+#[cfg(feature = "trace")]
+const AWAKE_WINDOW: Duration = Duration::from_secs(5);
+/// How long to stay awake before sleeping in watch mode.
+#[cfg(not(feature = "trace"))]
 const AWAKE_WINDOW: Duration = Duration::from_secs(2);
 
 /// SRAM heap size reserved for the runtime.
@@ -93,6 +100,21 @@ async fn main(_spawner: Spawner) {
     }
     println!("[pm] mode {:?} (vbus: {})", mode, vbus);
 
+    let battery_mv = power
+        .pmic_mut()
+        .read_battery_millivolts()
+        .map(|millivolts| millivolts.value())
+        .unwrap_or(0);
+    let report = persist::init(peripherals.FLASH, mode, battery_mv);
+    if mode == Mode::Desk {
+        println!(
+            "[kv] {} boot {} error {:?}",
+            report.label(),
+            report.boot(),
+            report.error_code()
+        );
+    }
+
     // Own the panel across the awake window so it can sleep before the rail cut.
     let mut display = match display::Display::new(display::Peripherals {
         spi: peripherals.SPI2,
@@ -115,6 +137,18 @@ async fn main(_spawner: Spawner) {
         if let Err(error) = display.init() {
             println!("[lcd] init failed: {:?}", error);
         } else {
+            #[cfg(feature = "trace")]
+            {
+                if let Err(error) = display.draw_viewer(
+                    report.label(),
+                    report.boot(),
+                    storage::SCHEMA_VERSION,
+                    report.error_code(),
+                ) {
+                    println!("[lcd] viewer failed: {:?}", error);
+                }
+            }
+            #[cfg(not(feature = "trace"))]
             refresh(&mut power, &mut clock, Some(display));
         }
     }

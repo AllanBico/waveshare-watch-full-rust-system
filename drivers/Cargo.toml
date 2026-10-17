@@ -6,9 +6,14 @@ edition.workspace = true
 [features]
 default = []
 defmt = ["dep:defmt"]
+hardware = ["dep:esp-hal", "dep:esp-storage", "dep:esp-bootloader-esp-idf"]
 
 [dependencies]
 common = { path = "../crates/common" }
 hal = { path = "../crates/hal" }
 embedded-hal = { workspace = true }
+embedded-storage = { workspace = true }
 defmt = { workspace = true, optional = true }
+esp-hal = { version = "1.0.0", features = ["esp32s3", "unstable"], optional = true }
+esp-storage = { version = "0.8.0", features = ["esp32s3"], optional = true }
+esp-bootloader-esp-idf = { version = "0.4", features = ["esp32s3"], optional = true }

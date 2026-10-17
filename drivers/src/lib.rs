@@ -11,6 +11,8 @@
 pub mod axp2101;
 pub mod board;
 pub mod co5300;
+#[cfg(feature = "hardware")]
+pub mod flash;
 pub mod pcf85063a;
 
 #[cfg(test)]

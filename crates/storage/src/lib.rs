@@ -1,7 +1,23 @@
-//! Persistent storage.
+//! Persistent key-value storage.
 //!
-//! Wraps TicKV with a raw KV API and a time-series API on top. Owns the flash
-//! partition and the retention policy.
+//! Wraps TicKV over a `NorFlash` partition. The flash device and partition
+//! table arrive from `drivers`; this crate owns hashing, provisioning policy,
+//! TicKV error mapping, and the time-series layer added in Phase 2.2.
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
+
+mod controller;
+mod error;
+mod hash;
+mod kv;
+
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod tests;
+
+pub use controller::REGION_SIZE;
+pub use error::Error;
+pub use hash::{hash_key, MAIN_KEY_HASH};
+pub use kv::{OpenOutcome, Provisioning, TicKvStorage, MAX_KEY_LEN, MAX_VALUE_LEN, SCHEMA_VERSION};

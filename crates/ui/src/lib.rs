@@ -13,8 +13,12 @@
 extern crate alloc;
 
 mod clock;
+#[cfg(feature = "debug-text")]
+mod debug;
 mod font;
 mod mono;
 
 pub use clock::{clock_region, clock_size, digits_size, draw_digits, draw_time};
+#[cfg(feature = "debug-text")]
+pub use debug::{draw_text, text_size};
 pub use mono::MonoBuffer;

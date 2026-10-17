@@ -21,6 +21,8 @@ edition = "2021"
 [workspace.dependencies]
 defmt = "1.2"
 embedded-hal = "1.0"
+embedded-storage = "0.3.1"
+tickv = "2.0.0"
 
 [profile.dev]
 opt-level = "s"

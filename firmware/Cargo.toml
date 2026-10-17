@@ -6,15 +6,17 @@ edition.workspace = true
 [features]
 default = []
 logging = []
-trace = []
+trace = ["ui/debug-text"]
 simulator = []
 
 [dependencies]
 common = { path = "../crates/common" }
 hal = { path = "../crates/hal" }
 power = { path = "../crates/power" }
-drivers = { path = "../drivers" }
+drivers = { path = "../drivers", features = ["hardware"] }
 ui = { path = "../crates/ui" }
+storage = { path = "../crates/storage" }
+static_cell = "2.1"
 embedded-hal-bus = "0.3"
 
 esp-hal = { version = "1.0.0", default-features = true, features = ["esp32s3", "unstable", "psram"] }

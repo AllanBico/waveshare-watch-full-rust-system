@@ -32,6 +32,8 @@ pub enum Error {
     NotReady,
     /// The clock source reports its time is not valid.
     TimeInvalid,
+    /// The requested item does not exist.
+    NotFound,
 }
 
 impl Error {
@@ -49,6 +51,7 @@ impl Error {
             Error::NetworkUnavailable => 9,
             Error::NotReady => 10,
             Error::TimeInvalid => 11,
+            Error::NotFound => 12,
         }
     }
 
@@ -66,12 +69,13 @@ impl Error {
             Error::NetworkUnavailable => "network unavailable",
             Error::NotReady => "subsystem not ready",
             Error::TimeInvalid => "clock time invalid",
+            Error::NotFound => "not found",
         }
     }
 
     /// Every variant, for exhaustiveness tests.
     #[cfg(test)]
-    const ALL: [Error; 11] = [
+    const ALL: [Error; 12] = [
         Error::PowerFail,
         Error::StorageFull,
         Error::StorageCorrupt,
@@ -83,6 +87,7 @@ impl Error {
         Error::NetworkUnavailable,
         Error::NotReady,
         Error::TimeInvalid,
+        Error::NotFound,
     ];
 }
 
@@ -101,6 +106,7 @@ mod tests {
         assert_eq!(Error::PowerFail.code(), 1);
         assert_eq!(Error::StorageFull.code(), 2);
         assert_eq!(Error::NotReady.code(), 10);
+        assert_eq!(Error::NotFound.code(), 12);
     }
 
     #[test]

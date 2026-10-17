@@ -8,8 +8,10 @@
 
 mod display;
 mod power;
+mod storage;
 mod time;
 
 pub use display::Display;
 pub use power::{Power, Rail, RAIL_COUNT};
+pub use storage::Storage;
 pub use time::Time;

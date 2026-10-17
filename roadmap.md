@@ -75,36 +75,77 @@
 
 ## Phase 2: Storage Foundation
 
-**Goal:** TicKV works, custom time-series layer works, data survives reboot.
+**Goal:** TicKV works over a dedicated flash partition, the time-series layer
+works, and data survives reboot.
 
-### 2.1 TicKV Integration
-- Flash partition for TicKV.
-- `Storage` struct wraps TicKV.
-- Basic `set`, `get`, `delete`.
+### 2.1 TicKV Integration (Done)
+- Dedicated `kv` partition (256 KiB, data subtype `undefined`) plus a 2 MiB
+  `logs` partition reserved for 2.2. The app partition is 8 MiB. The layout
+  lives in `partitions.csv` and is written by the `espflash` runner.
+- `drivers::flash` owns the single `esp-storage` handle, reads the partition
+  table once, and exposes labelled partitions as `NorFlash` regions. Do not use
+  `embedded_storage::Storage::write`: it erases a whole sector per call.
+- `storage` wraps `tickv` 2.0 with a 4096-byte region. The adapter uses
+  `NorFlash` read/write/erase and a 4-byte read-modify-write path for TicKV's
+  unaligned writes.
+- Keys use a frozen FNV-1a + SplitMix64 hash, including the TicKV super key.
+  Changing the hash orphans every key, so it is part of the storage format.
+- Boot probes the super key. Only a fully blank partition may be provisioned,
+  and only in desk mode. A missing super key on non-blank flash is corruption,
+  never permission to erase. Watch mode opens existing data read-only and
+  reports `KV NONE` for an unprovisioned partition.
+- `set` is invalidate-then-append because TicKV rejects duplicate hashes.
+  `delete` invalidates; GC runs on explicit request and on a `FlashFull` retry.
+  The schema version is stored under `meta/schema` and checked on open.
+- Trace builds show a display viewer with the store status, a persisted boot
+  counter, and the schema version or an error code. The display is a viewer;
+  the store is the log. Production boots never write a test key. Trace
+  selftests may increment the counter every boot to prove persistence without
+  serial.
 
-**Test:** Write key, reboot, read key. Value persists.
+**Test:** Host tests cover provisioning policy, write/reboot/read, overwrite,
+delete, unaligned values, maximum value, small buffers, corruption without
+erase, schema mismatch, full/GC, and flash error mapping. Hardware verified:
+the trace viewer shows `KV OK`, `VER 01`, and a boot counter that increments
+across power cycles. `cargo fmt` and `cargo clippy` are clean.
 
 ### 2.2 Time-Series Layer
-- `append_log(entry)` assigns monotonic key.
-- `read_logs_since(checkpoint)` returns entries.
-- `prune_logs(before_timestamp)` removes old entries.
+- TicKV has no key enumeration, so build an explicit index:
+  `log/latest`, `log/oldest`, and `log/checkpoint`, with fixed-width
+  `log/{sequence}` keys and the timestamp stored in the value.
+- `append_log(entry)` assigns the next sequence and updates `latest`. Writes
+  are batched; never write on every wake.
+- `read_logs_since(checkpoint)` reads forward from checkpoint+1 until a key is
+  missing. `prune_logs(before_timestamp)` invalidates from `oldest` forward,
+  updates `oldest`, then lets GC reclaim.
+- Open and format the `logs` partition only in desk mode. Watch mode never
+  formats flash.
 
-**Test:** Append 100 entries, read back, verify order and content.
+**Test:** Append 100 entries, read them back, verify order and content. Prune a
+cutoff, verify only newer entries remain and a later append still works.
+Reboot and verify checkpoints and ordering survive.
 
 ### 2.3 Logging Crate
-- RAM ring buffer for runtime events.
-- `log!` macro compiles to nothing when `logging` feature is off.
-- Flush to `storage` on demand.
+- RAM ring buffer in retained memory (RTC) for watch-mode events; normal SRAM
+  does not survive deep sleep.
+- `log!` compiles to nothing when the `logging` feature is off. No serial
+  logging in watch mode.
+- Flush to storage in desk mode or on significant events/batches. Never write
+  flash on every wake.
 
-**Test:** Log 50 events, flush, read back from TicKV.
+**Test:** Log 50 events, flush, and read them back from TicKV. Power-cycle and
+verify flushed entries remain. A watch-mode test verifies no serial output and
+no flash writes.
 
 ### 2.4 Battery Voltage Logging
-- Log battery voltage on every wake.
-- Store in time-series.
+- Read battery voltage on every wake and append the sample to the retained RAM
+  ring. Flush samples to the time-series layer in desk mode or every N wakes.
+- The trace display viewer may show the latest sample and buffered count; it is
+  a viewer, not the log.
 
-**Test:** Wake 10 times, read 10 voltage entries.
-
----
+**Test:** Wake 10 times, verify 10 samples were captured in retained memory and
+appear in the time-series after the next desk flush. No flash write happens per
+wake.
 
 ## Phase 3: Display Foundation
 
