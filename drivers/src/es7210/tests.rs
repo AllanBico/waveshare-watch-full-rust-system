@@ -3,7 +3,7 @@
 use hal::AudioCapture;
 
 use super::regs::*;
-use super::{Es7210, Es7210Error, DEFAULT_GAIN};
+use super::{Es7210, Es7210Error, DEFAULT_GAIN, DEFAULT_GAIN_DB};
 use crate::board::ES7210_I2C_ADDR;
 use crate::test_support::{MockError, MockI2c};
 
@@ -46,11 +46,13 @@ fn gain_accepts_only_three_db_steps() {
 
     adc.set_gain(0).unwrap();
     assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, 0);
-    adc.set_gain(30).unwrap();
+    adc.set_gain(DEFAULT_GAIN_DB).unwrap();
     assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, DEFAULT_GAIN);
+    adc.set_gain(30).unwrap();
+    assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, 30 / 3);
     assert_eq!(adc.set_gain(31), Err(Es7210Error::InvalidGain(31)));
     assert_eq!(adc.set_gain(4), Err(Es7210Error::InvalidGain(4)));
-    assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, DEFAULT_GAIN);
+    assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, 30 / 3);
 }
 
 #[test]

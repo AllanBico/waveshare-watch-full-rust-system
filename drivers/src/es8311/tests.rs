@@ -3,7 +3,7 @@
 use hal::Audio;
 
 use super::regs::*;
-use super::{Es8311, Es8311Error};
+use super::{Es8311, Es8311Error, DEFAULT_VOLUME};
 use crate::board::ES8311_I2C_ADDR;
 use crate::test_support::{MockError, MockI2c};
 
@@ -47,7 +47,7 @@ fn init_runs_reset_then_configures_playback() {
     assert_eq!(codec.i2c.reg(SYSTEM_13), SYSTEM_13_HP_DRIVE);
     assert_eq!(codec.i2c.reg(ADC_1C), ADC_EQ_BYPASS);
     assert_eq!(codec.i2c.reg(DAC_37), DAC_EQ_BYPASS);
-    assert_eq!(codec.i2c.reg(DAC_32), DAC_ZERO_DB);
+    assert_eq!(codec.i2c.reg(DAC_32), DEFAULT_VOLUME);
     assert_eq!(codec.i2c.reg(DAC_31) & DAC_MUTE, 0);
 }
 
@@ -120,5 +120,5 @@ fn init_after_shutdown_restores_playback() {
     assert_eq!(codec.i2c.reg(RESET), POWER_ON);
     assert_eq!(codec.i2c.reg(SYSTEM_12), SYSTEM_12_DAC_ON);
     assert_eq!(codec.i2c.reg(SYSTEM_13), SYSTEM_13_HP_DRIVE);
-    assert_eq!(codec.i2c.reg(DAC_32), DAC_ZERO_DB);
+    assert_eq!(codec.i2c.reg(DAC_32), DEFAULT_VOLUME);
 }

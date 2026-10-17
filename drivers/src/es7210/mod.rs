@@ -18,8 +18,10 @@ pub use error::Es7210Error;
 
 use regs::*;
 
-/// Default microphone gain: 30 dB.
-const DEFAULT_GAIN_DB: u8 = 30;
+/// Default microphone gain: 18 dB.
+const DEFAULT_GAIN_DB: u8 = 18;
+/// Highest supported gain step.
+const MAX_GAIN_DB: u8 = 30;
 /// Register code for the default gain.
 const DEFAULT_GAIN: u8 = DEFAULT_GAIN_DB / 3;
 
@@ -121,7 +123,7 @@ impl<I: I2c> AudioCapture for Es7210<I> {
     }
 
     fn set_gain(&mut self, db: u8) -> Result<(), Self::Error> {
-        if db > DEFAULT_GAIN_DB || !db.is_multiple_of(3) {
+        if db > MAX_GAIN_DB || !db.is_multiple_of(3) {
             return Err(Es7210Error::InvalidGain(db));
         }
         self.gain = db / 3;
