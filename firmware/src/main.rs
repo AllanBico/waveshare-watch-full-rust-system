@@ -26,12 +26,14 @@ use esp_println::println;
 use common::{Mode, MotionSample, TouchReport, WakeOnMotion, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
+use drivers::es8311::Es8311;
 use drivers::ft3168::Ft3168;
 use drivers::pcf85063a::Pcf85063a;
 use drivers::qmi8658::Qmi8658;
 use embedded_hal_bus::i2c::RefCellDevice;
 use power::PowerManager;
 
+mod audio;
 mod display;
 mod log_boot;
 mod persist;
@@ -66,7 +68,7 @@ const BUTTON_SAMPLES: u8 = 4;
 const BUTTON_SAMPLE_PERIOD: Duration = Duration::from_millis(5);
 
 /// SRAM heap size reserved for the runtime.
-const SRAM_HEAP_BYTES: usize = 64 * 1024;
+const SRAM_HEAP_BYTES: usize = 96 * 1024;
 
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) {
@@ -270,11 +272,53 @@ async fn main(_spawner: Spawner) {
         input.button = button_pressed;
 
         if mode == Mode::Desk {
+            let mut audio = match audio::Audio::new(
+                audio::Peripherals {
+                    i2s: peripherals.I2S0,
+                    dma: peripherals.DMA_CH1,
+                    mclk: peripherals.GPIO16,
+                    bclk: peripherals.GPIO41,
+                    ws: peripherals.GPIO45,
+                    dout: peripherals.GPIO40,
+                    pa: peripherals.GPIO46,
+                },
+                Es8311::new(RefCellDevice::new(bus), board::ES8311_I2C_ADDR),
+            ) {
+                Ok(mut audio) => match audio.init() {
+                    Ok(()) => {
+                        println!("[audio] ES8311 ready");
+                        Some(audio)
+                    }
+                    Err(error) => {
+                        println!("[audio] init failed: {:?}", error);
+                        if let Err(error) = audio.shutdown() {
+                            println!("[audio] shutdown failed: {:?}", error);
+                        }
+                        None
+                    }
+                },
+                Err(error) => {
+                    println!("[audio] I2S init failed: {:?}", error);
+                    None
+                }
+            };
             let button_input = Input::new(
                 pwr_button.reborrow(),
                 InputConfig::default().with_pull(Pull::Up),
             );
-            desk_keepalive(&mut power, &mut display, &mut input, &button_input).await;
+            desk_keepalive(
+                &mut power,
+                &mut display,
+                &mut input,
+                &button_input,
+                audio.as_mut(),
+            )
+            .await;
+            if let Some(audio) = audio.as_mut() {
+                if let Err(error) = audio.shutdown() {
+                    println!("[audio] shutdown failed: {:?}", error);
+                }
+            }
             if let Err(error) = power.set_mode(Mode::Watch) {
                 println!("[pm] set_mode failed: {}", error.to_common());
                 halt().await

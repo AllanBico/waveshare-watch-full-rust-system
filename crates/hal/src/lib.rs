@@ -6,6 +6,7 @@
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 
+mod audio;
 mod display;
 mod imu;
 mod power;
@@ -13,6 +14,7 @@ mod storage;
 mod time;
 mod touch;
 
+pub use audio::Audio;
 pub use display::Display;
 pub use imu::Imu;
 pub use power::{Power, Rail, RAIL_COUNT};

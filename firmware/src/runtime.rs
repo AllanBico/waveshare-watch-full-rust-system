@@ -20,6 +20,7 @@ use embedded_hal_bus::i2c::RefCellDevice;
 use hal::{Imu, Power, Touch};
 use power::PowerManager;
 
+use crate::audio::Audio as AudioDevice;
 use crate::display::{self, Display as Panel};
 
 /// CPU clock for bring-up. Mode-based clock switching comes later.
@@ -142,13 +143,22 @@ pub async fn desk_keepalive<P: Power, T: Touch, I: Imu>(
     display: &mut Option<Panel>,
     input: &mut InputState<'_, T, I>,
     button: &Input<'_>,
+    mut audio: Option<&mut AudioDevice<Bus>>,
 ) {
     let start = Instant::now();
     let mut ticks = 0u32;
     loop {
         Timer::after(INPUT_POLL_PERIOD).await;
         poll_input(display, input);
+        let was_pressed = input.button;
         poll_button(display, input, button);
+        if input.button && !was_pressed {
+            if let Some(audio) = audio.as_mut() {
+                if let Err(error) = audio.play_test_tone().await {
+                    println!("[audio] test failed: {:?}", error);
+                }
+            }
+        }
 
         ticks += 1;
         if !ticks.is_multiple_of(INPUT_POLLS_PER_SECOND) {

@@ -882,6 +882,7 @@ dependencies = [
  "drivers",
  "embassy-executor",
  "embassy-time",
+ "embedded-hal 1.0.0",
  "embedded-hal-bus",
  "esp-alloc",
  "esp-backtrace",
