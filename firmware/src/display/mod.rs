@@ -1,4 +1,4 @@
-//! CO5300 display control on the board (Phase 4.2 input bring-up).
+//! CO5300 display control on the board (Phase 4.3 wake-on-motion).
 //!
 //! Owns the SPI2 quad transport, the panel, and the frame across the awake
 //! window so the panel can be powered down before sleep and brought back after.

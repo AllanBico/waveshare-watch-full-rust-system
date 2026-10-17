@@ -21,7 +21,7 @@ use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
-use common::{Mode, MotionSample, TouchReport, WakeOnMotion};
+use common::{Mode, MotionSample, TouchReport, WakeOnMotion, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
 use drivers::ft3168::Ft3168;
@@ -71,11 +71,7 @@ async fn main(_spawner: Spawner) {
 
     report_boot(psram_bytes);
 
-    let wake = wake_reason();
-    match wake {
-        Some(reason) => println!("[pm] woke by {:?}", reason),
-        None => println!("[pm] cold boot"),
-    }
+    let raw_wake = wake_reason();
 
     let bus = open_bus(peripherals.I2C0, peripherals.GPIO15, peripherals.GPIO14).await;
 
@@ -101,6 +97,23 @@ async fn main(_spawner: Spawner) {
     // Mode is chosen from VBUS only: USB -> Desk, otherwise Watch.
     let vbus = power.is_vbus_present().unwrap_or(false);
     let mode = if vbus { Mode::Desk } else { Mode::Watch };
+
+    // Ext1 is shared by the PWR button and the IMU INT1. Read the IMU
+    // Wake-on-Motion flag before init clears it, so a motion wake is logged as
+    // Motion instead of Button.
+    let mut imu = Qmi8658::new(RefCellDevice::new(bus), board::IMU_I2C_ADDR, Delay::new());
+    let motion_wake =
+        matches!(raw_wake, Some(WakeReason::Button)) && imu.take_wake_event().unwrap_or(false);
+    let wake = if motion_wake {
+        Some(WakeReason::Motion)
+    } else {
+        raw_wake
+    };
+    match wake {
+        Some(reason) => println!("[pm] woke by {:?}", reason),
+        None => println!("[pm] cold boot"),
+    }
+
     if let Err(error) = power.set_mode(mode) {
         println!("[pm] set_mode failed: {}", error.to_common());
         halt().await
@@ -169,7 +182,6 @@ async fn main(_spawner: Spawner) {
         }
     }
 
-    let mut imu = Qmi8658::new(RefCellDevice::new(bus), board::IMU_I2C_ADDR, Delay::new());
     let imu_error = match imu.init() {
         Ok(()) => None,
         Err(error) => {
@@ -272,7 +284,8 @@ async fn main(_spawner: Spawner) {
     let mut rtc = Rtc::new(peripherals.LPWR);
     let timer = TimerWakeupSource::new(core::time::Duration::from_millis(u64::from(plan.timer_ms)));
     let mut pwr_button = peripherals.GPIO10;
-    let mut wake_pins: [&mut dyn RtcPin; 1] = [&mut pwr_button];
-    let button = Ext1WakeupSource::new(&mut wake_pins, WakeupLevel::High);
-    rtc.sleep_deep(&[&timer, &button]);
+    let mut imu_int = peripherals.GPIO21;
+    let mut wake_pins: [&mut dyn RtcPin; 2] = [&mut pwr_button, &mut imu_int];
+    let external = Ext1WakeupSource::new(&mut wake_pins, WakeupLevel::High);
+    rtc.sleep_deep(&[&timer, &external]);
 }

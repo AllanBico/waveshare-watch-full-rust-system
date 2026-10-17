@@ -235,7 +235,10 @@ fn log_touch<T: Touch, I: Imu>(input: &InputState<'_, T, I>) {
     }
 }
 
-/// Maps the SoC wake cause onto a shared wake reason.
+/// Maps the SoC wake cause onto a coarse shared wake reason.
+///
+/// Ext1 is shared by the PWR button and the IMU INT1. `main` refines it to
+/// [`WakeReason::Motion`] when the IMU reports a Wake-on-Motion event.
 pub fn wake_reason() -> Option<WakeReason> {
     match wakeup_cause() {
         SleepSource::Timer => Some(WakeReason::Timer),
@@ -257,7 +260,7 @@ pub fn report_boot(psram_bytes: usize) {
     let revision = Efuse::chip_revision();
     let mac = Efuse::mac_address();
 
-    println!("=== wv2 firmware (Phase 4.2 input bring-up) ===");
+    println!("=== wv2 firmware (Phase 4.3 wake-on-motion) ===");
     println!(
         "chip:  {} rev v{}.{}",
         esp_hal::chip!(),
