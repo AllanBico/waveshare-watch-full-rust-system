@@ -54,7 +54,7 @@ const AWAKE_WINDOW: Duration = Duration::from_secs(5);
 const SLEEP_TIMER_MS: u32 = 30_000;
 
 /// Wake-on-Motion threshold. Tune on hardware with the input viewer.
-const WOM_THRESHOLD_MG: u8 = 40;
+const WOM_THRESHOLD_MG: u8 = 80;
 /// Accelerometer samples ignored after entering Wake-on-Motion.
 const WOM_BLANKING_SAMPLES: u8 = 10;
 

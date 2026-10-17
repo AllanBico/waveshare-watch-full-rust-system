@@ -43,8 +43,14 @@ pub(super) const CHIP_ID: u8 = 0x05;
 pub(super) const CTRL1_AUTO_INCREMENT: u8 = 1 << 6;
 /// CTRL1: SPI big-endian, the power-on default.
 pub(super) const CTRL1_SPI_BE: u8 = 1 << 5;
-/// CTRL1 after init: auto-increment with the default SPI byte order.
-pub(super) const CTRL1_INIT: u8 = CTRL1_AUTO_INCREMENT | CTRL1_SPI_BE;
+/// CTRL1: route interrupt output to INT1.
+///
+/// The datasheet marks this bit reserved, but QST's reference drivers set it
+/// to enable the INT1 pin. Without it, Wake-on-Motion sets STATUS1 but never
+/// asserts the physical interrupt.
+pub(super) const CTRL1_INT1_ENABLE: u8 = 1 << 3;
+/// CTRL1 after init: auto-increment, default SPI order, INT1 enabled.
+pub(super) const CTRL1_INIT: u8 = CTRL1_AUTO_INCREMENT | CTRL1_SPI_BE | CTRL1_INT1_ENABLE;
 
 /// Accelerometer full scale: ±4 g.
 pub(super) const ACCEL_FS_4G: u8 = 0b001 << 4;

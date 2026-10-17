@@ -54,6 +54,7 @@ fn init_probes_and_configures_accel_and_gyro() {
 
     assert_eq!(imu.read_chip_id().unwrap(), CHIP_ID);
     assert_eq!(imu.i2c.reg(CTRL1), CTRL1_INIT);
+    assert_ne!(imu.i2c.reg(CTRL1) & CTRL1_INT1_ENABLE, 0);
     assert_eq!(imu.i2c.reg(CTRL2), ACCEL_FS_4G | ACCEL_ODR_125HZ);
     assert_eq!(imu.i2c.reg(CTRL3), GYRO_FS_512DPS | GYRO_ODR_125HZ);
     assert_eq!(imu.i2c.reg(CTRL5), 0);
