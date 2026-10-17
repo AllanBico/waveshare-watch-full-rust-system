@@ -1,38 +1,30 @@
 //! Storage boot probe and trace selftest.
 //!
-//! Production boots only probe. The trace build increments a persisted boot
-//! counter and appends a log entry so the display viewer can prove persistence
-//! without serial.
+//! Production boots probe the key-value store and run the retained log flush.
+//! The trace build also increments a persisted boot counter so the display
+//! viewer can prove storage persistence without serial.
 
 use esp_hal::peripherals::FLASH;
 use esp_println::println;
 use static_cell::StaticCell;
 
-#[cfg(feature = "trace")]
-use common::{Event, LogEntry, Timestamp};
-use common::{Mode, WakeReason};
+use common::{Mode, Timestamp, WakeReason};
 use drivers::flash::FlashDevice;
 #[cfg(feature = "trace")]
 use drivers::flash::PartitionFlash;
-#[cfg(feature = "trace")]
-use storage::TimeSeries;
 use storage::{OpenOutcome, Provisioning, TicKvStorage, REGION_SIZE};
+
+use crate::log_boot;
+#[cfg(feature = "trace")]
+use crate::log_boot::STORAGE_WRITE_MIN_MV;
 
 /// Partition label reserved for TicKV key-value data.
 const KV_LABEL: &str = "kv";
-/// Partition label reserved for the time-series log.
-#[cfg(feature = "trace")]
-const LOG_LABEL: &str = "logs";
 /// Key holding the trace boot counter.
 #[cfg(feature = "trace")]
 const BOOT_KEY: &[u8] = b"selftest/boot";
-/// Below this voltage a flash write is not worth the risk.
-#[cfg(feature = "trace")]
-const STORAGE_WRITE_MIN_MV: u16 = 3_500;
 
 static READ_BUFFER: StaticCell<[u8; REGION_SIZE]> = StaticCell::new();
-#[cfg(feature = "trace")]
-static LOG_BUFFER: StaticCell<[u8; REGION_SIZE]> = StaticCell::new();
 
 /// Outcome shown by the viewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,12 +59,15 @@ impl State {
     }
 }
 
-/// Boot-time storage report.
+/// Boot-time storage and logging report.
 #[derive(Debug, Clone, Copy)]
 pub struct Report {
     state: State,
     boot: u32,
     log: Option<u32>,
+    battery_mv: u16,
+    buffered: u16,
+    dropped: u16,
     error: Option<u16>,
 }
 
@@ -82,6 +77,9 @@ impl Report {
             state,
             boot,
             log: None,
+            battery_mv: 0,
+            buffered: 0,
+            dropped: 0,
             error,
         }
     }
@@ -96,9 +94,24 @@ impl Report {
         self.boot
     }
 
-    /// Latest log sequence, when the time-series selftest ran.
+    /// Latest persisted log sequence.
     pub const fn log(self) -> Option<u32> {
         self.log
+    }
+
+    /// Battery voltage read this boot.
+    pub const fn battery_mv(self) -> u16 {
+        self.battery_mv
+    }
+
+    /// Records still waiting in retained memory.
+    pub const fn buffered(self) -> u16 {
+        self.buffered
+    }
+
+    /// Records dropped by ring overflow.
+    pub const fn dropped(self) -> u16 {
+        self.dropped
     }
 
     /// Stable error code, when the boot failed.
@@ -107,12 +120,13 @@ impl Report {
     }
 }
 
-/// Opens storage after mode selection and runs the trace selftest.
+/// Opens storage after mode selection, logs the boot sample, and flushes.
 pub fn init(
     flash: FLASH<'static>,
     mode: Mode,
     battery_mv: u16,
     wake: Option<WakeReason>,
+    now: Timestamp,
 ) -> Report {
     let device = match FlashDevice::new(flash) {
         Ok(device) => device,
@@ -141,17 +155,24 @@ pub fn init(
         OpenOutcome::Provisioned => State::Provisioned,
     };
 
-    #[cfg(feature = "trace")]
-    {
-        let report = selftest(&mut store, base, mode, battery_mv);
-        logs_selftest(&device, mode, battery_mv, wake, report)
-    }
+    let mut report = {
+        #[cfg(feature = "trace")]
+        {
+            selftest(&mut store, base, mode, battery_mv)
+        }
+        #[cfg(not(feature = "trace"))]
+        {
+            let _ = &mut store;
+            Report::new(base, 0, None)
+        }
+    };
 
-    #[cfg(not(feature = "trace"))]
-    {
-        let _ = (&mut store, battery_mv, wake);
-        Report::new(base, 0, None)
-    }
+    let logs = log_boot::run(&device, mode, battery_mv, wake, now);
+    report.log = logs.latest;
+    report.battery_mv = battery_mv;
+    report.buffered = logs.buffered;
+    report.dropped = logs.dropped;
+    report
 }
 
 #[cfg(feature = "trace")]
@@ -178,60 +199,6 @@ fn selftest(
         Ok(()) => Report::new(base, next, None),
         Err(error) => failed(mode, error.to_common(), "selftest write"),
     }
-}
-
-#[cfg(feature = "trace")]
-fn logs_selftest(
-    device: &FlashDevice,
-    mode: Mode,
-    battery_mv: u16,
-    wake: Option<WakeReason>,
-    mut report: Report,
-) -> Report {
-    if battery_mv < STORAGE_WRITE_MIN_MV || report.error_code().is_some() {
-        return report;
-    }
-
-    let region = match device.partition(LOG_LABEL) {
-        Ok(region) => region,
-        Err(error) => return log_failed(mode, error.to_common(), "logs partition", report),
-    };
-
-    let buffer = LOG_BUFFER.init([0u8; REGION_SIZE]);
-    let provisioning = if mode == Mode::Desk {
-        Provisioning::Force
-    } else {
-        Provisioning::Forbidden
-    };
-    let (mut series, _) = match TimeSeries::open(region, buffer, provisioning) {
-        Ok(opened) => opened,
-        Err(error) => return log_failed(mode, error.to_common(), "logs open", report),
-    };
-
-    let entry = LogEntry::new(
-        Timestamp::from_secs(u64::from(report.boot())),
-        Event::Wake(wake.unwrap_or(WakeReason::Unknown)),
-    );
-    let sequence = match series.append_log(entry) {
-        Ok(sequence) => sequence,
-        Err(error) => return log_failed(mode, error.to_common(), "log append", report),
-    };
-
-    let checkpoint = sequence.saturating_sub(1);
-    match series.read_logs_since(checkpoint, |_| true) {
-        Ok(last) if last == sequence => report.log = u32::try_from(sequence).ok(),
-        Ok(_) => {}
-        Err(error) => report = log_failed(mode, error.to_common(), "log read", report),
-    }
-    report
-}
-
-#[cfg(feature = "trace")]
-fn log_failed(mode: Mode, error: common::Error, what: &str, report: Report) -> Report {
-    if mode == Mode::Desk {
-        println!("[log] {} failed: {}", what, error);
-    }
-    report
 }
 
 fn failed(mode: Mode, error: common::Error, what: &str) -> Report {

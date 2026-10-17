@@ -3,4 +3,10 @@ name = "logging"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+defmt = ["dep:defmt"]
+
 [dependencies]
+common = { path = "../common" }
+defmt = { workspace = true, optional = true }

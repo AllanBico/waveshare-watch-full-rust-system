@@ -16,6 +16,7 @@ power = { path = "../crates/power" }
 drivers = { path = "../drivers", features = ["hardware"] }
 ui = { path = "../crates/ui" }
 storage = { path = "../crates/storage" }
+logging = { path = "../crates/logging" }
 static_cell = "2.1"
 embedded-hal-bus = "0.3"
 

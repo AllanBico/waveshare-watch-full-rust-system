@@ -890,6 +890,7 @@ dependencies = [
  "esp-println",
  "esp-rtos",
  "hal",
+ "logging",
  "power",
  "static_cell",
  "storage",
@@ -1113,6 +1114,10 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 [[package]]
 name = "logging"
 version = "0.1.0"
+dependencies = [
+ "common",
+ "defmt",
+]
 
 [[package]]
 name = "memchr"

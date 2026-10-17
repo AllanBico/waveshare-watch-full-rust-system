@@ -5,12 +5,12 @@
 //! keys. Reads stream forward from a checkpoint; pruning removes a timestamp
 //! prefix. Sequence gaps are skipped, so a partial prune never breaks reads.
 
-use common::{LogEntry, Timestamp};
+use common::{decode_log, encode_log, LogEntry, LogError, Timestamp, MAX_ENCODED_LOG_LEN};
 use embedded_storage::nor_flash::NorFlash;
 use embedded_storage::ReadStorage;
 
 use super::kv::{OpenOutcome, Provisioning, TicKvStorage};
-use super::{log_codec, Error};
+use super::Error;
 
 /// Key holding the newest sequence.
 pub(crate) const LATEST_KEY: &[u8] = b"log/latest";
@@ -49,8 +49,8 @@ impl<'a, F: NorFlash + ReadStorage> TimeSeries<'a, F> {
     /// the two writes leaves an unreachable orphan that the next append
     /// replaces, not a visible gap.
     pub fn append_log(&mut self, entry: LogEntry) -> Result<u64, Error> {
-        let mut value = [0u8; log_codec::MAX_ENCODED_LEN];
-        let length = log_codec::encode(&entry, &mut value)?;
+        let mut value = [0u8; MAX_ENCODED_LOG_LEN];
+        let length = encode_log(&entry, &mut value).map_err(map_log)?;
 
         let latest = self.latest()?;
         let sequence = latest.checked_add(1).ok_or(Error::Full)?;
@@ -88,10 +88,10 @@ impl<'a, F: NorFlash + ReadStorage> TimeSeries<'a, F> {
                 break;
             }
             let key = sequence_key(sequence);
-            let mut value = [0u8; log_codec::MAX_ENCODED_LEN];
+            let mut value = [0u8; MAX_ENCODED_LOG_LEN];
             match self.store.get(&key, &mut value) {
                 Ok(length) => {
-                    let entry = log_codec::decode(&value[..length])?;
+                    let entry = decode_log(&value[..length]).map_err(map_log)?;
                     if !on_entry(entry) {
                         break;
                     }
@@ -129,10 +129,10 @@ impl<'a, F: NorFlash + ReadStorage> TimeSeries<'a, F> {
         let mut sequence = oldest;
         loop {
             let key = sequence_key(sequence);
-            let mut value = [0u8; log_codec::MAX_ENCODED_LEN];
+            let mut value = [0u8; MAX_ENCODED_LOG_LEN];
             match self.store.get(&key, &mut value) {
                 Ok(length) => {
-                    let entry = log_codec::decode(&value[..length])?;
+                    let entry = decode_log(&value[..length]).map_err(map_log)?;
                     if entry.timestamp < before {
                         self.store.delete(&key)?;
                         pruned += 1;
@@ -188,6 +188,14 @@ impl<'a, F: NorFlash + ReadStorage> TimeSeries<'a, F> {
             Err(Error::NotFound) => Ok(default),
             Err(error) => Err(error),
         }
+    }
+}
+
+const fn map_log(error: LogError) -> Error {
+    match error {
+        LogError::BufferTooSmall | LogError::Corrupt => Error::Corrupt,
+        LogError::VersionMismatch => Error::VersionMismatch,
+        _ => Error::Corrupt,
     }
 }
 

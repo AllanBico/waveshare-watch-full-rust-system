@@ -11,7 +11,6 @@ mod controller;
 mod error;
 mod hash;
 mod kv;
-mod log_codec;
 mod time_series;
 
 #[cfg(test)]

@@ -25,6 +25,7 @@ mod bus;
 mod viewer;
 
 use bus::EspQspiBus;
+pub use viewer::Viewer;
 
 /// SPI clock. The vendor uses 40 MHz.
 const SPI_FREQUENCY_MHZ: u32 = 40;

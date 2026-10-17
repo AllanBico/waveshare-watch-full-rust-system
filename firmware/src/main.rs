@@ -27,7 +27,9 @@ use embedded_hal_bus::i2c::RefCellDevice;
 use power::PowerManager;
 
 mod display;
+mod log_boot;
 mod persist;
+mod retained;
 mod runtime;
 
 use esp_alloc as _;
@@ -79,6 +81,7 @@ async fn main(_spawner: Spawner) {
 
     let mut clock = Pcf85063a::new(RefCellDevice::new(bus), board::RTC_I2C_ADDR);
     report_time(&mut clock);
+    let now = runtime::read_timestamp(&mut clock);
 
     let mut power = PowerManager::new(pmic, Mode::Watch);
     if let Err(error) = power.sync() {
@@ -100,13 +103,16 @@ async fn main(_spawner: Spawner) {
         .read_battery_millivolts()
         .map(|millivolts| millivolts.value())
         .unwrap_or(0);
-    let report = persist::init(peripherals.FLASH, mode, battery_mv, wake);
+    let report = persist::init(peripherals.FLASH, mode, battery_mv, wake, now);
     if mode == Mode::Desk {
         println!(
-            "[kv] {} boot {} log {:?} error {:?}",
+            "[kv] {} boot {} log {:?} buf {} drop {} batt {} error {:?}",
             report.label(),
             report.boot(),
             report.log(),
+            report.buffered(),
+            report.dropped(),
+            report.battery_mv(),
             report.error_code()
         );
     }
@@ -132,14 +138,19 @@ async fn main(_spawner: Spawner) {
     if let Some(display) = display.as_mut() {
         if let Err(error) = display.init() {
             println!("[lcd] init failed: {:?}", error);
-        } else if let Err(error) = display.draw_viewer(
-            report.label(),
-            report.boot(),
-            report.log(),
-            storage::SCHEMA_VERSION,
-            report.error_code(),
-        ) {
-            println!("[lcd] viewer failed: {:?}", error);
+        } else {
+            let viewer = display::Viewer {
+                status: report.label(),
+                boot: report.boot(),
+                log: report.log(),
+                battery_mv: report.battery_mv(),
+                buffered: report.buffered(),
+                dropped: report.dropped(),
+                error: report.error_code(),
+            };
+            if let Err(error) = display.draw_viewer(&viewer) {
+                println!("[lcd] viewer failed: {:?}", error);
+            }
         }
     }
 

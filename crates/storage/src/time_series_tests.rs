@@ -3,7 +3,6 @@
 use common::{Event, LogEntry, Mode, Timestamp, WakeReason};
 
 use super::*;
-use crate::log_codec;
 use crate::test_support::{MockFlash, MockHandle};
 use crate::time_series::{sequence_key, LATEST_KEY, OLDEST_KEY};
 
@@ -191,13 +190,13 @@ fn read_skips_missing_sequences() {
     let flash = MockFlash::new(LOG_FLASH_SIZE);
     let (mut store, _) = TicKvStorage::open(flash, leaked_buffer(), Provisioning::Allowed).unwrap();
 
-    let mut value = [0u8; log_codec::MAX_ENCODED_LEN];
+    let mut value = [0u8; common::MAX_ENCODED_LOG_LEN];
     let first = wake(1);
-    let length = log_codec::encode(&first, &mut value).unwrap();
+    let length = common::encode_log(&first, &mut value).unwrap();
     store.set(&sequence_key(1), &value[..length]).unwrap();
 
     let third = wake(3);
-    let length = log_codec::encode(&third, &mut value).unwrap();
+    let length = common::encode_log(&third, &mut value).unwrap();
     store.set(&sequence_key(3), &value[..length]).unwrap();
     store.set(LATEST_KEY, &3u64.to_le_bytes()).unwrap();
     store.set(OLDEST_KEY, &1u64.to_le_bytes()).unwrap();

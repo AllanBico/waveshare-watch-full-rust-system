@@ -12,7 +12,7 @@ use esp_hal::system::SleepSource;
 use esp_hal::time::Rate;
 use esp_println::println;
 
-use common::{DateTime, WakeReason};
+use common::{DateTime, Timestamp, WakeReason};
 use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
 use embedded_hal_bus::i2c::RefCellDevice;
@@ -63,6 +63,15 @@ pub fn report_time(clock: &mut Pcf85063a<Bus>) {
             }
         }
     }
+}
+
+/// Reads the RTC as a Unix timestamp, falling back to zero if unavailable.
+pub fn read_timestamp(clock: &mut Pcf85063a<Bus>) -> Timestamp {
+    clock
+        .read_datetime()
+        .ok()
+        .and_then(|datetime| datetime.to_timestamp())
+        .unwrap_or(Timestamp::from_secs(0))
 }
 
 /// Prints a date/time.

@@ -136,27 +136,48 @@ sequence gaps, corrupt records, and schema mismatches. On hardware, the first
 trace desk boot provisions the 2 MiB `logs` partition and the viewer should
 show an incrementing `LOG` sequence. The log partition is not touched on production watch boots.
 
-### 2.3 Logging Crate
-- RAM ring buffer in retained memory (RTC) for watch-mode events; normal SRAM
-  does not survive deep sleep.
-- `log!` compiles to nothing when the `logging` feature is off. No serial
-  logging in watch mode.
-- Flush to storage in desk mode or on significant events/batches. Never write
-  flash on every wake.
+### 2.3 Logging Crate (Done)
+- `logging::Ring` is a 96-slot retained ring in RTC slow memory
+  (`#[esp_hal::ram(unstable(rtc_slow, persistent))]`). It stores encoded
+  `LogEntry` records with a magic/version header, head, count, and dropped
+  counters. Normal SRAM does not survive deep sleep; this section does.
+- The ring records wake reasons and battery samples every boot. A timestamp
+  comes from the PCF85063A through the `Time` HAL.
+- The `log!` macro expands to nothing unless the caller's `logging` feature is
+  enabled. Core battery/wake telemetry is always compiled; the feature gates
+  optional event logs.
+- Flush policy: desk and trace builds flush every boot; production watch builds
+  flush at 32 retained records (about 16 wakes) and only above the write
+  voltage. Never write flash on every wake in production.
+- The `logs` partition is force-formatted only in desk mode because logs are
+  disposable. Watch mode opens it read-only and never formats.
+- Unexpected log open/flush failures are recorded as `Event::Error` entries for
+  the next successful flush. Expected `NotReady` in unprovisioned watch mode is
+  not recorded.
+- The display viewer shows `BUF`/`DRP` counts and the latest persisted `LOG`
+  sequence. It remains a viewer; the retained ring and flash are the log.
 
-**Test:** Log 50 events, flush, and read them back from TicKV. Power-cycle and
-verify flushed entries remain. A watch-mode test verifies no serial output and
-no flash writes.
+**Test:** Six ring tests cover initialization from garbage, push/peek/pop,
+reopen retention, wraparound/drop accounting, clear, and corrupt slots. Host
+tests verify the codec and time-series. On hardware: watch-mode wakes should
+show `BUF` growing by two records; at the threshold they flush and `LOG`
+advances. Desk boots flush immediately.
 
-### 2.4 Battery Voltage Logging
-- Read battery voltage on every wake and append the sample to the retained RAM
-  ring. Flush samples to the time-series layer in desk mode or every N wakes.
-- The trace display viewer may show the latest sample and buffered count; it is
-  a viewer, not the log.
+### 2.4 Battery Voltage Logging (Done, combined with 2.3)
+- Every boot reads AXP2101 battery voltage once and appends an
+  `Event::Battery(Millivolts)` record to the retained ring with the RTC
+  timestamp. Wake reason is recorded in the same pass.
+- Samples flush with the same policy as 2.3: desk/trace every boot, production
+  watch every 32 records. No flash write happens per wake.
+- `Battery` and `Error` are additive event tags under the existing log schema
+  version 1; existing wake/mode records remain readable.
+- The viewer shows the current `BATT` sample, the retained `BUF` count, and the
+  latest persisted `LOG` sequence. It is a viewer, not the log.
 
-**Test:** Wake 10 times, verify 10 samples were captured in retained memory and
-appear in the time-series after the next desk flush. No flash write happens per
-wake.
+**Test:** Host ring/codec tests cover battery records and retention. On
+hardware: after ten watch wakes the viewer should show `BUF 20` (wake plus
+battery records); plugging USB (desk) flushes them and `LOG` advances with
+`BUF` returning to zero. No flash write occurs on the ten watch wakes.
 
 ## Phase 3: Display Foundation
 
