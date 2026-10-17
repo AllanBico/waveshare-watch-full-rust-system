@@ -1,9 +1,10 @@
 //! Firmware entry point.
 //!
-//! Brings up the AXP2101, PCF85063A, and FT3168 on one I2C bus, chooses the
-//! runtime mode from VBUS (USB -> Desk, else Watch), owns the display and touch
-//! panel across the awake window, and deep-sleeps. The external RTC keeps
-//! wall-clock time. The pieces `main` calls live in [`runtime`] and [`display`].
+//! Brings up the AXP2101, PCF85063A, FT3168, and QMI8658 on one I2C bus,
+//! chooses the runtime mode from VBUS (USB -> Desk, else Watch), owns the
+//! display and input devices across the awake window, and deep-sleeps. The
+//! external RTC keeps wall-clock time. The pieces `main` calls live in
+//! [`runtime`] and [`display`].
 
 #![no_std]
 #![no_main]
@@ -20,11 +21,12 @@ use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
-use common::{Mode, TouchReport};
+use common::{Mode, MotionSample, TouchReport, WakeOnMotion};
 use drivers::axp2101::Axp2101;
 use drivers::board;
 use drivers::ft3168::Ft3168;
 use drivers::pcf85063a::Pcf85063a;
+use drivers::qmi8658::Qmi8658;
 use embedded_hal_bus::i2c::RefCellDevice;
 use power::PowerManager;
 
@@ -45,8 +47,13 @@ esp_bootloader_esp_idf::esp_app_desc!();
 const AWAKE_BUDGET_MS: u32 = 5_000;
 
 /// How long to stay awake before sleeping in watch mode.
-// TODO(phase-5): return to the 2 s watch budget once the touch viewer is gone.
+// TODO(phase-5): return to the 2 s watch budget once the input viewer is gone.
 const AWAKE_WINDOW: Duration = Duration::from_secs(5);
+
+/// Wake-on-Motion threshold. Tune on hardware with the input viewer.
+const WOM_THRESHOLD_MG: u8 = 80;
+/// Accelerometer samples ignored after entering Wake-on-Motion.
+const WOM_BLANKING_SAMPLES: u8 = 10;
 
 /// SRAM heap size reserved for the runtime.
 const SRAM_HEAP_BYTES: usize = 64 * 1024;
@@ -162,17 +169,41 @@ async fn main(_spawner: Spawner) {
         }
     }
 
+    let mut imu = Qmi8658::new(RefCellDevice::new(bus), board::IMU_I2C_ADDR, Delay::new());
+    let imu_error = match imu.init() {
+        Ok(()) => None,
+        Err(error) => {
+            if mode == Mode::Desk {
+                println!("[imu] init failed: {}", error);
+            }
+            Some(error.to_common().code())
+        }
+    };
+    let imu_id = imu.read_chip_id().ok();
+    let revision = imu.read_revision().ok();
+    if mode == Mode::Desk {
+        match (imu_id, revision) {
+            (Some(id), Some(revision)) => {
+                println!("[imu] QMI8658 id 0x{:02X} rev 0x{:02X}", id, revision)
+            }
+            _ => println!("[imu] identity unreadable"),
+        }
+    }
+
     if let Some(panel) = display.as_mut() {
         if let Err(error) = panel.init() {
             println!("[lcd] init failed: {:?}", error);
         } else {
-            let report = TouchReport::empty();
+            let touch_report = TouchReport::empty();
+            let motion = MotionSample::ZERO;
             let viewer = display::Viewer {
-                report: &report,
-                chip_id,
-                error: touch_error,
+                touch: &touch_report,
+                motion: &motion,
+                imu_id,
+                revision,
+                error: touch_error.or(imu_error),
             };
-            if let Err(error) = panel.draw_touch_viewer(&viewer) {
+            if let Err(error) = panel.draw_input_viewer(&viewer) {
                 println!("[lcd] viewer failed: {:?}", error);
             }
         }
@@ -184,22 +215,41 @@ async fn main(_spawner: Spawner) {
         }
     }
 
-    if mode == Mode::Desk {
-        desk_keepalive(&mut power, &mut display, &mut touch, chip_id, touch_error).await;
-        if let Err(error) = touch.sleep() {
-            println!("[tp] sleep failed: {}", error);
-        }
-        if let Err(error) = power.set_mode(Mode::Watch) {
-            println!("[pm] set_mode failed: {}", error.to_common());
-            halt().await
-        }
-        Timer::after(AWAKE_WINDOW).await;
-    } else {
-        watch_awake(&mut display, &mut touch, chip_id, touch_error, AWAKE_WINDOW).await;
-        if let Err(error) = touch.sleep() {
-            if mode == Mode::Desk {
-                println!("[tp] sleep failed: {}", error);
+    {
+        let mut input = runtime::InputState::new(
+            &mut touch,
+            &mut imu,
+            touch_error,
+            imu_error,
+            mode == Mode::Desk,
+        );
+        input.imu_id = imu_id;
+        input.revision = revision;
+
+        if mode == Mode::Desk {
+            desk_keepalive(&mut power, &mut display, &mut input).await;
+            if let Err(error) = power.set_mode(Mode::Watch) {
+                println!("[pm] set_mode failed: {}", error.to_common());
+                halt().await
             }
+            Timer::after(AWAKE_WINDOW).await;
+        } else {
+            watch_awake(&mut display, &mut input, AWAKE_WINDOW).await;
+        }
+    }
+
+    // Leave the IMU in Wake-on-Motion so the next motion can wake the SoC.
+    if imu_error.is_none() {
+        let config = WakeOnMotion::new(WOM_THRESHOLD_MG, WOM_BLANKING_SAMPLES);
+        if let Err(error) = imu.configure_wake_on_motion(config) {
+            if mode == Mode::Desk {
+                println!("[imu] wake-on-motion failed: {}", error);
+            }
+        }
+    }
+    if let Err(error) = touch.sleep() {
+        if mode == Mode::Desk {
+            println!("[tp] sleep failed: {}", error);
         }
     }
 

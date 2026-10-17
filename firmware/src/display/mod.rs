@@ -1,4 +1,4 @@
-//! CO5300 display control on the board (Phase 4.1 touch bring-up).
+//! CO5300 display control on the board (Phase 4.2 input bring-up).
 //!
 //! Owns the SPI2 quad transport, the panel, and the frame across the awake
 //! window so the panel can be powered down before sleep and brought back after.
@@ -75,8 +75,8 @@ pub enum BringUpError {
 pub struct Display {
     panel: Co5300<EspQspiBus<'static>, Output<'static>, Delay>,
     geometry: Geometry,
-    touch_frame: Option<MonoBuffer>,
-    touch_pixels: Vec<u8>,
+    viewer_frame: Option<MonoBuffer>,
+    viewer_pixels: Vec<u8>,
 }
 
 impl Display {
@@ -113,8 +113,8 @@ impl Display {
         Ok(Self {
             panel: Co5300::new(bus, reset, Delay::new(), geometry),
             geometry,
-            touch_frame: None,
-            touch_pixels: Vec::new(),
+            viewer_frame: None,
+            viewer_pixels: Vec::new(),
         })
     }
 

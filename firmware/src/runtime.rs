@@ -12,11 +12,11 @@ use esp_hal::system::SleepSource;
 use esp_hal::time::Rate;
 use esp_println::println;
 
-use common::{DateTime, Timestamp, TouchReport, WakeReason};
+use common::{DateTime, MotionSample, Timestamp, TouchReport, WakeReason};
 use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
 use embedded_hal_bus::i2c::RefCellDevice;
-use hal::{Power, Touch};
+use hal::{Imu, Power, Touch};
 use power::PowerManager;
 
 use crate::display::{self, Display as Panel};
@@ -24,11 +24,11 @@ use crate::display::{self, Display as Panel};
 /// CPU clock for bring-up. Mode-based clock switching comes later.
 pub const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
 
-/// Touch poll period while the panel is awake.
-pub const TOUCH_POLL_PERIOD: Duration = Duration::from_millis(50);
+/// Input poll period while the panel is awake.
+pub const INPUT_POLL_PERIOD: Duration = Duration::from_millis(50);
 
-/// Touch polls between desk-mode VBUS checks.
-const TOUCH_POLLS_PER_SECOND: u32 = 20;
+/// Input polls between desk-mode VBUS checks.
+const INPUT_POLLS_PER_SECOND: u32 = 20;
 
 /// I2C bus device handle shared by all on-board peripherals.
 pub type Bus = RefCellDevice<'static, I2c<'static, esp_hal::Blocking>>;
@@ -87,42 +87,64 @@ fn print_datetime(label: &str, dt: &DateTime) {
     );
 }
 
-/// State shared by the touch viewer in both awake modes.
-struct ViewerState {
+/// Input devices plus the latest viewer snapshot.
+pub struct InputState<'a, T: Touch, I: Imu> {
+    /// Touch controller.
+    pub touch: &'a mut T,
+    /// IMU.
+    pub imu: &'a mut I,
+    /// IMU chip identity, when it could be read.
+    pub imu_id: Option<u8>,
+    /// IMU revision, when it could be read.
+    pub revision: Option<u8>,
     report: TouchReport,
-    chip_id: Option<u8>,
-    error: Option<u16>,
+    motion: MotionSample,
+    touch_error: Option<u16>,
+    imu_error: Option<u16>,
     log: bool,
 }
 
-impl ViewerState {
-    fn new(chip_id: Option<u8>, error: Option<u16>, log: bool) -> Self {
+impl<'a, T: Touch, I: Imu> InputState<'a, T, I> {
+    /// Creates an input state from the devices and their initial errors.
+    pub fn new(
+        touch: &'a mut T,
+        imu: &'a mut I,
+        touch_error: Option<u16>,
+        imu_error: Option<u16>,
+        log: bool,
+    ) -> Self {
         Self {
+            touch,
+            imu,
+            imu_id: None,
+            revision: None,
             report: TouchReport::empty(),
-            chip_id,
-            error,
+            motion: MotionSample::ZERO,
+            touch_error,
+            imu_error,
             log,
         }
     }
+
+    fn error(&self) -> Option<u16> {
+        self.touch_error.or(self.imu_error)
+    }
 }
 
-/// Stays awake in desk mode until USB is removed, updating the touch viewer.
-pub async fn desk_keepalive<P: Power, T: Touch>(
+/// Stays awake in desk mode until USB is removed, updating the input viewer.
+pub async fn desk_keepalive<P: Power, T: Touch, I: Imu>(
     power: &mut PowerManager<P>,
     display: &mut Option<Panel>,
-    touch: &mut T,
-    chip_id: Option<u8>,
-    error: Option<u16>,
+    input: &mut InputState<'_, T, I>,
 ) {
     let start = Instant::now();
-    let mut state = ViewerState::new(chip_id, error, true);
     let mut ticks = 0u32;
     loop {
-        Timer::after(TOUCH_POLL_PERIOD).await;
-        poll_touch(display, touch, &mut state);
+        Timer::after(INPUT_POLL_PERIOD).await;
+        poll_input(display, input);
 
         ticks += 1;
-        if !ticks.is_multiple_of(TOUCH_POLLS_PER_SECOND) {
+        if !ticks.is_multiple_of(INPUT_POLLS_PER_SECOND) {
             continue;
         }
         if !power.is_vbus_present().unwrap_or(true) {
@@ -133,63 +155,81 @@ pub async fn desk_keepalive<P: Power, T: Touch>(
     }
 }
 
-/// Keeps the panel awake for `window` while sampling touch.
-pub async fn watch_awake<T: Touch>(
+/// Keeps the panel awake for `window` while sampling touch and motion.
+pub async fn watch_awake<T: Touch, I: Imu>(
     display: &mut Option<Panel>,
-    touch: &mut T,
-    chip_id: Option<u8>,
-    error: Option<u16>,
+    input: &mut InputState<'_, T, I>,
     window: Duration,
 ) {
     let deadline = Instant::now() + window;
-    let mut state = ViewerState::new(chip_id, error, false);
     while Instant::now() < deadline {
-        Timer::after(TOUCH_POLL_PERIOD).await;
-        poll_touch(display, touch, &mut state);
+        Timer::after(INPUT_POLL_PERIOD).await;
+        poll_input(display, input);
     }
 }
 
-fn poll_touch<T: Touch>(display: &mut Option<Panel>, touch: &mut T, state: &mut ViewerState) {
-    let previous_error = state.error;
-    let next = match touch.read() {
+fn poll_input<T: Touch, I: Imu>(display: &mut Option<Panel>, input: &mut InputState<'_, T, I>) {
+    let previous_error = input.error();
+    let mut touch_changed = false;
+    let mut motion_changed = false;
+
+    match input.touch.read() {
         Ok(report) => {
-            state.error = None;
-            report
+            input.touch_error = None;
+            if report != input.report {
+                input.report = report;
+                touch_changed = true;
+            }
         }
         Err(_) => {
-            state.error = Some(common::Error::HardwareFailure.code());
-            TouchReport::empty()
+            input.touch_error = Some(common::Error::HardwareFailure.code());
+            if !input.report.is_empty() {
+                input.report = TouchReport::empty();
+                touch_changed = true;
+            }
         }
-    };
-
-    if next == state.report && state.error == previous_error {
-        return;
     }
-    state.report = next;
-    redraw_touch(display, state);
-    if state.log {
-        log_touch(state);
+
+    match input.imu.read_motion() {
+        Ok(motion) => {
+            input.imu_error = None;
+            if motion != input.motion {
+                input.motion = motion;
+                motion_changed = true;
+            }
+        }
+        Err(_) => input.imu_error = Some(common::Error::HardwareFailure.code()),
+    }
+
+    let error_changed = input.error() != previous_error;
+    if touch_changed || motion_changed || error_changed {
+        redraw_input(display, input);
+    }
+    if input.log && (touch_changed || error_changed) {
+        log_touch(input);
     }
 }
 
-fn redraw_touch(display: &mut Option<Panel>, state: &ViewerState) {
+fn redraw_input<T: Touch, I: Imu>(display: &mut Option<Panel>, input: &InputState<'_, T, I>) {
     if let Some(panel) = display.as_mut() {
         let viewer = display::Viewer {
-            report: &state.report,
-            chip_id: state.chip_id,
-            error: state.error,
+            touch: &input.report,
+            motion: &input.motion,
+            imu_id: input.imu_id,
+            revision: input.revision,
+            error: input.error(),
         };
-        let _ = panel.draw_touch_viewer(&viewer);
+        let _ = panel.draw_input_viewer(&viewer);
     }
 }
 
-fn log_touch(state: &ViewerState) {
-    if let Some(code) = state.error {
+fn log_touch<T: Touch, I: Imu>(input: &InputState<'_, T, I>) {
+    if let Some(code) = input.error() {
         println!("[tp] error {}", code);
-    } else if state.report.is_empty() {
+    } else if input.report.is_empty() {
         println!("[tp] none");
     } else {
-        for point in state.report.points() {
+        for point in input.report.points() {
             println!("[tp] id {} x {} y {}", point.id, point.x, point.y);
         }
     }
@@ -217,7 +257,7 @@ pub fn report_boot(psram_bytes: usize) {
     let revision = Efuse::chip_revision();
     let mac = Efuse::mac_address();
 
-    println!("=== wv2 firmware (Phase 4.1 touch bring-up) ===");
+    println!("=== wv2 firmware (Phase 4.2 input bring-up) ===");
     println!(
         "chip:  {} rev v{}.{}",
         esp_hal::chip!(),

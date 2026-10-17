@@ -15,6 +15,7 @@ pub mod co5300;
 pub mod flash;
 pub mod ft3168;
 pub mod pcf85063a;
+pub mod qmi8658;
 
 #[cfg(test)]
 mod test_support;
