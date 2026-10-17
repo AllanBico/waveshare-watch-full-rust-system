@@ -1,61 +1,49 @@
 //! Firmware entry point.
 //!
-//! Phase 1.5: the AXP2101 and the PCF85063A share one I2C bus. Mode comes from
-//! VBUS (USB -> Desk, else Watch). Watch mode deep-sleeps, waking on the RTC
-//! timer or the power button. The external RTC keeps wall-clock time.
+//! Brings up the AXP2101 and the PCF85063A on one I2C bus, chooses the runtime
+//! mode from VBUS (USB -> Desk, else Watch), owns the display across the awake
+//! window, and deep-sleeps. The external RTC keeps wall-clock time. The pieces
+//! `main` calls live in [`runtime`] and [`display`].
 
 #![no_std]
 #![no_main]
 
 extern crate alloc;
 
-use core::cell::RefCell;
-
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
-use esp_hal::efuse::Efuse;
 use esp_hal::gpio::RtcPin;
-use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::rtc_cntl::sleep::{Ext1WakeupSource, TimerWakeupSource, WakeupLevel};
-use esp_hal::rtc_cntl::{wakeup_cause, Rtc};
-use esp_hal::system::SleepSource;
-use esp_hal::time::Rate;
+use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
-use common::{DateTime, Mode, WakeReason};
+use common::Mode;
 use drivers::axp2101::Axp2101;
 use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
+use embedded_hal_bus::i2c::RefCellDevice;
+use power::PowerManager;
 
 mod display;
-use embedded_hal_bus::i2c::RefCellDevice;
-use hal::Power;
-use power::PowerManager;
+mod runtime;
 
 use esp_alloc as _;
 use esp_backtrace as _;
 
-esp_bootloader_esp_idf::esp_app_desc!();
+use runtime::{desk_keepalive, halt, open_bus, refresh, report_boot, report_time, wake_reason};
 
-/// CPU clock for bring-up. Mode-based clock switching comes later.
-const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
+esp_bootloader_esp_idf::esp_app_desc!();
 
 /// Awake time budget granted on each watch-mode wake.
 const AWAKE_BUDGET_MS: u32 = 5_000;
 
-/// How long to stay awake before sleeping, for the 1.5 bring-up.
+/// How long to stay awake before sleeping in watch mode.
 const AWAKE_WINDOW: Duration = Duration::from_secs(2);
-
-/// Desk-mode VBUS poll and heartbeat period.
-const POLL_PERIOD: Duration = Duration::from_secs(1);
 
 /// SRAM heap size reserved for the runtime.
 const SRAM_HEAP_BYTES: usize = 64 * 1024;
-
-/// I2C bus device handle shared by all on-board peripherals.
-type Bus = RefCellDevice<'static, I2c<'static, esp_hal::Blocking>>;
 
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) {
@@ -88,7 +76,7 @@ async fn main(_spawner: Spawner) {
     println!("[pm] AXP2101 id 0x{:02X}", pmic.read_chip_id().unwrap_or(0));
 
     let mut clock = Pcf85063a::new(RefCellDevice::new(bus), board::RTC_I2C_ADDR);
-    let datetime = report_time(&mut clock);
+    report_time(&mut clock);
 
     let mut power = PowerManager::new(pmic, Mode::Watch);
     if let Err(error) = power.sync() {
@@ -105,7 +93,7 @@ async fn main(_spawner: Spawner) {
     }
     println!("[pm] mode {:?} (vbus: {})", mode, vbus);
 
-    // Phase 3.4: own the panel across the awake window so it can sleep.
+    // Own the panel across the awake window so it can sleep before the rail cut.
     let mut display = match display::Display::new(display::Peripherals {
         spi: peripherals.SPI2,
         dma: peripherals.DMA_CH0,
@@ -124,17 +112,10 @@ async fn main(_spawner: Spawner) {
         }
     };
     if let Some(display) = display.as_mut() {
-        let battery_mv = match power.pmic_mut().read_battery_millivolts() {
-            Ok(millivolts) => millivolts.value(),
-            Err(error) => {
-                println!("[pm] battery read failed: {:?}", error);
-                0
-            }
-        };
-        println!("[pm] battery {} mV", battery_mv);
-        match display.init_and_draw(datetime.hour, datetime.minute, battery_mv) {
-            Ok(stat) => println!("[lcd] lit {}/{} pixels", stat.lit_pixels, stat.total_pixels),
-            Err(error) => println!("[lcd] draw failed: {:?}", error),
+        if let Err(error) = display.init() {
+            println!("[lcd] init failed: {:?}", error);
+        } else {
+            refresh(&mut power, &mut clock, Some(display));
         }
     }
 
@@ -145,7 +126,7 @@ async fn main(_spawner: Spawner) {
     }
 
     if mode == Mode::Desk {
-        desk_keepalive(&mut power).await;
+        desk_keepalive(&mut power, &mut clock, display.as_mut()).await;
         if let Err(error) = power.set_mode(Mode::Watch) {
             println!("[pm] set_mode failed: {}", error.to_common());
             halt().await
@@ -177,108 +158,4 @@ async fn main(_spawner: Spawner) {
     let mut wake_pins: [&mut dyn RtcPin; 1] = [&mut pwr_button];
     let button = Ext1WakeupSource::new(&mut wake_pins, WakeupLevel::High);
     rtc.sleep_deep(&[&timer, &button]);
-}
-
-/// Reads the RTC time; seeds a default if the oscillator had stopped, and
-/// returns the effective date/time.
-fn report_time(clock: &mut Pcf85063a<Bus>) -> DateTime {
-    let default = DateTime::new(2000, 1, 1, 0, 0, 0);
-    if let Err(error) = clock.init() {
-        println!("[rtc] init failed: {}", error);
-        return default;
-    }
-    match clock.read_datetime() {
-        Ok(dt) => {
-            print_datetime("time", &dt);
-            dt
-        }
-        Err(_) => {
-            if clock.set_datetime(&default).is_ok() {
-                print_datetime("time set", &default);
-            } else {
-                println!("[rtc] set failed");
-            }
-            default
-        }
-    }
-}
-
-/// Prints a date/time.
-fn print_datetime(label: &str, dt: &DateTime) {
-    println!(
-        "[rtc] {} {:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        label, dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
-    );
-}
-
-/// Opens and leaks the shared I2C bus so device handles can be `'static`.
-async fn open_bus(
-    i2c: esp_hal::peripherals::I2C0<'static>,
-    sda: esp_hal::peripherals::GPIO15<'static>,
-    scl: esp_hal::peripherals::GPIO14<'static>,
-) -> &'static RefCell<I2c<'static, esp_hal::Blocking>> {
-    let config = I2cConfig::default().with_frequency(Rate::from_khz(board::I2C_FREQ_HZ / 1000));
-    match I2c::new(i2c, config) {
-        Ok(bus) => alloc::boxed::Box::leak(alloc::boxed::Box::new(RefCell::new(
-            bus.with_sda(sda).with_scl(scl),
-        ))),
-        Err(error) => {
-            println!("[pm] i2c init failed: {:?}", error);
-            halt().await
-        }
-    }
-}
-
-/// Stays awake in desk mode until USB is removed.
-async fn desk_keepalive<P: Power>(power: &mut PowerManager<P>) {
-    let start = Instant::now();
-    loop {
-        Timer::after(POLL_PERIOD).await;
-        if !power.is_vbus_present().unwrap_or(true) {
-            println!("[pm] USB removed");
-            return;
-        }
-        println!("[hb] uptime {} ms", (Instant::now() - start).as_millis());
-    }
-}
-
-/// Maps the SoC wake cause onto a shared wake reason.
-fn wake_reason() -> Option<WakeReason> {
-    match wakeup_cause() {
-        SleepSource::Timer => Some(WakeReason::Timer),
-        SleepSource::Ext0 | SleepSource::Ext1 => Some(WakeReason::Button),
-        SleepSource::Undefined => None,
-        _ => Some(WakeReason::Unknown),
-    }
-}
-
-/// Idles forever after a fatal bring-up error.
-async fn halt() -> ! {
-    loop {
-        Timer::after(Duration::from_secs(1)).await;
-    }
-}
-
-/// Prints the silicon facts read at runtime, plus the PSRAM size.
-fn report_boot(psram_bytes: usize) {
-    let revision = Efuse::chip_revision();
-    let mac = Efuse::mac_address();
-
-    println!("=== wv2 firmware (Phase 1.5 RTC bring-up) ===");
-    println!(
-        "chip:  {} rev v{}.{}",
-        esp_hal::chip!(),
-        revision / 100,
-        revision % 100
-    );
-    println!("cpu:   {} MHz", BRINGUP_CPU_CLOCK_MHZ);
-    println!(
-        "mac:   {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
-    );
-    println!("psram: {} bytes", psram_bytes);
-    match esp_hal::system::reset_reason() {
-        Some(reason) => println!("reset: {:?}", reason),
-        None => println!("reset: unknown"),
-    }
 }

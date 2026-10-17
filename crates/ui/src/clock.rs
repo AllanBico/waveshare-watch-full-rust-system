@@ -11,8 +11,8 @@ use crate::mono::MonoBuffer;
 
 /// Gap between glyphs, in unscaled pixels.
 const GLYPH_GAP: u16 = 1;
-/// Character cells in "HH:MM".
-const CELL_COUNT: u16 = 5;
+/// Character cells in "HH:MM:SS".
+const CELL_COUNT: u16 = 8;
 
 /// The rendered size of `cells` glyphs at `scale`.
 fn text_size(cells: u16, scale: u16) -> (u16, u16) {
@@ -20,7 +20,7 @@ fn text_size(cells: u16, scale: u16) -> (u16, u16) {
     (width, GLYPH_HEIGHT * scale)
 }
 
-/// The rendered size of "HH:MM" at `scale`.
+/// The rendered size of "HH:MM:SS" at `scale`.
 pub fn clock_size(scale: u16) -> (u16, u16) {
     text_size(CELL_COUNT, scale)
 }
@@ -30,20 +30,30 @@ pub fn digits_size(digits: u8, scale: u16) -> (u16, u16) {
     text_size(u16::from(digits), scale)
 }
 
-/// The region "HH:MM" occupies at `origin` and `scale`.
+/// The region "HH:MM:SS" occupies at `origin` and `scale`.
 pub fn clock_region(origin: (u16, u16), scale: u16) -> Region {
     let (width, height) = clock_size(scale);
     Region::new(origin.0, origin.1, width, height)
 }
 
-/// Draws "HH:MM" into `buffer` with its top-left at `origin`.
-pub fn draw_time(buffer: &mut MonoBuffer, hour: u8, minute: u8, origin: (u16, u16), scale: u16) {
+/// Draws "HH:MM:SS" into `buffer` with its top-left at `origin`.
+pub fn draw_time(
+    buffer: &mut MonoBuffer,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    origin: (u16, u16),
+    scale: u16,
+) {
     let text = [
         b'0' + hour / 10,
         b'0' + hour % 10,
         b':',
         b'0' + minute / 10,
         b'0' + minute % 10,
+        b':',
+        b'0' + second / 10,
+        b'0' + second % 10,
     ];
     for (cell, &character) in text.iter().enumerate() {
         let x = origin.0 + cell as u16 * (GLYPH_WIDTH + GLYPH_GAP) * scale;
@@ -103,8 +113,8 @@ mod tests {
 
     #[test]
     fn clock_size_scales_with_the_scale() {
-        assert_eq!(clock_size(1), (29, 7));
-        assert_eq!(clock_size(3), (87, 21));
+        assert_eq!(clock_size(1), (47, 7));
+        assert_eq!(clock_size(3), (141, 21));
     }
 
     #[test]
@@ -116,7 +126,7 @@ mod tests {
     #[test]
     fn drawn_clock_stays_under_the_pixel_budget() {
         let mut buffer = MonoBuffer::new(PANEL_WIDTH, PANEL_HEIGHT);
-        draw_time(&mut buffer, 10, 9, centered_origin(), SCALE);
+        draw_time(&mut buffer, 10, 9, 30, centered_origin(), SCALE);
 
         let lit = buffer.lit_pixels();
         let total = buffer.total_pixels();
@@ -149,7 +159,7 @@ mod tests {
     fn nothing_is_drawn_outside_the_clock_region() {
         let mut buffer = MonoBuffer::new(PANEL_WIDTH, PANEL_HEIGHT);
         let origin = centered_origin();
-        draw_time(&mut buffer, 10, 9, origin, SCALE);
+        draw_time(&mut buffer, 10, 9, 30, origin, SCALE);
 
         let region = clock_region(origin, SCALE);
         let mut outside_lit = 0;

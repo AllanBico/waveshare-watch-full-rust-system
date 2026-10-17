@@ -82,15 +82,6 @@ pub enum BringUpError {
     Display(DisplayError<SpiError>),
 }
 
-/// Lit-pixel accounting for the rendered frame.
-#[derive(Debug)]
-pub struct DisplayStat {
-    /// Number of lit (white) pixels in the frame.
-    pub lit_pixels: u32,
-    /// Total pixels in the frame.
-    pub total_pixels: u32,
-}
-
 /// The board's CO5300 panel, reusable across one awake window.
 pub struct Display {
     panel: Co5300<EspQspiBus<'static>, Output<'static>, Delay>,
@@ -134,16 +125,25 @@ impl Display {
         })
     }
 
-    /// Re-runs the full init (the panel lost power) and paints the live clock
-    /// and battery readout.
-    pub fn init_and_draw(
+    /// Initializes the panel (after power-on or a power cycle) and clears it.
+    pub fn init(&mut self) -> Result<(), BringUpError> {
+        self.panel.init().map_err(BringUpError::Display)?;
+        self.panel
+            .fill_region(
+                Region::full(self.geometry.width, self.geometry.height),
+                Rgb565::BLACK,
+            )
+            .map_err(BringUpError::Display)
+    }
+
+    /// Redraws the clock and battery readout. Call after [`Self::init`].
+    pub fn draw(
         &mut self,
         hour: u8,
         minute: u8,
+        second: u8,
         battery_mv: u16,
-    ) -> Result<DisplayStat, BringUpError> {
-        self.panel.init().map_err(BringUpError::Display)?;
-
+    ) -> Result<(), BringUpError> {
         let mut frame = MonoBuffer::new(self.geometry.width, self.geometry.height);
 
         let (clock_width, clock_height) = clock_size(CLOCK_SCALE);
@@ -157,6 +157,7 @@ impl Display {
             &mut frame,
             hour,
             minute,
+            second,
             (block_x + (block_width - clock_width) / 2, block_y),
             CLOCK_SCALE,
         );
@@ -177,20 +178,10 @@ impl Display {
         let mut expanded = vec![0u8; block.rgb565_len()];
         frame.expand_region(block, &mut expanded);
 
-        self.panel
-            .fill_region(
-                Region::full(self.geometry.width, self.geometry.height),
-                Rgb565::BLACK,
-            )
-            .map_err(BringUpError::Display)?;
+        // The block covers every changed pixel, so writing it fully replaces it.
         self.panel
             .write_region(block, &expanded)
-            .map_err(BringUpError::Display)?;
-
-        Ok(DisplayStat {
-            lit_pixels: frame.lit_pixels(),
-            total_pixels: frame.total_pixels(),
-        })
+            .map_err(BringUpError::Display)
     }
 
     /// Puts the panel into sleep, before `power` cuts the enable rail.
