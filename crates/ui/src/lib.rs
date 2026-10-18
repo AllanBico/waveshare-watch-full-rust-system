@@ -1,8 +1,9 @@
 //! The custom monochrome UI engine.
 //!
 //! Both runtime modes share one luminance painter. Watch renders into a 1-bit
-//! surface, desk into an 8-bit grayscale surface. Themes, surfaces, drawing
-//! primitives, compiled-in fonts, and compiled-in icons live here.
+//! surface, desk into an 8-bit grayscale surface. Themes, layout, the scene
+//! diff and damage path, surfaces, drawing primitives, compiled-in fonts, and
+//! compiled-in icons live here.
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
@@ -15,6 +16,8 @@ mod icon;
 mod layout;
 mod luma;
 mod painter;
+mod render;
+mod scene;
 mod surface;
 #[cfg(test)]
 mod test_support;
@@ -30,6 +33,11 @@ pub use layout::{
 };
 pub use luma::Luma;
 pub use painter::{Painter, MAX_CLIP_DEPTH};
+pub use render::{flush, paint_damage, FlushError, Rgb565Source};
+pub use scene::{
+    Damage, FramePacer, RedrawReason, Scene, SceneArena, SceneError, SceneNode, WidgetId,
+    DESK_FRAME_INTERVAL_MS, MAX_DAMAGE_RECTS, SCENE_CAPACITY,
+};
 pub use surface::{GraySurface, MonoSurface, Surface, SurfaceError};
 pub use text::{
     draw_text, ellipsis_prefix, font_asset, layout_text, measure_layout, measure_text,

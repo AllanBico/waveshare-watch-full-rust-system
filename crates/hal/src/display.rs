@@ -33,4 +33,11 @@ pub trait Display {
     ///
     /// `pixels.len()` must equal `region.rgb565_len()`.
     fn write_region(&mut self, region: Region, pixels: &[u8]) -> Result<(), Self::Error>;
+
+    /// Blocks until the next tearing-effect edge.
+    ///
+    /// Targets without a TE signal may keep the default no-op.
+    fn wait_for_vsync(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }

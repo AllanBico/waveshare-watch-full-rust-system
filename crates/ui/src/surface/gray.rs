@@ -7,6 +7,23 @@ use common::Region;
 use crate::luma::Luma;
 use crate::surface::{Surface, SurfaceError};
 
+/// Grayscale to RGB565 conversion table.
+const LUMA_LUT: [u16; 256] = build_luma_lut();
+
+const fn build_luma_lut() -> [u16; 256] {
+    let mut table = [0u16; 256];
+    let mut value = 0usize;
+    while value < 256 {
+        let level = value as u16;
+        let red = (level >> 3) & 0x1F;
+        let green = (level >> 2) & 0x3F;
+        let blue = (level >> 3) & 0x1F;
+        table[value] = (red << 11) | (green << 5) | blue;
+        value += 1;
+    }
+    table
+}
+
 /// An 8-bit grayscale surface borrowing caller-owned storage.
 pub struct GraySurface<'a> {
     width: u16,
@@ -39,6 +56,26 @@ impl<'a> GraySurface<'a> {
     /// The raw pixel bytes, one per pixel.
     pub fn pixels(&self) -> &[u8] {
         &self.data[..Self::buffer_len(self.width, self.height)]
+    }
+
+    /// Expands a region into big-endian RGB565 bytes through the luma LUT.
+    ///
+    /// Writes `min(out.len(), region.rgb565_len())` bytes and never panics.
+    pub fn expand_region(&self, region: Region, out: &mut [u8]) {
+        let region = region.intersection(Region::full(self.width, self.height));
+        let mut index = 0usize;
+        for y in region.y..region.bottom() {
+            for x in region.x..region.right() {
+                if index + 2 > out.len() {
+                    return;
+                }
+                let source = usize::from(y) * usize::from(self.width) + usize::from(x);
+                let value = LUMA_LUT[usize::from(self.data[source])].to_be_bytes();
+                out[index] = value[0];
+                out[index + 1] = value[1];
+                index += 2;
+            }
+        }
     }
 }
 
