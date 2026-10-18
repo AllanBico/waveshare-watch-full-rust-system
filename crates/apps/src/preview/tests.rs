@@ -179,3 +179,38 @@ fn home_complications_fit_inside_the_panel() {
     assert!(battery.rect.right() <= VIEWPORT.width);
     assert!(battery.rect.x > clock.rect.x);
 }
+
+#[test]
+fn the_drawer_closes_from_its_close_button() {
+    let mut data = vec![0u8; MonoSurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
+    let mut surface = watch_surface(&mut data);
+    let mut preview = preview(Mode::Watch);
+    preview
+        .render(&mut surface, &Theme::WATCH, VIEWPORT)
+        .unwrap();
+    preview.open_drawer();
+    preview
+        .render(&mut surface, &Theme::WATCH, VIEWPORT)
+        .unwrap();
+    let close = hit(&preview, 102);
+    assert!(preview.tap(close.rect.x + 1, close.rect.y + 1, VIEWPORT));
+    assert_eq!(preview.overlay(), Overlay::None);
+}
+
+#[test]
+fn every_gallery_page_renders_and_keeps_the_next_control() {
+    let mut data = vec![0u8; MonoSurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
+    let mut surface = watch_surface(&mut data);
+    let mut preview = preview(Mode::Watch);
+    preview.screen = Screen::Gallery;
+    for _ in 0..PAGES {
+        preview.invalidate();
+        preview
+            .render(&mut surface, &Theme::WATCH, VIEWPORT)
+            .unwrap();
+        let next = hit(&preview, 303);
+        assert!(next.rect.bottom() <= VIEWPORT.height);
+        assert!(preview.tap(next.rect.x + 1, next.rect.y + 1, VIEWPORT));
+    }
+    assert_eq!(preview.screen(), Screen::Gallery);
+}

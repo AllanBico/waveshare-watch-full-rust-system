@@ -42,7 +42,7 @@ pub(super) fn build<'a>(
         &clock,
         theme,
         view.cache,
-        view.viewport.width.saturating_sub(48),
+        view.viewport.width.saturating_sub(40),
     );
     view.push(background(BG_ID))?;
     view.push(date)?;
@@ -62,7 +62,7 @@ pub(super) fn build<'a>(
         spacer(BOTTOM_SPACER_ID, Length::Fill(1), Length::Fill(1)),
     ];
     let content = column(ROOT_ID, &content_children, theme.spacing.sm, Align::Center)
-        .with_padding(Insets::symmetric(24, 24));
+        .with_padding(Insets::symmetric(20, 16));
     let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), content];
     let root = crate::view::stack(0, &root_children, Align::Start);
     view.layout(&root)

@@ -28,8 +28,8 @@ fn component_goldens_are_stable() {
         (0x027b_41f3_8127_4680, 0xe269_6687_0d75_0d9c),
         (0xb533_1ce7_ba56_794c, 0x8e89_4e6f_ef6c_2f16),
         (0x03dc_b279_ccc4_a514, 0x550d_47a9_c4e8_9416),
-        (0x106c_0925_3924_ecda, 0x501d_4545_1943_b3ac),
-        (0xdcc9_018e_e013_c9bb, 0x8acf_b90d_4607_158e),
+        (0x3220_6287_fb0a_67fa, 0xf70d_1e3e_87bd_b54a),
+        (0xeef4_632c_3c00_4b90, 0x88b2_dec1_575f_4c6e),
     ];
     for (index, kind) in SAMPLE_KINDS.into_iter().enumerate() {
         let watch = render_watch(kind, WidgetState::NORMAL, WIDTH, HEIGHT).0;

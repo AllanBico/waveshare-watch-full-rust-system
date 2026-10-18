@@ -80,7 +80,7 @@ fn layout_entries_feed_hit_registration() {
     let mut registry = HitRegistry::new();
     collect_hits(&widgets, &entries[..count], &mut registry).unwrap();
     assert_eq!(registry.hit(4, 4), Some(1));
-    assert_eq!(registry.hit(4, 200), Some(3));
+    assert_eq!(registry.hit(4, 150), Some(3));
     assert_eq!(registry.hit(4, 300), None);
 }
 

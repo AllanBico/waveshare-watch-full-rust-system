@@ -50,7 +50,7 @@ pub(super) fn build<'a>(
     let battery_tile = list(DESK_BATTERY_ID, "Battery", charge, IconId::BatteryHigh);
     let sync = list(SYNC_ID, "Sync", "Idle", IconId::ArrowClockwise);
 
-    let cell = view.viewport.width.saturating_sub(60) / 2;
+    let cell = view.viewport.width.saturating_sub(40) / 2;
     let clock_node = fit_node(&clock, theme, view.cache);
     let date_node = fit_node(&date, theme, view.cache);
     let battery_node = fit_node(&battery, theme, view.cache);
@@ -70,7 +70,7 @@ pub(super) fn build<'a>(
         spacer(HEADER_SPACER_ID, Length::Fill(1), Length::Fixed(0)),
         battery_node,
     ];
-    let top = row(HEADER_ID, &top_children, theme.spacing.md, Align::End);
+    let top = row(HEADER_ID, &top_children, theme.spacing.sm, Align::End);
     let grid_children = [alarm_node, settings_node, battery_tile_node, sync_node];
     let dashboard = grid(
         GRID_ID,
@@ -89,8 +89,8 @@ pub(super) fn build<'a>(
         dashboard,
         spacer(11, Length::Fill(1), Length::Fill(1)),
     ];
-    let content = column(ROOT_ID, &content_children, theme.spacing.md, Align::Start)
-        .with_padding(Insets::symmetric(24, 24));
+    let content = column(ROOT_ID, &content_children, theme.spacing.sm, Align::Start)
+        .with_padding(Insets::symmetric(16, 12));
     let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), content];
     let root = crate::view::stack(0, &root_children, Align::Start);
     view.layout(&root)

@@ -63,7 +63,7 @@ fn inset(theme: &Theme) -> u16 {
         .borders
         .thick
         .saturating_add(1)
-        .saturating_add(theme.spacing.md);
+        .saturating_add(theme.spacing.sm);
     edge.saturating_mul(2)
 }
 
@@ -85,7 +85,7 @@ fn paint_button(
 ) {
     frame(painter, rect, theme, state, theme.radii.md);
     let colors = colors(theme, state);
-    let region = content(rect, theme, theme.spacing.md);
+    let region = content(rect, theme, theme.spacing.sm);
     if let Some(icon) = props.icon {
         paint_icon_label(painter, props.label, icon, region, theme, colors);
     } else {

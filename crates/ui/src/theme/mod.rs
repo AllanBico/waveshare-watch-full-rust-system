@@ -58,7 +58,7 @@ impl Theme {
         radii: Radii::DEFAULT,
         borders: Borders::DEFAULT,
         motion: Motion::NONE,
-        min_touch_px: 88,
+        min_touch_px: 64,
         pixel_mode: PixelMode::Mono1,
     };
 
@@ -83,7 +83,7 @@ impl Theme {
         radii: Radii::DEFAULT,
         borders: Borders::DEFAULT,
         motion: Motion::DESK,
-        min_touch_px: 88,
+        min_touch_px: 64,
         pixel_mode: PixelMode::Gray8,
     };
 
@@ -129,8 +129,8 @@ mod tests {
 
     #[test]
     fn touch_targets_clear_the_minimum() {
-        const { assert!(Theme::WATCH.min_touch_px >= 88) };
-        const { assert!(Theme::DESK.min_touch_px >= 88) };
+        const { assert!(Theme::WATCH.min_touch_px >= 64) };
+        const { assert!(Theme::DESK.min_touch_px >= 64) };
     }
 
     #[test]

@@ -131,8 +131,8 @@ impl Preview {
     }
 
     /// Handles a tap at screen coordinates.
-    pub fn tap(&mut self, x: u16, y: u16, viewport: common::Region) -> bool {
-        if self.dismiss_outside_overlay(y, viewport) {
+    pub fn tap(&mut self, x: u16, y: u16, _viewport: common::Region) -> bool {
+        if self.dismiss_outside_overlay(y) {
             return true;
         }
         let Some(id) = self.hits.hit(x, y) else {
@@ -144,12 +144,8 @@ impl Preview {
         self.activate(id, x)
     }
 
-    fn dismiss_outside_overlay(&mut self, y: u16, viewport: common::Region) -> bool {
+    fn dismiss_outside_overlay(&mut self, y: u16) -> bool {
         match self.overlay {
-            Overlay::Drawer if y < viewport.height.saturating_sub(drawer::HEIGHT) => {
-                self.close_overlay();
-                true
-            }
             Overlay::QuickSettings if y > quick::HEIGHT => {
                 self.close_overlay();
                 true
@@ -180,6 +176,10 @@ impl Preview {
             }
             drawer::GALLERY_ID => {
                 self.screen = Screen::Gallery;
+                self.overlay = Overlay::None;
+                true
+            }
+            id if drawer::is_close(id) => {
                 self.overlay = Overlay::None;
                 true
             }

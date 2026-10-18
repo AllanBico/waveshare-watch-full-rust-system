@@ -29,7 +29,7 @@ pub(crate) fn measure(
     available: u16,
 ) -> Size {
     let label = measure_text(props.label, &theme.type_scale.caption, available, cache);
-    let inset = theme.spacing.md.saturating_mul(2);
+    let inset = theme.spacing.sm.saturating_mul(2);
     let width = label.width.saturating_add(inset).max(theme.min_touch_px);
     let width = if available == UNBOUNDED {
         width
@@ -38,7 +38,7 @@ pub(crate) fn measure(
     };
     let height = theme
         .icons
-        .lg
+        .md
         .saturating_add(theme.spacing.sm)
         .saturating_add(label.height)
         .saturating_add(inset)
@@ -53,8 +53,8 @@ pub(crate) fn paint(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
     };
     frame(painter, rect, theme, widget.state, theme.radii.lg);
     let colors = colors(theme, widget.state);
-    let region = shrink(rect, theme.borders.thick + 1 + theme.spacing.md);
-    let icon = theme.icons.lg.min(region.width).min(region.height);
+    let region = shrink(rect, theme.borders.thick + 1 + theme.spacing.sm);
+    let icon = theme.icons.md.min(region.width).min(region.height);
     let text = measure_uncached(props.label, &theme.type_scale.caption, region.width);
     let total = icon
         .saturating_add(theme.spacing.sm)

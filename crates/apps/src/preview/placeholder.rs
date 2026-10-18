@@ -34,7 +34,7 @@ pub(super) fn build<'a>(
         TITLE_ID,
         WidgetKind::Label(LabelProps {
             text: title,
-            role: TextRole::Title,
+            role: TextRole::Label,
             align: TextAlign::Start,
             icon: None,
         }),
@@ -58,8 +58,8 @@ pub(super) fn build<'a>(
     let header_children = [back_node, heading_node];
     let header = row(404, &header_children, theme.spacing.sm, Align::Center);
     let content_children = [header, leaf(EMPTY_ID, Length::Fill(1), Length::Fill(1))];
-    let content = column(405, &content_children, theme.spacing.md, Align::Start)
-        .with_padding(Insets::symmetric(24, 16));
+    let content = column(405, &content_children, theme.spacing.sm, Align::Start)
+        .with_padding(Insets::symmetric(16, 12));
     let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), content];
     let root = ui::Node::container(
         0,

@@ -7,7 +7,8 @@ use ui::{
 };
 
 use crate::view::{
-    background, column, fill_node, fit_node, grid, leaf, node, row, spacer, BuildError, Builder,
+    background, column, column_fit, fill_node, fit_node, leaf, node, row, spacer, BuildError,
+    Builder,
 };
 
 /// Number of gallery pages.
@@ -16,7 +17,6 @@ pub const PAGES: u8 = 3;
 const BACK_ID: u16 = 301;
 const TITLE_ID: u16 = 302;
 const NEXT_ID: u16 = 303;
-const GRID_ID: u16 = 304;
 const BG_ID: u16 = 300;
 const WIDGET_BASE: u16 = 310;
 
@@ -43,7 +43,7 @@ pub(super) fn build<'a>(page: u8, view: &mut Builder<'_, 'a>) -> Result<usize, B
         TITLE_ID,
         WidgetKind::Label(LabelProps {
             text: "Components",
-            role: TextRole::Title,
+            role: TextRole::Label,
             align: TextAlign::Start,
             icon: None,
         }),
@@ -56,17 +56,12 @@ pub(super) fn build<'a>(page: u8, view: &mut Builder<'_, 'a>) -> Result<usize, B
         }),
     );
     let cells = widgets_for(page);
-    let content_width = view.viewport.width.saturating_sub(48);
-    let cell = content_width.saturating_sub(theme.spacing.md) / 2;
+    let content_width = view.viewport.width.saturating_sub(32);
+    let half = content_width.saturating_sub(theme.spacing.sm) / 2;
+    let nodes = page_nodes(page, &cells, theme, view.cache, content_width, half);
     let back_node = fit_node(&back, theme, view.cache);
     let title_node = fill_node(&title, theme, view.cache, content_width);
     let next_node = fill_node(&next, theme, view.cache, content_width);
-    let cell_nodes = [
-        node(&cells[0], theme, view.cache, Length::Fill(1), cell),
-        node(&cells[1], theme, view.cache, Length::Fill(1), cell),
-        node(&cells[2], theme, view.cache, Length::Fill(1), cell),
-        node(&cells[3], theme, view.cache, Length::Fill(1), cell),
-    ];
     view.push(background(BG_ID))?;
     view.push(back)?;
     view.push(title)?;
@@ -77,16 +72,23 @@ pub(super) fn build<'a>(page: u8, view: &mut Builder<'_, 'a>) -> Result<usize, B
 
     let header_children = [back_node, title_node];
     let header = row(306, &header_children, theme.spacing.sm, Align::Center);
-    let gallery = grid(GRID_ID, &cell_nodes, 2, theme.spacing.md, theme.spacing.md);
+    let pair_children = [nodes[1], nodes[2]];
+    let pair = row(320, &pair_children, theme.spacing.sm, Align::Center);
+    let body_a_children = [nodes[0], pair, nodes[3]];
+    let body_a = column_fit(321, &body_a_children, theme.spacing.sm, Align::Start);
+    let pair_b_children = [nodes[2], nodes[3]];
+    let pair_b = row(322, &pair_b_children, theme.spacing.sm, Align::Center);
+    let body_b_children = [nodes[0], nodes[1], pair_b];
+    let body_b = column_fit(323, &body_b_children, theme.spacing.sm, Align::Start);
+    let body = if page % PAGES == 2 { body_b } else { body_a };
     let content_children = [
         header,
-        spacer(307, Length::Fill(1), Length::Fixed(theme.spacing.md)),
-        gallery,
+        body,
         spacer(308, Length::Fill(1), Length::Fill(1)),
         next_node,
     ];
-    let content = column(309, &content_children, theme.spacing.md, Align::Start)
-        .with_padding(Insets::symmetric(24, 16));
+    let content = column(309, &content_children, theme.spacing.sm, Align::Start)
+        .with_padding(Insets::symmetric(16, 12));
     let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), content];
     let root = ui::Node::container(
         0,
@@ -98,6 +100,36 @@ pub(super) fn build<'a>(page: u8, view: &mut Builder<'_, 'a>) -> Result<usize, B
         &root_children,
     );
     view.layout(&root)
+}
+
+fn page_nodes(
+    page: u8,
+    cells: &[Widget<'static>; 4],
+    theme: &ui::Theme,
+    cache: &mut ui::TextCache,
+    width: u16,
+    half: u16,
+) -> [ui::Node<'static>; 4] {
+    match page % PAGES {
+        0 => [
+            fill_node(&cells[0], theme, cache, width),
+            fit_node(&cells[1], theme, cache),
+            node(&cells[2], theme, cache, Length::Fill(1), width),
+            fill_node(&cells[3], theme, cache, width),
+        ],
+        1 => [
+            fill_node(&cells[0], theme, cache, width),
+            node(&cells[1], theme, cache, Length::Fill(1), half),
+            node(&cells[2], theme, cache, Length::Fill(1), half),
+            fill_node(&cells[3], theme, cache, width),
+        ],
+        _ => [
+            fill_node(&cells[0], theme, cache, width),
+            fill_node(&cells[1], theme, cache, width),
+            fit_node(&cells[2], theme, cache),
+            node(&cells[3], theme, cache, Length::Fill(1), width),
+        ],
+    }
 }
 
 fn widgets_for(page: u8) -> [Widget<'static>; 4] {

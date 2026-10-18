@@ -79,19 +79,18 @@ impl Session {
     }
 
     fn swipe(&mut self, swipe: shell::Swipe) {
+        if swipe.direction == SwipeDirection::Down && self.preview.overlay() == Overlay::Drawer {
+            self.preview.close_overlay();
+            return;
+        }
+        if swipe.direction == SwipeDirection::Up && self.preview.overlay() == Overlay::QuickSettings
+        {
+            self.preview.close_overlay();
+            return;
+        }
         match (swipe.origin, swipe.direction) {
             (SwipeOrigin::BottomEdge, SwipeDirection::Up) => self.preview.open_drawer(),
             (SwipeOrigin::TopEdge, SwipeDirection::Down) => self.preview.open_quick_settings(),
-            (SwipeOrigin::BottomEdge, SwipeDirection::Down)
-                if self.preview.overlay() == Overlay::Drawer =>
-            {
-                self.preview.close_overlay()
-            }
-            (SwipeOrigin::TopEdge, SwipeDirection::Up)
-                if self.preview.overlay() == Overlay::QuickSettings =>
-            {
-                self.preview.close_overlay()
-            }
             _ => {}
         }
     }

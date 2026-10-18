@@ -8,7 +8,7 @@ use ui::{
 use crate::view::{background, column, fit_node, grid, leaf, node, BuildError, Builder};
 
 /// Quick-settings panel height.
-pub const HEIGHT: u16 = 390;
+pub const HEIGHT: u16 = 300;
 
 const PANEL_ID: u16 = 200;
 const BG_ID: u16 = 201;
@@ -74,7 +74,7 @@ pub(super) fn build<'a>(
         TITLE_ID,
         WidgetKind::Label(LabelProps {
             text: "Quick settings",
-            role: TextRole::Title,
+            role: TextRole::Label,
             align: TextAlign::Start,
             icon: None,
         }),
@@ -92,7 +92,7 @@ pub(super) fn build<'a>(
     );
 
     let content_width = view.viewport.width.saturating_sub(48);
-    let cell = content_width.saturating_sub(theme.spacing.md) / 2;
+    let cell = content_width.saturating_sub(theme.spacing.sm) / 2;
     let title_node = fit_node(&title, theme, view.cache);
     let wifi_node = node(&wifi, theme, view.cache, Length::Fill(1), cell);
     let bluetooth_node = node(&bluetooth, theme, view.cache, Length::Fill(1), cell);
@@ -119,8 +119,8 @@ pub(super) fn build<'a>(
         theme.spacing.md,
     );
     let content_children = [title_node, toggles, brightness_node];
-    let content = column(207, &content_children, theme.spacing.md, Align::Start)
-        .with_padding(Insets::symmetric(24, 16));
+    let content = column(207, &content_children, theme.spacing.sm, Align::Start)
+        .with_padding(Insets::symmetric(16, 12));
     let panel_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), content];
     let panel = ui::Node::container(
         PANEL_ID,
