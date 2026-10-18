@@ -12,6 +12,7 @@ extern crate alloc;
 mod assets;
 mod bringup;
 mod icon;
+mod layout;
 mod luma;
 mod painter;
 mod surface;
@@ -23,6 +24,10 @@ mod theme;
 pub use assets::{IconId, IconMask, IconSet, ICON_COUNT, ICON_SETS};
 pub use bringup::draw_bringup;
 pub use icon::draw_icon;
+pub use layout::{
+    layout, Align, Axis, Constraints, Content, Insets, Kind, LayoutEntry, LayoutError, LayoutRect,
+    Length, Node, NodeId, Size, MAX_DEPTH, UNBOUNDED,
+};
 pub use luma::Luma;
 pub use painter::{Painter, MAX_CLIP_DEPTH};
 pub use surface::{GraySurface, MonoSurface, Surface, SurfaceError};
