@@ -25,22 +25,24 @@ pub struct Tones {
 
 /// A compiled-in font face.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum FontId {
     /// Proportional interface face.
-    Ui,
+    Ui = 0,
     /// Tabular numerals for clock and data.
-    Numeric,
+    Numeric = 1,
 }
 
 /// A font weight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Weight {
     /// Regular.
-    Regular,
+    Regular = 0,
     /// Medium.
-    Medium,
+    Medium = 1,
     /// Semibold.
-    Semibold,
+    Semibold = 2,
 }
 
 /// A named text style.
@@ -78,8 +80,8 @@ impl Typography {
     pub const BASE: Self = Self {
         display: TextStyle {
             font: FontId::Ui,
-            size_px: 72,
-            line_height_px: 84,
+            size_px: 48,
+            line_height_px: 56,
             weight: Weight::Regular,
         },
         title: TextStyle {
@@ -112,6 +114,29 @@ impl Typography {
             line_height_px: 84,
             weight: Weight::Medium,
         },
+    };
+}
+
+/// Icon sizes in pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IconSizes {
+    /// Small icon.
+    pub sm: u16,
+    /// Default icon.
+    pub md: u16,
+    /// Large icon.
+    pub lg: u16,
+    /// Extra-large icon.
+    pub xl: u16,
+}
+
+impl IconSizes {
+    /// The shared icon scale.
+    pub const DEFAULT: Self = Self {
+        sm: 24,
+        md: 32,
+        lg: 40,
+        xl: 48,
     };
 }
 

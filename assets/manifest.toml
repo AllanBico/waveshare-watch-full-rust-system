@@ -1,0 +1,203 @@
+# Asset sources for the in-house UI engine.
+# Regenerate with: tools/gen-assets.sh
+# Verify with:     tools/gen-assets.sh --check
+
+[[font]]
+id = "ui"
+weight = "regular"
+path = "fonts/sora/Sora-Regular.ttf"
+sizes = [22, 28, 48]
+charset = "ui"
+
+[[font]]
+id = "ui"
+weight = "medium"
+path = "fonts/sora/Sora-Medium.ttf"
+sizes = [24, 36]
+charset = "ui"
+
+[[font]]
+id = "numeric"
+weight = "medium"
+path = "fonts/jetbrains_mono/JetBrainsMono-Medium.ttf"
+sizes = [72]
+charset = "numeric"
+
+[icons]
+sizes = [24, 32, 40, 48]
+
+[[icons.item]]
+id = "house"
+file = "icons/phosphor/house.svg"
+
+[[icons.item]]
+id = "squares_four"
+file = "icons/phosphor/squares-four.svg"
+
+[[icons.item]]
+id = "gear_six"
+file = "icons/phosphor/gear-six.svg"
+
+[[icons.item]]
+id = "clock"
+file = "icons/phosphor/clock.svg"
+
+[[icons.item]]
+id = "bell"
+file = "icons/phosphor/bell.svg"
+
+[[icons.item]]
+id = "battery_high"
+file = "icons/phosphor/battery-high.svg"
+
+[[icons.item]]
+id = "wifi_high"
+file = "icons/phosphor/wifi-high.svg"
+
+[[icons.item]]
+id = "bluetooth"
+file = "icons/phosphor/bluetooth.svg"
+
+[[icons.item]]
+id = "sun"
+file = "icons/phosphor/sun.svg"
+
+[[icons.item]]
+id = "moon"
+file = "icons/phosphor/moon.svg"
+
+[[icons.item]]
+id = "speaker_high"
+file = "icons/phosphor/speaker-high.svg"
+
+[[icons.item]]
+id = "microphone"
+file = "icons/phosphor/microphone.svg"
+
+[[icons.item]]
+id = "magnifying_glass"
+file = "icons/phosphor/magnifying-glass.svg"
+
+[[icons.item]]
+id = "caret_up"
+file = "icons/phosphor/caret-up.svg"
+
+[[icons.item]]
+id = "caret_down"
+file = "icons/phosphor/caret-down.svg"
+
+[[icons.item]]
+id = "caret_left"
+file = "icons/phosphor/caret-left.svg"
+
+[[icons.item]]
+id = "caret_right"
+file = "icons/phosphor/caret-right.svg"
+
+[[icons.item]]
+id = "x"
+file = "icons/phosphor/x.svg"
+
+[[icons.item]]
+id = "check"
+file = "icons/phosphor/check.svg"
+
+[[icons.item]]
+id = "plus"
+file = "icons/phosphor/plus.svg"
+
+[[icons.item]]
+id = "minus"
+file = "icons/phosphor/minus.svg"
+
+[[icons.item]]
+id = "play"
+file = "icons/phosphor/play.svg"
+
+[[icons.item]]
+id = "pause"
+file = "icons/phosphor/pause.svg"
+
+[[icons.item]]
+id = "list"
+file = "icons/phosphor/list.svg"
+
+[[icons.item]]
+id = "dots_three"
+file = "icons/phosphor/dots-three.svg"
+
+[[icons.item]]
+id = "warning"
+file = "icons/phosphor/warning.svg"
+
+[[icons.item]]
+id = "info"
+file = "icons/phosphor/info.svg"
+
+[[icons.item]]
+id = "check_circle"
+file = "icons/phosphor/check-circle.svg"
+
+[[icons.item]]
+id = "x_circle"
+file = "icons/phosphor/x-circle.svg"
+
+[[icons.item]]
+id = "arrow_clockwise"
+file = "icons/phosphor/arrow-clockwise.svg"
+
+[[icons.item]]
+id = "arrow_counter_clockwise"
+file = "icons/phosphor/arrow-counter-clockwise.svg"
+
+[[icons.item]]
+id = "download_simple"
+file = "icons/phosphor/download-simple.svg"
+
+[[icons.item]]
+id = "upload_simple"
+file = "icons/phosphor/upload-simple.svg"
+
+[[icons.item]]
+id = "lock"
+file = "icons/phosphor/lock.svg"
+
+[[icons.item]]
+id = "lock_open"
+file = "icons/phosphor/lock-open.svg"
+
+[[icons.item]]
+id = "user"
+file = "icons/phosphor/user.svg"
+
+[[icons.item]]
+id = "trash"
+file = "icons/phosphor/trash.svg"
+
+[[icons.item]]
+id = "pencil_simple"
+file = "icons/phosphor/pencil-simple.svg"
+
+[[icons.item]]
+id = "heart"
+file = "icons/phosphor/heart.svg"
+
+[[icons.item]]
+id = "star"
+file = "icons/phosphor/star.svg"
+
+[[icons.item]]
+id = "chart_line"
+file = "icons/phosphor/chart-line.svg"
+
+[[icons.item]]
+id = "cell_signal_full"
+file = "icons/phosphor/cell-signal-full.svg"
+
+[[icons.item]]
+id = "usb"
+file = "icons/phosphor/usb.svg"
+
+[[icons.item]]
+id = "power"
+file = "icons/phosphor/power.svg"

@@ -1,0 +1,14 @@
+[package]
+name = "assetgen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+anyhow = "1"
+fontdue = "0.9"
+resvg = "0.45"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

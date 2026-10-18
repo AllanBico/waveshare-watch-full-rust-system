@@ -5,7 +5,9 @@
 
 mod tokens;
 
-pub use tokens::{Borders, FontId, Motion, Radii, Spacing, TextStyle, Tones, Typography, Weight};
+pub use tokens::{
+    Borders, FontId, IconSizes, Motion, Radii, Spacing, TextStyle, Tones, Typography, Weight,
+};
 
 use common::PixelMode;
 
@@ -18,6 +20,8 @@ pub struct Theme {
     pub tones: Tones,
     /// Type scale.
     pub type_scale: Typography,
+    /// Icon sizes.
+    pub icons: IconSizes,
     /// Spacing scale.
     pub spacing: Spacing,
     /// Corner radii.
@@ -44,6 +48,7 @@ impl Theme {
             disabled: Luma::WHITE,
         },
         type_scale: Typography::BASE,
+        icons: IconSizes::DEFAULT,
         spacing: Spacing::SCALE,
         radii: Radii::DEFAULT,
         borders: Borders::DEFAULT,
@@ -64,6 +69,7 @@ impl Theme {
             disabled: Luma::new(90),
         },
         type_scale: Typography::BASE,
+        icons: IconSizes::DEFAULT,
         spacing: Spacing::SCALE,
         radii: Radii::DEFAULT,
         borders: Borders::DEFAULT,
