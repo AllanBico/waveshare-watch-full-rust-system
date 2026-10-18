@@ -32,6 +32,8 @@ pub struct Theme {
     pub motion: Motion,
     /// Minimum touch target in pixels.
     pub min_touch_px: u16,
+    /// Pixel format this theme targets.
+    pub pixel_mode: PixelMode,
 }
 
 impl Theme {
@@ -45,6 +47,9 @@ impl Theme {
             text_muted: Luma::WHITE,
             border: Luma::WHITE,
             focus: Luma::WHITE,
+            error: Luma::WHITE,
+            selected: Luma::WHITE,
+            pressed: Luma::WHITE,
             disabled: Luma::WHITE,
         },
         type_scale: Typography::BASE,
@@ -54,6 +59,7 @@ impl Theme {
         borders: Borders::DEFAULT,
         motion: Motion::NONE,
         min_touch_px: 88,
+        pixel_mode: PixelMode::Mono1,
     };
 
     /// Desk theme: black background with dark gray surfaces and antialiasing.
@@ -66,6 +72,9 @@ impl Theme {
             text_muted: Luma::new(150),
             border: Luma::new(55),
             focus: Luma::WHITE,
+            error: Luma::new(255),
+            selected: Luma::new(210),
+            pressed: Luma::new(180),
             disabled: Luma::new(90),
         },
         type_scale: Typography::BASE,
@@ -75,6 +84,7 @@ impl Theme {
         borders: Borders::DEFAULT,
         motion: Motion::DESK,
         min_touch_px: 88,
+        pixel_mode: PixelMode::Gray8,
     };
 
     /// The theme for a pixel format.
@@ -97,6 +107,10 @@ mod tests {
         assert_eq!(theme.tones.surface, Luma::BLACK);
         assert_eq!(theme.tones.text, Luma::WHITE);
         assert_eq!(theme.tones.focus, Luma::WHITE);
+        assert_eq!(theme.tones.error, Luma::WHITE);
+        assert_eq!(theme.tones.selected, Luma::WHITE);
+        assert_eq!(theme.tones.pressed, Luma::WHITE);
+        assert_eq!(theme.pixel_mode, PixelMode::Mono1);
         assert_eq!(theme.motion, Motion::NONE);
     }
 
@@ -107,6 +121,9 @@ mod tests {
         assert!(theme.tones.surface > theme.tones.background);
         assert!(theme.tones.surface_raised > theme.tones.surface);
         assert!(theme.tones.text > theme.tones.text_muted);
+        assert!(theme.tones.selected > theme.tones.surface_raised);
+        assert!(theme.tones.pressed > theme.tones.surface_raised);
+        assert_eq!(theme.pixel_mode, PixelMode::Gray8);
         assert!(theme.motion.normal_ms > 0);
     }
 

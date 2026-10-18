@@ -23,6 +23,7 @@ mod surface;
 mod test_support;
 mod text;
 mod theme;
+mod widgets;
 
 pub use assets::{IconId, IconMask, IconSet, ICON_COUNT, ICON_SETS};
 pub use bringup::draw_bringup;
@@ -46,4 +47,12 @@ pub use text::{
 };
 pub use theme::{
     Borders, FontId, IconSizes, Motion, Radii, Spacing, TextStyle, Theme, Tones, Typography, Weight,
+};
+pub use widgets::{
+    collect_hits, paint_widget, paint_widgets, BadgeProps, ButtonProps, CheckboxProps,
+    ConfirmProps, ContextMenuProps, DialogProps, EmptyStateProps, ErrorStateProps, HitRegistry,
+    HitTarget, IconButtonProps, InputProps, ListItemProps, LoadingStateProps, MenuItem,
+    ProgressProps, RadioProps, ScreenScaffoldProps, SliderProps, Status, StatusIndicatorProps,
+    TabsProps, ToastProps, ToggleProps, Widget, WidgetArena, WidgetError, WidgetKind, WidgetState,
+    MAX_HIT_TARGETS, WIDGET_CAPACITY,
 };

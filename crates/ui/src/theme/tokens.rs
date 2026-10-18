@@ -19,6 +19,12 @@ pub struct Tones {
     pub border: Luma,
     /// Focus ring.
     pub focus: Luma,
+    /// Error accent.
+    pub error: Luma,
+    /// Selected item surface.
+    pub selected: Luma,
+    /// Pressed item surface.
+    pub pressed: Luma,
     /// Disabled content.
     pub disabled: Luma,
 }
