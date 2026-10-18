@@ -14,8 +14,8 @@ use super::state::WidgetState;
 use super::{Widget, WidgetKind};
 
 use super::{
-    button, checkbox, input, list_item, overlay, patterns, progress, radio, slider, status, tabs,
-    toggle,
+    button, checkbox, input, label, list_item, overlay, patterns, progress, radio, slider, status,
+    tabs, tile, toggle,
 };
 
 /// Paints one widget inside `rect`.
@@ -34,6 +34,7 @@ pub fn paint_widget(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
         WidgetKind::Radio(_) => radio::paint(painter, widget, rect, theme),
         WidgetKind::Slider(_) => slider::paint(painter, widget, rect, theme),
         WidgetKind::Input(_) => input::paint(painter, widget, rect, theme),
+        WidgetKind::Label(_) => label::paint(painter, widget, rect, theme),
         WidgetKind::Progress(_) | WidgetKind::Badge(_) => {
             progress::paint(painter, widget, rect, theme)
         }
@@ -41,6 +42,7 @@ pub fn paint_widget(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
             overlay::paint(painter, widget, rect, theme)
         }
         WidgetKind::Tabs(_) => tabs::paint(painter, widget, rect, theme),
+        WidgetKind::Tile(_) => tile::paint(painter, widget, rect, theme),
         WidgetKind::StatusIndicator(_) => status::paint(painter, widget, rect, theme),
         WidgetKind::ScreenScaffold(_)
         | WidgetKind::EmptyState(_)

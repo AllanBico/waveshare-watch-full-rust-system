@@ -11,6 +11,7 @@ mod checkbox;
 mod hit;
 mod input;
 mod kind;
+mod label;
 mod list_item;
 mod measure;
 mod overlay;
@@ -22,6 +23,7 @@ mod slider;
 mod state;
 mod status;
 mod tabs;
+mod tile;
 mod toggle;
 
 #[cfg(test)]
@@ -35,6 +37,7 @@ pub use checkbox::CheckboxProps;
 pub use hit::{collect_hits, HitRegistry, HitTarget, MAX_HIT_TARGETS};
 pub use input::InputProps;
 pub use kind::WidgetKind;
+pub use label::{LabelProps, TextRole};
 pub use list_item::ListItemProps;
 pub use overlay::{ContextMenuProps, DialogProps, MenuItem, ToastProps};
 pub use paint::{paint_widget, paint_widgets};
@@ -47,6 +50,7 @@ pub use slider::SliderProps;
 pub use state::WidgetState;
 pub use status::{Status, StatusIndicatorProps};
 pub use tabs::TabsProps;
+pub use tile::TileProps;
 pub use toggle::ToggleProps;
 
 use crate::assets::IconId;

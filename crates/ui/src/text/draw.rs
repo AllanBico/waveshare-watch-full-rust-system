@@ -9,7 +9,7 @@ use super::font::{font_asset, FontAsset, Glyph};
 use super::layout::{layout_text, measure_layout, Line, TextMetrics};
 
 /// Horizontal text alignment within the available width.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TextAlign {
     /// Align to the start edge.
     Start,

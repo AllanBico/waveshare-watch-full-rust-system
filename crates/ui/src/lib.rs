@@ -51,8 +51,8 @@ pub use theme::{
 pub use widgets::{
     collect_hits, paint_widget, paint_widgets, BadgeProps, ButtonProps, CheckboxProps,
     ConfirmProps, ContextMenuProps, DialogProps, EmptyStateProps, ErrorStateProps, HitRegistry,
-    HitTarget, IconButtonProps, InputProps, ListItemProps, LoadingStateProps, MenuItem,
+    HitTarget, IconButtonProps, InputProps, LabelProps, ListItemProps, LoadingStateProps, MenuItem,
     ProgressProps, RadioProps, ScreenScaffoldProps, SliderProps, Status, StatusIndicatorProps,
-    TabsProps, ToastProps, ToggleProps, Widget, WidgetArena, WidgetError, WidgetKind, WidgetState,
-    MAX_HIT_TARGETS, WIDGET_CAPACITY,
+    TabsProps, TextRole, TileProps, ToastProps, ToggleProps, Widget, WidgetArena, WidgetError,
+    WidgetKind, WidgetState, MAX_HIT_TARGETS, WIDGET_CAPACITY,
 };

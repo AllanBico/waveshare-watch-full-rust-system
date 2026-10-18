@@ -4,23 +4,18 @@
 
 use core::cell::RefCell;
 
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Duration, Timer};
 use esp_hal::efuse::Efuse;
-use esp_hal::gpio::Input;
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::rtc_cntl::wakeup_cause;
 use esp_hal::system::SleepSource;
 use esp_hal::time::Rate;
 use esp_println::println;
 
-use common::{DateTime, Timestamp, TouchReport, WakeReason};
+use common::{DateTime, Timestamp, WakeReason};
 use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
 use embedded_hal_bus::i2c::RefCellDevice;
-use hal::{Imu, Power, Touch};
-use power::PowerManager;
-
-use crate::audio::Audio as AudioDevice;
 
 /// CPU clock for bring-up. Mode-based clock switching comes later.
 pub const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
@@ -29,7 +24,7 @@ pub const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
 pub const INPUT_POLL_PERIOD: Duration = Duration::from_millis(50);
 
 /// Input polls between desk-mode VBUS checks.
-const INPUT_POLLS_PER_SECOND: u32 = 20;
+pub const INPUT_POLLS_PER_SECOND: u32 = 20;
 
 /// I2C bus device handle shared by all on-board peripherals.
 pub type Bus = RefCellDevice<'static, I2c<'static, esp_hal::Blocking>>;
@@ -86,156 +81,6 @@ fn print_datetime(label: &str, dt: &DateTime) {
         "[rtc] {} {:04}-{:02}-{:02} {:02}:{:02}:{:02}",
         label, dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
     );
-}
-
-/// Input devices plus the latest input snapshot.
-pub struct InputState<'a, T: Touch, I: Imu> {
-    /// Touch controller.
-    pub touch: &'a mut T,
-    /// IMU.
-    pub imu: &'a mut I,
-    /// What woke the device.
-    pub wake: Option<WakeReason>,
-    /// IMU Wake-on-Motion flag, when it could be read before init.
-    pub wom: Option<bool>,
-    /// PWR button state after the boot debounce.
-    pub button: bool,
-    report: TouchReport,
-    touch_error: Option<u16>,
-    imu_error: Option<u16>,
-    log: bool,
-}
-
-impl<'a, T: Touch, I: Imu> InputState<'a, T, I> {
-    /// Creates an input state from the devices and their initial errors.
-    pub fn new(
-        touch: &'a mut T,
-        imu: &'a mut I,
-        touch_error: Option<u16>,
-        imu_error: Option<u16>,
-        log: bool,
-    ) -> Self {
-        Self {
-            touch,
-            imu,
-            wake: None,
-            wom: None,
-            button: false,
-            report: TouchReport::empty(),
-            touch_error,
-            imu_error,
-            log,
-        }
-    }
-
-    fn error(&self) -> Option<u16> {
-        self.touch_error.or(self.imu_error)
-    }
-}
-
-/// Stays awake in desk mode until USB is removed, logging input for bring-up.
-pub async fn desk_keepalive<P: Power, T: Touch, I: Imu>(
-    power: &mut PowerManager<P>,
-    input: &mut InputState<'_, T, I>,
-    button: &Input<'_>,
-    mut audio: Option<&mut AudioDevice<Bus>>,
-) {
-    let start = Instant::now();
-    let mut ticks = 0u32;
-    loop {
-        Timer::after(INPUT_POLL_PERIOD).await;
-        poll_input(input);
-        let was_pressed = input.button;
-        poll_button(input, button);
-        if input.button && !was_pressed {
-            if let Some(audio) = audio.as_mut() {
-                match audio.record_and_play().await {
-                    Ok(report) => println!(
-                        "[audio] loopback {} bytes peak {}",
-                        report.bytes, report.peak
-                    ),
-                    Err(error) => println!("[audio] loopback failed: {:?}", error),
-                }
-            }
-        }
-
-        ticks += 1;
-        if !ticks.is_multiple_of(INPUT_POLLS_PER_SECOND) {
-            continue;
-        }
-        if !power.is_vbus_present().unwrap_or(true) {
-            println!("[pm] USB removed");
-            return;
-        }
-        println!(
-            "[hb] uptime {} ms btn {}",
-            (Instant::now() - start).as_millis(),
-            if button.is_high() { 1 } else { 0 }
-        );
-    }
-}
-
-fn poll_button<T: Touch, I: Imu>(input: &mut InputState<'_, T, I>, button: &Input<'_>) {
-    let pressed = button.is_high();
-    if pressed == input.button {
-        return;
-    }
-    input.button = pressed;
-    // TODO(phase-5): remove the UART button trace once the UI consumes it.
-    println!("[btn] {}", if pressed { "pressed" } else { "released" });
-}
-
-/// Keeps the panel awake for `window` while sampling touch and motion.
-pub async fn watch_awake<T: Touch, I: Imu>(input: &mut InputState<'_, T, I>, window: Duration) {
-    let deadline = Instant::now() + window;
-    while Instant::now() < deadline {
-        Timer::after(INPUT_POLL_PERIOD).await;
-        poll_input(input);
-    }
-}
-
-fn poll_input<T: Touch, I: Imu>(input: &mut InputState<'_, T, I>) {
-    let previous_error = input.error();
-    let mut touch_changed = false;
-
-    match input.touch.read() {
-        Ok(report) => {
-            input.touch_error = None;
-            if report != input.report {
-                input.report = report;
-                touch_changed = true;
-            }
-        }
-        Err(_) => {
-            input.touch_error = Some(common::Error::HardwareFailure.code());
-            if !input.report.is_empty() {
-                input.report = TouchReport::empty();
-                touch_changed = true;
-            }
-        }
-    }
-
-    match input.imu.read_motion() {
-        Ok(_) => input.imu_error = None,
-        Err(_) => input.imu_error = Some(common::Error::HardwareFailure.code()),
-    }
-
-    let error_changed = input.error() != previous_error;
-    if input.log && (touch_changed || error_changed) {
-        log_touch(input);
-    }
-}
-
-fn log_touch<T: Touch, I: Imu>(input: &InputState<'_, T, I>) {
-    if let Some(code) = input.error() {
-        println!("[tp] error {}", code);
-    } else if input.report.is_empty() {
-        println!("[tp] none");
-    } else {
-        for point in input.report.points() {
-            println!("[tp] id {} x {} y {}", point.id, point.x, point.y);
-        }
-    }
 }
 
 /// Maps the SoC wake cause onto a coarse shared wake reason.

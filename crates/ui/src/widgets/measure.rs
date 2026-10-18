@@ -7,6 +7,7 @@ use crate::theme::Theme;
 use super::button;
 use super::checkbox;
 use super::input;
+use super::label;
 use super::list_item;
 use super::overlay;
 use super::patterns;
@@ -15,6 +16,7 @@ use super::radio;
 use super::slider;
 use super::status;
 use super::tabs;
+use super::tile;
 use super::toggle;
 use super::{Widget, WidgetKind};
 
@@ -32,6 +34,7 @@ impl<'a> Widget<'a> {
             WidgetKind::Radio(props) => radio::measure(props, theme, cache, available_width),
             WidgetKind::Slider(props) => slider::measure(props, theme, cache, available_width),
             WidgetKind::Input(props) => input::measure(props, theme, cache, available_width),
+            WidgetKind::Label(props) => label::measure(props, theme, cache, available_width),
             WidgetKind::Progress(_) | WidgetKind::Badge(_) => {
                 progress::measure(&self.kind, theme, cache, available_width)
             }
@@ -39,6 +42,7 @@ impl<'a> Widget<'a> {
                 overlay::measure(&self.kind, theme, cache, available_width)
             }
             WidgetKind::Tabs(props) => tabs::measure(props, theme, cache, available_width),
+            WidgetKind::Tile(props) => tile::measure(props, theme, cache, available_width),
             WidgetKind::StatusIndicator(props) => {
                 status::measure(props, theme, cache, available_width)
             }

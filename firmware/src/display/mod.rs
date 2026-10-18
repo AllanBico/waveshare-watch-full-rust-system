@@ -16,13 +16,10 @@ use esp_hal::spi::master::{Config as SpiConfig, ConfigError, Spi};
 use esp_hal::spi::{Error as SpiError, Mode};
 use esp_hal::time::Rate;
 
-use alloc::vec;
-use alloc::vec::Vec;
 use common::{Region, Rgb565};
 use drivers::board;
 use drivers::co5300::{Co5300, DisplayError, Geometry};
 use hal::Display as _;
-use ui::{draw_bringup as draw_bringup_pattern, MonoSurface, Painter, SurfaceError};
 
 mod bus;
 
@@ -33,11 +30,6 @@ const SPI_FREQUENCY_MHZ: u32 = 40;
 
 /// DMA staging buffer and pixel chunk, in bytes (even).
 const CHUNK_BYTES: usize = 2048;
-
-/// Temporary bring-up block width in pixels.
-const BRINGUP_WIDTH: u16 = 224;
-/// Temporary bring-up block height in pixels.
-const BRINGUP_HEIGHT: u16 = 160;
 
 /// The display's exclusive peripherals, grouped to keep the API small.
 pub struct Peripherals<'d> {
@@ -71,8 +63,6 @@ pub enum BringUpError {
     Config(ConfigError),
     /// DMA buffer construction failed.
     Dma(DmaBufError),
-    /// A UI surface could not be constructed.
-    Surface(SurfaceError),
     /// The driver rejected an operation.
     Display(DisplayError<SpiError>),
 }
@@ -81,32 +71,6 @@ pub enum BringUpError {
 pub struct Display {
     panel: Co5300<EspQspiBus<'static>, Output<'static>, Delay>,
     geometry: Geometry,
-    bringup: BringUp,
-}
-
-/// Preallocated storage for the temporary bring-up pattern.
-struct BringUp {
-    region: Region,
-    bits: Vec<u8>,
-    pixels: Vec<u8>,
-}
-
-impl BringUp {
-    fn new(geometry: Geometry) -> Self {
-        let width = BRINGUP_WIDTH.min(geometry.width);
-        let height = BRINGUP_HEIGHT.min(geometry.height);
-        let region = geometry.align_region(Region::new(
-            (geometry.width - width) / 2,
-            (geometry.height - height) / 2,
-            width,
-            height,
-        ));
-        Self {
-            region,
-            bits: vec![0; MonoSurface::buffer_len(region.width, region.height)],
-            pixels: vec![0; region.rgb565_len()],
-        }
-    }
 }
 
 impl Display {
@@ -141,7 +105,6 @@ impl Display {
         };
         let reset = Output::new(pins.reset, Level::High, OutputConfig::default());
         Ok(Self {
-            bringup: BringUp::new(geometry),
             panel: Co5300::new(bus, reset, Delay::new(), geometry),
             geometry,
         })
@@ -162,35 +125,47 @@ impl Display {
     pub fn sleep(&mut self) -> Result<(), BringUpError> {
         self.panel.display_off().map_err(BringUpError::Display)
     }
+}
 
-    /// Draws the temporary UI bring-up pattern.
-    // TODO(phase-5): remove once Home renders through the shell.
-    pub fn draw_bringup(&mut self) -> Result<(), BringUpError> {
-        let region = self.bringup.region;
-        let mut bits = core::mem::take(&mut self.bringup.bits);
-        let mut pixels = core::mem::take(&mut self.bringup.pixels);
+impl hal::Display for Display {
+    type Error = BringUpError;
 
-        let result = match MonoSurface::new(region.width, region.height, &mut bits) {
-            Ok(mut surface) => {
-                {
-                    let mut painter = Painter::new(&mut surface);
-                    draw_bringup_pattern(&mut painter);
-                }
-                let needed = region.rgb565_len();
-                pixels.resize(needed, 0);
-                surface.expand_region(
-                    Region::full(region.width, region.height),
-                    &mut pixels[..needed],
-                );
-                self.panel
-                    .write_region(region, &pixels[..needed])
-                    .map_err(BringUpError::Display)
-            }
-            Err(error) => Err(BringUpError::Surface(error)),
-        };
+    fn width(&self) -> u16 {
+        self.geometry.width
+    }
 
-        self.bringup.bits = bits;
-        self.bringup.pixels = pixels;
-        result
+    fn height(&self) -> u16 {
+        self.geometry.height
+    }
+
+    fn display_on(&mut self) -> Result<(), Self::Error> {
+        self.panel.display_on().map_err(BringUpError::Display)
+    }
+
+    fn display_off(&mut self) -> Result<(), Self::Error> {
+        self.panel.display_off().map_err(BringUpError::Display)
+    }
+
+    fn set_brightness(&mut self, level: u8) -> Result<(), Self::Error> {
+        self.panel
+            .set_brightness(level)
+            .map_err(BringUpError::Display)
+    }
+
+    fn fill_region(&mut self, region: Region, color: Rgb565) -> Result<(), Self::Error> {
+        self.panel
+            .fill_region(region, color)
+            .map_err(BringUpError::Display)
+    }
+
+    fn write_region(&mut self, region: Region, pixels: &[u8]) -> Result<(), Self::Error> {
+        self.panel
+            .write_region(region, pixels)
+            .map_err(BringUpError::Display)
+    }
+
+    // TODO(phase-6): gate flushes on the TE GPIO instead of the driver default.
+    fn wait_for_vsync(&mut self) -> Result<(), Self::Error> {
+        Ok(())
     }
 }

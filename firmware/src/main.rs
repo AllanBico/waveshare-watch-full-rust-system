@@ -23,7 +23,7 @@ use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
-use common::{Mode, WakeOnMotion, WakeReason};
+use common::{Mode, Percent, WakeOnMotion, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
 use drivers::es7210::Es7210;
@@ -38,13 +38,14 @@ mod audio;
 mod display;
 mod log_boot;
 mod persist;
+mod preview;
 mod retained;
 mod runtime;
 
 use esp_alloc as _;
 use esp_backtrace as _;
 
-use runtime::{desk_keepalive, halt, open_bus, report_boot, report_time, wake_reason, watch_awake};
+use runtime::{halt, open_bus, report_boot, report_time, wake_reason};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -52,7 +53,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 const AWAKE_BUDGET_MS: u32 = 5_000;
 
 /// How long to stay awake before sleeping in watch mode.
-// TODO(phase-5): return to the 2 s watch budget once Home renders.
+// TODO(phase-6): return to the 2 s watch budget once the wake cycle is tuned.
 const AWAKE_WINDOW: Duration = Duration::from_secs(5);
 
 /// Deep-sleep timer interval. Longer for wake-on-motion debugging.
@@ -153,11 +154,13 @@ async fn main(_spawner: Spawner) {
     }
     println!("[pm] mode {:?} (vbus: {})", mode, vbus);
 
-    let battery_mv = power
-        .pmic_mut()
-        .read_battery_millivolts()
-        .map(|millivolts| millivolts.value())
+    let snapshot = power.pmic_mut().read_power_snapshot().ok();
+    let battery_mv = snapshot
+        .map(|snapshot| snapshot.battery.value())
         .unwrap_or(0);
+    let battery_percent = snapshot
+        .map(|snapshot| snapshot.percent)
+        .unwrap_or(Percent::new(0));
     let report = persist::init(peripherals.FLASH, mode, battery_mv, wake, now);
     if mode == Mode::Desk {
         println!(
@@ -198,15 +201,11 @@ async fn main(_spawner: Spawner) {
         Output::new(peripherals.GPIO9, Level::Low, OutputConfig::default()),
         Delay::new(),
     );
-    let touch_error = match touch.init() {
-        Ok(()) => None,
-        Err(error) => {
-            if mode == Mode::Desk {
-                println!("[tp] init failed: {}", error);
-            }
-            Some(error.to_common().code())
+    if let Err(error) = touch.init() {
+        if mode == Mode::Desk {
+            println!("[tp] init failed: {}", error);
         }
-    };
+    }
     let chip_id = touch.read_chip_id().ok();
     if mode == Mode::Desk {
         match chip_id {
@@ -238,8 +237,6 @@ async fn main(_spawner: Spawner) {
     if let Some(panel) = display.as_mut() {
         if let Err(error) = panel.init() {
             println!("[lcd] init failed: {:?}", error);
-        } else if let Err(error) = panel.draw_bringup() {
-            println!("[lcd] bring-up failed: {:?}", error);
         }
     }
 
@@ -249,69 +246,60 @@ async fn main(_spawner: Spawner) {
         }
     }
 
-    {
-        let mut input = runtime::InputState::new(
-            &mut touch,
-            &mut imu,
-            touch_error,
-            imu_error,
-            mode == Mode::Desk,
-        );
-        input.wake = wake;
-        input.wom = wom;
-        input.button = button_pressed;
-
-        if mode == Mode::Desk {
-            let mut audio = match audio::Audio::new(
-                audio::Peripherals {
-                    i2s: peripherals.I2S0,
-                    dma: peripherals.DMA_CH1,
-                    mclk: peripherals.GPIO16,
-                    bclk: peripherals.GPIO41,
-                    ws: peripherals.GPIO45,
-                    dout: peripherals.GPIO40,
-                    din: peripherals.GPIO42,
-                    pa: peripherals.GPIO46,
-                },
-                Es8311::new(RefCellDevice::new(bus), board::ES8311_I2C_ADDR),
-                Es7210::new(RefCellDevice::new(bus), board::ES7210_I2C_ADDR),
-            ) {
-                Ok(mut audio) => match audio.init() {
-                    Ok(()) => {
-                        println!("[audio] codecs ready");
-                        Some(audio)
-                    }
-                    Err(error) => {
-                        println!("[audio] init failed: {:?}", error);
-                        if let Err(error) = audio.shutdown() {
-                            println!("[audio] shutdown failed: {:?}", error);
-                        }
-                        None
-                    }
-                },
+    if mode == Mode::Desk {
+        let mut audio = match audio::Audio::new(
+            audio::Peripherals {
+                i2s: peripherals.I2S0,
+                dma: peripherals.DMA_CH1,
+                mclk: peripherals.GPIO16,
+                bclk: peripherals.GPIO41,
+                ws: peripherals.GPIO45,
+                dout: peripherals.GPIO40,
+                din: peripherals.GPIO42,
+                pa: peripherals.GPIO46,
+            },
+            Es8311::new(RefCellDevice::new(bus), board::ES8311_I2C_ADDR),
+            Es7210::new(RefCellDevice::new(bus), board::ES7210_I2C_ADDR),
+        ) {
+            Ok(mut audio) => match audio.init() {
+                Ok(()) => {
+                    println!("[audio] codecs ready");
+                    Some(audio)
+                }
                 Err(error) => {
-                    println!("[audio] I2S init failed: {:?}", error);
+                    println!("[audio] init failed: {:?}", error);
+                    if let Err(error) = audio.shutdown() {
+                        println!("[audio] shutdown failed: {:?}", error);
+                    }
                     None
                 }
-            };
-            let button_input = Input::new(
-                pwr_button.reborrow(),
-                InputConfig::default().with_pull(Pull::Up),
-            );
-            desk_keepalive(&mut power, &mut input, &button_input, audio.as_mut()).await;
-            if let Some(audio) = audio.as_mut() {
-                if let Err(error) = audio.shutdown() {
-                    println!("[audio] shutdown failed: {:?}", error);
-                }
+            },
+            Err(error) => {
+                println!("[audio] I2S init failed: {:?}", error);
+                None
             }
-            if let Err(error) = power.set_mode(Mode::Watch) {
-                println!("[pm] set_mode failed: {}", error.to_common());
-                halt().await
-            }
-            Timer::after(AWAKE_WINDOW).await;
+        };
+        if let Some(panel) = display.as_mut() {
+            preview::run_desk(panel, &mut touch, &mut power, now, battery_percent).await;
         } else {
-            watch_awake(&mut input, AWAKE_WINDOW).await;
+            while power.is_vbus_present().unwrap_or(true) {
+                Timer::after(AWAKE_WINDOW).await;
+            }
         }
+        if let Some(audio) = audio.as_mut() {
+            if let Err(error) = audio.shutdown() {
+                println!("[audio] shutdown failed: {:?}", error);
+            }
+        }
+        if let Err(error) = power.set_mode(Mode::Watch) {
+            println!("[pm] set_mode failed: {}", error.to_common());
+            halt().await
+        }
+        Timer::after(AWAKE_WINDOW).await;
+    } else if let Some(panel) = display.as_mut() {
+        preview::run_watch(panel, &mut touch, now, battery_percent, AWAKE_WINDOW).await;
+    } else {
+        Timer::after(AWAKE_WINDOW).await;
     }
 
     // Leave the IMU in Wake-on-Motion so the next motion can wake the SoC.

@@ -3,6 +3,7 @@
 use super::button::{ButtonProps, IconButtonProps};
 use super::checkbox::CheckboxProps;
 use super::input::InputProps;
+use super::label::LabelProps;
 use super::list_item::ListItemProps;
 use super::overlay::{ContextMenuProps, DialogProps, ToastProps};
 use super::patterns::{
@@ -13,6 +14,7 @@ use super::radio::RadioProps;
 use super::slider::SliderProps;
 use super::status::StatusIndicatorProps;
 use super::tabs::TabsProps;
+use super::tile::TileProps;
 use super::toggle::ToggleProps;
 
 /// One widget kind with its immutable props.
@@ -36,6 +38,8 @@ pub enum WidgetKind<'a> {
     Slider(SliderProps<'a>),
     /// A text display field.
     Input(InputProps<'a>),
+    /// A non-interactive text label.
+    Label(LabelProps<'a>),
     /// A value progress bar.
     Progress(ProgressProps<'a>),
     /// A short status label.
@@ -48,6 +52,8 @@ pub enum WidgetKind<'a> {
     ContextMenu(ContextMenuProps<'a>),
     /// A horizontal tab strip.
     Tabs(TabsProps<'a>),
+    /// An icon-and-label tile.
+    Tile(TileProps<'a>),
     /// An icon and label status line.
     StatusIndicator(StatusIndicatorProps<'a>),
     /// A titled screen body.
@@ -77,6 +83,7 @@ impl WidgetKind<'_> {
                 | Self::Input(_)
                 | Self::ContextMenu(_)
                 | Self::Tabs(_)
+                | Self::Tile(_)
                 | Self::ErrorState(_)
                 | Self::Confirm(_)
         )
