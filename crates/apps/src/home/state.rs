@@ -1,6 +1,7 @@
 //! Home complication values, formatted once per change.
 
 use common::{Percent, Timestamp};
+use settings::TimeFormat;
 
 use crate::format::{clock_text, date_text, percent_text};
 
@@ -9,6 +10,7 @@ pub struct HomeState {
     last_minute: u64,
     battery: Percent,
     is_charging: bool,
+    time_format: TimeFormat,
     clock: [u8; 5],
     date: [u8; 10],
     battery_text: [u8; 4],
@@ -16,12 +18,23 @@ pub struct HomeState {
 }
 
 impl HomeState {
-    /// Creates Home state and formats the initial values.
+    /// Creates Home state with a 24-hour clock.
     pub fn new(now: Timestamp, battery: Percent, is_charging: bool) -> Self {
+        Self::new_with_format(now, battery, is_charging, TimeFormat::Hour24)
+    }
+
+    /// Creates Home state with an explicit clock format.
+    pub fn new_with_format(
+        now: Timestamp,
+        battery: Percent,
+        is_charging: bool,
+        time_format: TimeFormat,
+    ) -> Self {
         let mut state = Self {
             last_minute: u64::MAX,
             battery,
             is_charging,
+            time_format,
             clock: [0; 5],
             date: [0; 10],
             battery_text: [0; 4],
@@ -36,7 +49,7 @@ impl HomeState {
         let mut changed = false;
         let minute = now.as_secs() / 60;
         if minute != self.last_minute {
-            clock_text(now, &mut self.clock);
+            clock_text(now, self.time_format, &mut self.clock);
             date_text(now, &mut self.date);
             self.last_minute = minute;
             changed = true;
@@ -54,7 +67,21 @@ impl HomeState {
         changed
     }
 
-    /// The `HH:MM` clock text.
+    /// Updates the clock format, returning whether the text changed.
+    pub fn set_time_format(&mut self, time_format: TimeFormat) -> bool {
+        if time_format == self.time_format {
+            return false;
+        }
+        self.time_format = time_format;
+        clock_text(
+            Timestamp::from_secs(self.last_minute.saturating_mul(60)),
+            self.time_format,
+            &mut self.clock,
+        );
+        true
+    }
+
+    /// The clock text.
     pub fn clock(&self) -> &str {
         text(&self.clock)
     }

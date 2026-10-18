@@ -1,5 +1,7 @@
 //! The preview quick settings: a top sheet with a two-column toggle grid.
 
+use common::Mode;
+use settings::Settings;
 use ui::{
     Align, Insets, LabelProps, Length, SliderProps, TextAlign, TextRole, ToggleProps, Widget,
     WidgetKind,
@@ -29,47 +31,14 @@ pub const SYNC_ID: u16 = 213;
 /// Brightness slider.
 pub const BRIGHTNESS_ID: u16 = 214;
 
-/// Visual state for the quick-settings sheet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct QuickState {
-    /// Wi-Fi enabled.
-    pub wifi: bool,
-    /// Bluetooth enabled.
-    pub bluetooth: bool,
-    /// Do-not-disturb enabled.
-    pub dnd: bool,
-    /// Sync enabled.
-    pub sync: bool,
-    /// Brightness from 0 to 100.
-    pub brightness: u8,
-}
-
-impl QuickState {
-    /// Default preview state.
-    pub const fn new() -> Self {
-        Self {
-            wifi: true,
-            bluetooth: false,
-            dnd: false,
-            sync: true,
-            brightness: 70,
-        }
-    }
-}
-
-impl Default for QuickState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Whether `id` belongs to quick settings.
 pub const fn owns(id: u16) -> bool {
     id >= PANEL_ID && id < 300
 }
 
 pub(super) fn build<'a>(
-    state: &QuickState,
+    settings: &Settings,
+    mode: Mode,
     view: &mut Builder<'_, 'a>,
 ) -> Result<usize, BuildError> {
     let theme = view.theme;
@@ -79,8 +48,8 @@ pub(super) fn build<'a>(
         .saturating_sub(theme.shape.content_inset * 2);
     let cell = content_width.saturating_sub(theme.spacing.sm) / 2;
     let title = title();
-    let toggles = toggles(state);
-    let brightness = brightness(state);
+    let toggles = toggles(settings);
+    let brightness = brightness(settings, mode);
     let title_node = fill_node(&title, theme, view.cache, content_width);
     let toggle_nodes =
         toggles.map(|widget| node(&widget, theme, view.cache, Length::Fill(1), cell));
@@ -168,20 +137,20 @@ fn title() -> Widget<'static> {
     )
 }
 
-fn toggles(state: &QuickState) -> [Widget<'static>; 4] {
+fn toggles(settings: &Settings) -> [Widget<'static>; 4] {
     [
-        toggle(WIFI_ID, "Wi-Fi", state.wifi),
-        toggle(BLUETOOTH_ID, "BT", state.bluetooth),
-        toggle(DND_ID, "DND", state.dnd),
-        toggle(SYNC_ID, "Sync", state.sync),
+        toggle(WIFI_ID, "Wi-Fi", settings.connectivity.wifi),
+        toggle(BLUETOOTH_ID, "BT", settings.connectivity.bluetooth),
+        toggle(DND_ID, "DND", settings.sound.is_dnd),
+        toggle(SYNC_ID, "Sync", settings.connectivity.sync),
     ]
 }
 
-fn brightness(state: &QuickState) -> Widget<'static> {
+fn brightness(settings: &Settings, mode: Mode) -> Widget<'static> {
     Widget::new(
         BRIGHTNESS_ID,
         WidgetKind::Slider(SliderProps {
-            value: state.brightness.min(100),
+            value: settings.brightness(mode).value(),
             label: "Brightness",
         }),
     )

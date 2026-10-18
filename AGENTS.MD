@@ -138,6 +138,7 @@
 - `drivers` implement traits.
 - `power` owns rails and the render policy.
 - `storage` owns flash.
+- `settings` owns the runtime settings schema, defaults, validation, and persistence policy. Compile-time config stays in typed config structs.
 - `ui` owns tokens, surfaces, layout, widgets, renderer, damage, and the framebuffer.
 - `shell` owns the app trait, navigation, overlays, focus routing, dialogs, toasts, and app lifecycle. `shell` depends on `ui`, never on concrete apps.
 - `apps` own their state and depend on `shell` and `ui`. Apps never implement global navigation.

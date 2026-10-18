@@ -9,7 +9,7 @@ pub use tokens::{
     Borders, FontId, IconSizes, Motion, Radii, Spacing, TextStyle, Tones, Typography, Weight,
 };
 
-use common::PixelMode;
+use common::{PixelMode, ThemeId};
 
 use crate::luma::Luma;
 use crate::shape::ScreenShape;
@@ -92,11 +92,46 @@ impl Theme {
         shape: ScreenShape::PANEL,
     };
 
-    /// The theme for a pixel format.
+    /// Desk high-contrast theme: black surfaces, maximum tonal separation.
+    pub const DESK_CONTRAST: Self = Self {
+        tones: Tones {
+            background: Luma::BLACK,
+            surface: Luma::BLACK,
+            surface_raised: Luma::new(20),
+            text: Luma::new(255),
+            text_muted: Luma::new(200),
+            border: Luma::new(120),
+            focus: Luma::WHITE,
+            error: Luma::WHITE,
+            selected: Luma::new(230),
+            pressed: Luma::new(190),
+            disabled: Luma::new(110),
+        },
+        type_scale: Typography::BASE,
+        icons: IconSizes::DEFAULT,
+        spacing: Spacing::SCALE,
+        radii: Radii::DEFAULT,
+        borders: Borders::DEFAULT,
+        motion: Motion::DESK,
+        min_touch_px: 64,
+        pixel_mode: PixelMode::Gray8,
+        shape: ScreenShape::PANEL,
+    };
+
+    /// The standard theme for a pixel format.
     pub const fn for_pixel_mode(pixel: PixelMode) -> &'static Self {
-        match pixel {
-            PixelMode::Mono1 => &Self::WATCH,
-            _ => &Self::DESK,
+        Self::for_id(ThemeId::Default, pixel)
+    }
+
+    /// The theme for a variant and pixel format.
+    ///
+    /// A 1-bit surface has one palette, so every variant resolves to the watch
+    /// theme there.
+    pub const fn for_id(id: ThemeId, pixel: PixelMode) -> &'static Self {
+        match (pixel, id) {
+            (PixelMode::Mono1, _) => &Self::WATCH,
+            (_, ThemeId::Default) => &Self::DESK,
+            (_, ThemeId::HighContrast) => &Self::DESK_CONTRAST,
         }
     }
 }
@@ -130,6 +165,23 @@ mod tests {
         assert!(theme.tones.pressed > theme.tones.surface_raised);
         assert_eq!(theme.pixel_mode, PixelMode::Gray8);
         assert!(theme.motion.normal_ms > 0);
+    }
+
+    #[test]
+    fn theme_ids_resolve_within_the_pixel_mode() {
+        assert_eq!(
+            Theme::for_id(ThemeId::HighContrast, PixelMode::Mono1),
+            &Theme::WATCH
+        );
+        assert_eq!(
+            Theme::for_id(ThemeId::Default, PixelMode::Gray8),
+            &Theme::DESK
+        );
+        assert_eq!(
+            Theme::for_id(ThemeId::HighContrast, PixelMode::Gray8),
+            &Theme::DESK_CONTRAST
+        );
+        assert!(Theme::DESK_CONTRAST.tones.text > Theme::DESK.tones.text_muted);
     }
 
     #[test]

@@ -1,0 +1,13 @@
+[package]
+name = "settings"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+defmt = ["dep:defmt", "common/defmt"]
+
+[dependencies]
+common = { path = "../common" }
+hal = { path = "../hal" }
+defmt = { workspace = true, optional = true }

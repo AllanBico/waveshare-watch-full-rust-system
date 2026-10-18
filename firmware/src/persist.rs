@@ -1,17 +1,16 @@
 //! Storage boot probe and trace selftest.
 //!
-//! Production boots probe the key-value store and run the retained log flush.
-//! The trace build also increments a persisted boot counter so the display
-//! viewer can prove storage persistence without serial.
+//! Production boots probe the key-value store, load runtime settings, and run
+//! the retained log flush. The trace build also increments a persisted boot
+//! counter so the display viewer can prove storage persistence without serial.
 
 use esp_hal::peripherals::FLASH;
 use esp_println::println;
 use static_cell::StaticCell;
 
 use common::{Mode, Timestamp, WakeReason};
-use drivers::flash::FlashDevice;
-#[cfg(feature = "trace")]
-use drivers::flash::PartitionFlash;
+use drivers::flash::{FlashDevice, PartitionFlash};
+use settings::SettingsStore;
 use storage::{OpenOutcome, Provisioning, TicKvStorage, REGION_SIZE};
 
 use crate::log_boot;
@@ -25,6 +24,18 @@ const KV_LABEL: &str = "kv";
 const BOOT_KEY: &[u8] = b"selftest/boot";
 
 static READ_BUFFER: StaticCell<[u8; REGION_SIZE]> = StaticCell::new();
+static DEVICE: StaticCell<FlashDevice> = StaticCell::new();
+
+/// Concrete settings backend over the `kv` partition.
+pub type SettingsBackend = TicKvStorage<'static, PartitionFlash<'static>>;
+
+/// Storage and settings produced by the boot probe.
+pub struct Boot {
+    /// Boot report for the viewer and serial log.
+    pub report: Report,
+    /// Loaded settings, or defaults when the store is unavailable.
+    pub settings: SettingsStore<SettingsBackend>,
+}
 
 /// Outcome shown by the viewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,22 +131,56 @@ impl Report {
     }
 }
 
-/// Opens storage after mode selection, logs the boot sample, and flushes.
+/// Opens storage after mode selection, logs the boot sample, and loads settings.
 pub fn init(
     flash: FLASH<'static>,
     mode: Mode,
     battery_mv: u16,
     wake: Option<WakeReason>,
     now: Timestamp,
-) -> Report {
+) -> Boot {
     let device = match FlashDevice::new(flash) {
-        Ok(device) => device,
-        Err(error) => return failed(mode, error.to_common(), "flash device"),
+        Ok(device) => DEVICE.init(device),
+        Err(error) => {
+            return Boot {
+                report: failed(mode, error.to_common(), "flash device"),
+                settings: SettingsStore::unavailable(),
+            };
+        }
     };
 
+    let (mut report, opened) = open_kv(device, mode, battery_mv);
+    let logs = log_boot::run(device, mode, battery_mv, wake, now);
+    report.log = logs.latest;
+    report.battery_mv = battery_mv;
+    report.buffered = logs.buffered;
+    report.dropped = logs.dropped;
+
+    let settings = match opened {
+        Some(store) => {
+            let (settings, load) = SettingsStore::load(store);
+            if mode == Mode::Desk {
+                println!(
+                    "[set] loaded {} missing {} repaired {}",
+                    load.loaded, load.missing, load.repaired
+                );
+            }
+            settings
+        }
+        None => SettingsStore::unavailable(),
+    };
+
+    Boot { report, settings }
+}
+
+fn open_kv(
+    device: &'static FlashDevice,
+    mode: Mode,
+    battery_mv: u16,
+) -> (Report, Option<SettingsBackend>) {
     let region = match device.partition(KV_LABEL) {
         Ok(region) => region,
-        Err(error) => return failed(mode, error.to_common(), "kv partition"),
+        Err(error) => return (failed(mode, error.to_common(), "kv partition"), None),
     };
 
     let buffer = READ_BUFFER.init([0u8; REGION_SIZE]);
@@ -147,7 +192,7 @@ pub fn init(
 
     let (mut store, outcome) = match TicKvStorage::open(region, buffer, provisioning) {
         Ok(opened) => opened,
-        Err(error) => return failed(mode, error.to_common(), "open"),
+        Err(error) => return (failed(mode, error.to_common(), "open"), None),
     };
 
     let base = match outcome {
@@ -155,24 +200,19 @@ pub fn init(
         OpenOutcome::Provisioned => State::Provisioned,
     };
 
-    let mut report = {
+    let report = {
         #[cfg(feature = "trace")]
         {
             selftest(&mut store, base, mode, battery_mv)
         }
         #[cfg(not(feature = "trace"))]
         {
-            let _ = &mut store;
+            let _ = (&mut store, battery_mv);
             Report::new(base, 0, None)
         }
     };
 
-    let logs = log_boot::run(&device, mode, battery_mv, wake, now);
-    report.log = logs.latest;
-    report.battery_mv = battery_mv;
-    report.buffered = logs.buffered;
-    report.dropped = logs.dropped;
-    report
+    (report, Some(store))
 }
 
 #[cfg(feature = "trace")]

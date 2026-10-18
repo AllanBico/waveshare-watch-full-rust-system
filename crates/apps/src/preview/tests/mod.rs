@@ -1,6 +1,7 @@
 //! Host tests for the hardware preview.
 
 use common::{Mode, Percent, Region, Timestamp};
+use settings::{SettingId, SettingValue, Settings, TimeFormat};
 use ui::{GraySurface, MonoSurface, Surface as _, Theme};
 
 use super::*;
@@ -11,7 +12,7 @@ const VIEWPORT: Region = Region::new(0, 0, 410, 502);
 const NOW: Timestamp = Timestamp::from_secs(1_760_000_000);
 
 fn preview(mode: Mode) -> Preview {
-    Preview::new(mode, NOW, Percent::new(80), true)
+    Preview::new(mode, NOW, Percent::new(80), true, Settings::new())
 }
 
 fn watch_surface<'a>(data: &'a mut [u8]) -> MonoSurface<'a> {
@@ -104,16 +105,78 @@ fn quick_settings_toggle_and_slider_update_locally() {
         .render(&mut surface, &Theme::WATCH, VIEWPORT)
         .unwrap();
     let wifi = hit(&preview, quick::WIFI_ID);
-    let was_on = preview.quick().wifi;
+    let was_on = preview.settings().connectivity.wifi;
     assert!(preview.tap(wifi.rect.x + 1, wifi.rect.y + 1, VIEWPORT));
-    assert_eq!(preview.quick().wifi, !was_on);
+    assert_eq!(preview.settings().connectivity.wifi, !was_on);
     preview
         .render(&mut surface, &Theme::WATCH, VIEWPORT)
         .unwrap();
     let brightness = hit(&preview, quick::BRIGHTNESS_ID);
     let x = brightness.rect.x + brightness.rect.width / 4;
     assert!(preview.tap(x, brightness.rect.y + 1, VIEWPORT));
-    assert!(preview.quick().brightness < 40);
+    assert!(preview.settings().brightness(Mode::Watch).value() < 40);
+}
+
+#[test]
+fn settings_rows_change_values_and_queue_intents() {
+    let mut data = vec![0u8; MonoSurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
+    let mut surface = watch_surface(&mut data);
+    let mut preview = preview(Mode::Watch);
+    preview
+        .render(&mut surface, &Theme::WATCH, VIEWPORT)
+        .unwrap();
+    preview.open_drawer();
+    preview
+        .render(&mut surface, &Theme::WATCH, VIEWPORT)
+        .unwrap();
+    let settings = hit(&preview, drawer::SETTINGS_ID);
+    assert!(preview.tap(settings.rect.x + 1, settings.rect.y + 1, VIEWPORT));
+    assert_eq!(preview.screen(), Screen::Settings);
+    preview
+        .render(&mut surface, &Theme::WATCH, VIEWPORT)
+        .unwrap();
+
+    let time = hit(&preview, settings_screen::TIME_FORMAT_ID);
+    assert!(preview.tap(time.rect.x + 1, time.rect.y + 1, VIEWPORT));
+    assert_eq!(preview.settings().display.time_format, TimeFormat::Hour12);
+    assert_eq!(
+        preview.pop_setting(),
+        Some((
+            SettingId::DisplayTimeFormat,
+            SettingValue::TimeFormat(TimeFormat::Hour12)
+        ))
+    );
+
+    let theme = hit(&preview, settings_screen::THEME_ID);
+    assert!(preview.tap(theme.rect.x + 1, theme.rect.y + 1, VIEWPORT));
+    assert_eq!(
+        preview.settings().display.theme,
+        common::ThemeId::HighContrast
+    );
+    let damage = preview
+        .render(&mut surface, &Theme::WATCH, VIEWPORT)
+        .unwrap();
+    assert!(damage.is_full());
+    assert_eq!(
+        preview.pop_setting(),
+        Some((
+            SettingId::DisplayTheme,
+            SettingValue::Theme(common::ThemeId::HighContrast)
+        ))
+    );
+
+    let wifi = hit(&preview, settings_screen::WIFI_ID);
+    let was_on = preview.settings().connectivity.wifi;
+    assert!(preview.tap(wifi.rect.x + 1, wifi.rect.y + 1, VIEWPORT));
+    assert_eq!(preview.settings().connectivity.wifi, !was_on);
+    assert_eq!(
+        preview.pop_setting(),
+        Some((SettingId::ConnectivityWifi, SettingValue::Bool(!was_on)))
+    );
+
+    let before = preview.settings_offset();
+    assert!(preview.scroll_settings(100));
+    assert_eq!(preview.settings_offset(), before + 100);
 }
 
 #[test]

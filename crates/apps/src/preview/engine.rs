@@ -6,7 +6,10 @@ use ui::{
     SceneNode, ScreenShape, Surface, Theme, WidgetArena, WidgetError,
 };
 
-use super::{calibrate, chrome, drawer, gallery, placeholder, quick, Overlay, Preview, Screen};
+use super::{
+    calibrate, chrome, drawer, gallery, placeholder, quick, settings_screen, Overlay, Preview,
+    Screen,
+};
 use crate::view::{self, BuildError};
 
 /// A preview frame failure.
@@ -51,13 +54,19 @@ impl Preview {
             screen,
             overlay,
             home,
-            quick,
+            settings,
             calibrate,
             gallery_page,
+            settings_offset,
+            brightness_text,
+            brightness_len,
+            volume_text,
+            volume_len,
             hits,
             scene,
             cache,
             is_dirty,
+            ..
         } = self;
         let is_calibrate = *screen == Screen::Calibrate && *overlay == Overlay::None;
         let mut widgets = WidgetArena::new();
@@ -73,7 +82,20 @@ impl Preview {
                 entries: &mut base_entries,
                 viewport,
             };
-            build_base(*screen, *mode, home, calibrate, *gallery_page, &mut builder)?
+            build_base(
+                BaseInput {
+                    screen: *screen,
+                    mode: *mode,
+                    home,
+                    calibrate,
+                    settings,
+                    brightness: text(brightness_text, *brightness_len),
+                    volume: text(volume_text, *volume_len),
+                    settings_offset: *settings_offset,
+                    gallery_page: *gallery_page,
+                },
+                &mut builder,
+            )?
         };
         let overlay_count = {
             let mut builder = view::Builder {
@@ -83,7 +105,7 @@ impl Preview {
                 entries: &mut overlay_entries,
                 viewport,
             };
-            build_overlay(*overlay, quick, &mut builder)?
+            build_overlay(*overlay, settings, *mode, &mut builder)?
         };
         let count = view::merge(
             &base_entries[..base_count],
@@ -148,31 +170,50 @@ fn build_frame(
     Ok(frame)
 }
 
-fn build_base<'a>(
+struct BaseInput<'a> {
     screen: Screen,
     mode: common::Mode,
     home: &'a crate::home::HomeState,
     calibrate: &'a calibrate::CalibrateState,
+    settings: &'a settings::Settings,
+    brightness: &'a str,
+    volume: &'a str,
+    settings_offset: u16,
     gallery_page: u8,
+}
+
+fn build_base<'a>(
+    input: BaseInput<'a>,
     view: &mut view::Builder<'_, 'a>,
 ) -> Result<usize, BuildError> {
-    match screen {
-        Screen::Home => crate::home::build(home, mode, view),
-        Screen::Gallery => gallery::build(gallery_page, view),
-        Screen::Settings => placeholder::build("Settings", IconId::GearSix, view),
+    match input.screen {
+        Screen::Home => crate::home::build(input.home, input.mode, view),
+        Screen::Gallery => gallery::build(input.gallery_page, view),
+        Screen::Settings => settings_screen::build(
+            input.settings,
+            input.brightness,
+            input.volume,
+            input.settings_offset,
+            view,
+        ),
         Screen::Alarms => placeholder::build("Alarms", IconId::Bell, view),
-        Screen::Calibrate => calibrate::build(calibrate, view),
+        Screen::Calibrate => calibrate::build(input.calibrate, view),
     }
 }
 
 fn build_overlay<'a>(
     overlay: super::Overlay,
-    quick: &crate::preview::QuickState,
+    settings: &settings::Settings,
+    mode: common::Mode,
     view: &mut view::Builder<'_, 'a>,
 ) -> Result<usize, BuildError> {
     match overlay {
         super::Overlay::None => Ok(0),
         super::Overlay::Drawer => drawer::build(view),
-        super::Overlay::QuickSettings => quick::build(quick, view),
+        super::Overlay::QuickSettings => quick::build(settings, mode, view),
     }
+}
+
+fn text(bytes: &[u8], len: usize) -> &str {
+    core::str::from_utf8(&bytes[..len.min(bytes.len())]).unwrap_or("")
 }

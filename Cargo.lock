@@ -13,6 +13,7 @@ name = "apps"
 version = "0.1.0"
 dependencies = [
  "common",
+ "settings",
  "shell",
  "ui",
 ]
@@ -900,6 +901,7 @@ dependencies = [
  "hal",
  "logging",
  "power",
+ "settings",
  "shell",
  "static_cell",
  "storage",
@@ -1378,6 +1380,15 @@ dependencies = [
  "ryu",
  "serde",
  "unsafe-libyaml",
+]
+
+[[package]]
+name = "settings"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "defmt",
+ "hal",
 ]
 
 [[package]]

@@ -1,16 +1,28 @@
 //! Fixed-buffer text formatting for the Home complications.
 
 use common::{DateTime, Percent, Timestamp};
+use settings::TimeFormat;
 
 const WEEKDAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const MONTHS: [&str; 12] = [
     "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
 ];
 
-/// Formats `HH:MM` into `out`.
-pub(crate) fn clock_text(now: Timestamp, out: &mut [u8; 5]) -> &str {
+/// Formats the clock into `out`.
+pub(crate) fn clock_text(now: Timestamp, format: TimeFormat, out: &mut [u8; 5]) -> &str {
     let date = DateTime::from_timestamp(now);
-    put_two(date.hour, out, 0);
+    let hour = match format {
+        TimeFormat::Hour24 => date.hour,
+        TimeFormat::Hour12 => {
+            let hour = date.hour % 12;
+            if hour == 0 {
+                12
+            } else {
+                hour
+            }
+        }
+    };
+    put_two(hour, out, 0);
     out[2] = b':';
     put_two(date.minute, out, 3);
     text(out)
@@ -68,7 +80,23 @@ mod tests {
     #[test]
     fn clock_is_zero_padded() {
         let mut buffer = [0; 5];
-        assert_eq!(clock_text(at(2026, 10, 18, 7, 5), &mut buffer), "07:05");
+        assert_eq!(
+            clock_text(at(2026, 10, 18, 7, 5), TimeFormat::Hour24, &mut buffer),
+            "07:05"
+        );
+    }
+
+    #[test]
+    fn clock_uses_the_requested_format() {
+        let mut buffer = [0; 5];
+        assert_eq!(
+            clock_text(at(2026, 10, 18, 19, 5), TimeFormat::Hour12, &mut buffer),
+            "07:05"
+        );
+        assert_eq!(
+            clock_text(at(2026, 10, 18, 0, 5), TimeFormat::Hour12, &mut buffer),
+            "12:05"
+        );
     }
 
     #[test]

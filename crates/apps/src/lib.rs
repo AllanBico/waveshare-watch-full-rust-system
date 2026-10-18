@@ -12,4 +12,4 @@ pub mod preview;
 mod view;
 
 pub use home::HomeState;
-pub use preview::{Overlay, Preview, QuickState, RenderError, Screen};
+pub use preview::{Overlay, Preview, RenderError, Screen};

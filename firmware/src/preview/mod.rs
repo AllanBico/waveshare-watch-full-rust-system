@@ -1,10 +1,13 @@
 //! Temporary hardware preview: boot straight into the UI, before the shell is
 //! wired into the firmware.
 //!
-//! The preview drives the real widget, layout, scene, damage, and flush paths
-//! with local visual state only. It has no app lifecycle, no persistence, and
-//! no backend. Delete it once the shell boots through the firmware.
+//! The preview drives the real widget, layout, scene, damage, and flush paths.
+//! It owns the live settings snapshot and persists user changes through the
+//! boot-owned store. It has no app lifecycle. Delete it once the shell boots
+//! through the firmware.
 // TODO(phase-7): delete the preview layer and boot through Shell.
+
+mod persistence;
 
 use alloc::vec;
 use core::fmt::Debug;
@@ -14,13 +17,15 @@ use esp_println::println;
 use static_cell::StaticCell;
 
 use apps::{Overlay, Preview, Screen};
-use common::{Mode, Percent, Region, Timestamp, TouchReport};
+use common::{Mode, Percent, Region, RenderPolicy, Timestamp, TouchReport};
 use drivers::board;
 use hal::{Display, Power, Touch};
 use power::PowerManager;
+use settings::{Settings, SettingsStore};
 use shell::{GestureOutcome, InputRouter, SwipeDirection, SwipeOrigin};
 use ui::{flush, GraySurface, MonoSurface, Rgb565Source, Theme};
 
+use crate::persist::SettingsBackend;
 use crate::runtime::{INPUT_POLLS_PER_SECOND, INPUT_POLL_PERIOD};
 
 /// Display staging buffer for chunked flushes.
@@ -35,39 +40,46 @@ static SESSION: StaticCell<Session> = StaticCell::new();
 struct Session {
     preview: Preview,
     input: InputRouter,
-    theme: &'static Theme,
     mode: Mode,
     base_now: Timestamp,
     battery: Percent,
     is_charging: bool,
     staging: [u8; STAGING_BYTES],
+    applied_brightness: Option<u8>,
 }
 
 impl Session {
-    fn new(mode: Mode, now: Timestamp, battery: Percent, is_charging: bool) -> Self {
-        let theme = match mode {
-            Mode::Watch => &Theme::WATCH,
-            Mode::Desk => &Theme::DESK,
-        };
+    fn new(
+        mode: Mode,
+        now: Timestamp,
+        battery: Percent,
+        is_charging: bool,
+        settings: Settings,
+    ) -> Self {
         Self {
-            preview: Preview::new(mode, now, battery, is_charging),
+            preview: Preview::new(mode, now, battery, is_charging, settings),
             input: InputRouter::new(shell::GestureConfig::default()),
-            theme,
             mode,
             base_now: now,
             battery,
             is_charging,
             staging: [0; STAGING_BYTES],
+            applied_brightness: None,
         }
     }
 
-    fn step(&mut self, report: &TouchReport, uptime_ms: u64) {
+    fn step(&mut self, report: &TouchReport, uptime_ms: u64) -> bool {
+        let was_settings = self.preview.screen() == Screen::Settings;
+        let was_quick = self.preview.overlay() == Overlay::QuickSettings;
         let now = Timestamp::from_millis(self.base_now.as_millis().saturating_add(uptime_ms));
         self.preview.update(now, self.battery, self.is_charging);
         let outcome = self
             .input
             .handle(report, uptime_ms, board::LCD_WIDTH, board::LCD_HEIGHT);
         self.apply(outcome);
+        let left_settings = was_settings && self.preview.screen() != Screen::Settings;
+        let closed_quick = was_quick && self.preview.overlay() != Overlay::QuickSettings;
+        left_settings || closed_quick
     }
 
     fn apply(&mut self, outcome: GestureOutcome) {
@@ -100,6 +112,17 @@ impl Session {
             self.preview.back();
             return;
         }
+        if self.preview.screen() == Screen::Settings && self.preview.overlay() == Overlay::None {
+            let delta = match swipe.direction {
+                SwipeDirection::Up => 96,
+                SwipeDirection::Down => -96,
+                _ => 0,
+            };
+            if delta != 0 {
+                self.preview.scroll_settings(delta);
+                return;
+            }
+        }
         if swipe.direction == SwipeDirection::Down && self.preview.overlay() == Overlay::Drawer {
             self.preview.close_overlay();
             return;
@@ -125,7 +148,11 @@ impl Session {
         if !self.preview.needs_render() {
             return;
         }
-        match self.preview.render(surface, self.theme, viewport()) {
+        let theme = Theme::for_id(
+            self.preview.settings().display.theme,
+            RenderPolicy::for_mode(self.mode).pixel,
+        );
+        match self.preview.render(surface, theme, viewport()) {
             Ok(damage) if damage.is_empty() => {}
             Ok(damage) => {
                 if let Err(error) = flush(display, &*surface, &damage, &mut self.staging) {
@@ -156,6 +183,8 @@ pub async fn run_watch<D, T>(
     now: Timestamp,
     battery: Percent,
     window: Duration,
+    battery_mv: u16,
+    settings: &mut SettingsStore<SettingsBackend>,
 ) where
     D: Display,
     D::Error: Debug,
@@ -167,16 +196,30 @@ pub async fn run_watch<D, T>(
         println!("[ui] watch framebuffer too small");
         return;
     };
-    let session = SESSION.init(Session::new(Mode::Watch, now, battery, false));
+    let session = SESSION.init(Session::new(
+        Mode::Watch,
+        now,
+        battery,
+        false,
+        *settings.settings(),
+    ));
+    session.apply_brightness(display);
     session.render(display, &mut surface);
 
     let start = Instant::now();
     while Instant::now() - start < window {
         Timer::after(INPUT_POLL_PERIOD).await;
         let report = touch.read().unwrap_or(TouchReport::empty());
-        session.step(&report, (Instant::now() - start).as_millis());
+        let commit = session.step(&report, (Instant::now() - start).as_millis());
+        session.sync_settings(settings);
+        if commit {
+            session.commit(settings, battery_mv);
+        }
+        session.apply_brightness(display);
         session.render(display, &mut surface);
     }
+    session.sync_settings(settings);
+    session.commit(settings, battery_mv);
 }
 
 /// Runs the preview in desk mode until USB is removed.
@@ -186,6 +229,8 @@ pub async fn run_desk<D, T, P>(
     power: &mut PowerManager<P>,
     now: Timestamp,
     battery: Percent,
+    battery_mv: u16,
+    settings: &mut SettingsStore<SettingsBackend>,
 ) where
     D: Display,
     D::Error: Debug,
@@ -198,7 +243,14 @@ pub async fn run_desk<D, T, P>(
         println!("[ui] desk framebuffer too small");
         return;
     };
-    let session = SESSION.init(Session::new(Mode::Desk, now, battery, true));
+    let session = SESSION.init(Session::new(
+        Mode::Desk,
+        now,
+        battery,
+        true,
+        *settings.settings(),
+    ));
+    session.apply_brightness(display);
     session.render(display, &mut surface);
 
     let start = Instant::now();
@@ -206,7 +258,12 @@ pub async fn run_desk<D, T, P>(
     loop {
         Timer::after(INPUT_POLL_PERIOD).await;
         let report = touch.read().unwrap_or(TouchReport::empty());
-        session.step(&report, (Instant::now() - start).as_millis());
+        let commit = session.step(&report, (Instant::now() - start).as_millis());
+        session.sync_settings(settings);
+        if commit {
+            session.commit(settings, battery_mv);
+        }
+        session.apply_brightness(display);
         session.render(display, &mut surface);
 
         ticks += 1;
@@ -215,7 +272,10 @@ pub async fn run_desk<D, T, P>(
         }
         if !power.is_vbus_present().unwrap_or(true) {
             println!("[pm] USB removed");
+            session.commit(settings, battery_mv);
             break;
         }
     }
+    session.sync_settings(settings);
+    session.commit(settings, battery_mv);
 }

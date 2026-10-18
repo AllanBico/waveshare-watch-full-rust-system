@@ -1,4 +1,4 @@
-//! Hardware preview screens: Home, overlays, placeholders, and the gallery.
+//! Hardware preview screens: Home, overlays, and the settings screen.
 
 mod calibrate;
 mod chrome;
@@ -7,18 +7,23 @@ mod engine;
 mod gallery;
 mod placeholder;
 mod quick;
+mod settings_actions;
+mod settings_screen;
 
 #[cfg(test)]
 mod tests;
 
 pub use engine::RenderError;
 pub use gallery::PAGES;
-pub use quick::QuickState;
 
 use common::{Mode, Percent, Timestamp};
+use settings::{SettingId, SettingValue, Settings};
 use ui::{HitRegistry, Scene, TextCache};
 
 use crate::home::HomeState;
+
+/// Settings queued for the persistence owner.
+const INTENT_CAPACITY: usize = 8;
 
 /// The base screen currently shown by the preview.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +32,7 @@ pub enum Screen {
     Home,
     /// Component gallery.
     Gallery,
-    /// Settings placeholder.
+    /// Persisted runtime settings.
     Settings,
     /// Alarms placeholder.
     Alarms,
@@ -52,7 +57,14 @@ pub struct Preview {
     screen: Screen,
     overlay: Overlay,
     home: HomeState,
-    quick: QuickState,
+    settings: Settings,
+    intents: [Option<(SettingId, SettingValue)>; INTENT_CAPACITY],
+    intent_len: usize,
+    settings_offset: u16,
+    brightness_text: [u8; 4],
+    brightness_len: usize,
+    volume_text: [u8; 4],
+    volume_len: usize,
     calibrate: calibrate::CalibrateState,
     gallery_page: u8,
     hits: HitRegistry,
@@ -62,25 +74,42 @@ pub struct Preview {
 }
 
 impl Preview {
-    /// Creates a preview booted to Home.
-    pub fn new(mode: Mode, now: Timestamp, battery: Percent, is_charging: bool) -> Self {
-        let shape = match mode {
-            Mode::Watch => ui::Theme::WATCH.shape,
-            Mode::Desk => ui::Theme::DESK.shape,
-        };
-        Self {
+    /// Creates a preview booted to Home with a settings snapshot.
+    pub fn new(
+        mode: Mode,
+        now: Timestamp,
+        battery: Percent,
+        is_charging: bool,
+        settings: Settings,
+    ) -> Self {
+        let shape = ui::Theme::for_pixel_mode(pixel_mode(mode)).shape;
+        let mut preview = Self {
             mode,
             screen: Screen::Home,
             overlay: Overlay::None,
-            home: HomeState::new(now, battery, is_charging),
-            quick: QuickState::new(),
+            home: HomeState::new_with_format(
+                now,
+                battery,
+                is_charging,
+                settings.display.time_format,
+            ),
+            settings,
+            intents: [None; INTENT_CAPACITY],
+            intent_len: 0,
+            settings_offset: 0,
+            brightness_text: [0; 4],
+            brightness_len: 0,
+            volume_text: [0; 4],
+            volume_len: 0,
             calibrate: calibrate::CalibrateState::new(shape),
             gallery_page: 0,
             hits: HitRegistry::new(),
             scene: Scene::new(),
             cache: TextCache::new(),
             is_dirty: true,
-        }
+        };
+        preview.refresh_text();
+        preview
     }
 
     /// The active mode.
@@ -96,11 +125,6 @@ impl Preview {
     /// The active overlay.
     pub const fn overlay(&self) -> Overlay {
         self.overlay
-    }
-
-    /// The quick-settings state.
-    pub const fn quick(&self) -> &QuickState {
-        &self.quick
     }
 
     /// Whether anything needs repainting.
@@ -148,6 +172,7 @@ impl Preview {
         }
         if self.screen != Screen::Home {
             self.screen = Screen::Home;
+            self.settings_offset = 0;
             self.is_dirty = true;
             return true;
         }
@@ -190,10 +215,14 @@ impl Preview {
         if self.screen == Screen::Calibrate && self.overlay == Overlay::None {
             return self.activate_calibrate(id);
         }
+        if self.screen == Screen::Settings && self.overlay == Overlay::None {
+            return self.activate_settings(id);
+        }
         let handled = match id {
             drawer::SETTINGS_ID => {
                 self.screen = Screen::Settings;
                 self.overlay = Overlay::None;
+                self.settings_offset = 0;
                 true
             }
             drawer::ALARMS_ID => {
@@ -211,22 +240,10 @@ impl Preview {
                 self.overlay = Overlay::None;
                 true
             }
-            quick::WIFI_ID => {
-                self.quick.wifi = !self.quick.wifi;
-                true
-            }
-            quick::BLUETOOTH_ID => {
-                self.quick.bluetooth = !self.quick.bluetooth;
-                true
-            }
-            quick::DND_ID => {
-                self.quick.dnd = !self.quick.dnd;
-                true
-            }
-            quick::SYNC_ID => {
-                self.quick.sync = !self.quick.sync;
-                true
-            }
+            quick::WIFI_ID => self.toggle(SettingId::ConnectivityWifi),
+            quick::BLUETOOTH_ID => self.toggle(SettingId::ConnectivityBluetooth),
+            quick::DND_ID => self.toggle(SettingId::SoundDnd),
+            quick::SYNC_ID => self.toggle(SettingId::ConnectivitySync),
             quick::BRIGHTNESS_ID => self.set_brightness(id, x),
             id if gallery::is_next(id) => {
                 self.gallery_page = (self.gallery_page + 1) % PAGES;
@@ -246,19 +263,15 @@ impl Preview {
         self.is_dirty = true;
         true
     }
+}
 
-    fn set_brightness(&mut self, id: u16, x: u16) -> bool {
-        let Some(target) = self.hits.targets().iter().find(|target| target.id == id) else {
-            return false;
-        };
-        if target.rect.width == 0 {
-            return false;
-        }
-        let offset = x
-            .clamp(target.rect.x, target.rect.right())
-            .saturating_sub(target.rect.x);
-        let value = u32::from(offset) * 100 / u32::from(target.rect.width);
-        self.quick.brightness = value.min(100) as u8;
-        true
+const fn pixel_mode(mode: Mode) -> common::PixelMode {
+    match mode {
+        Mode::Watch => common::PixelMode::Mono1,
+        Mode::Desk => common::PixelMode::Gray8,
     }
+}
+
+fn text(bytes: &[u8], len: usize) -> &str {
+    core::str::from_utf8(&bytes[..len.min(bytes.len())]).unwrap_or("")
 }

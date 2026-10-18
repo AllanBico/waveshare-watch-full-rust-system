@@ -18,6 +18,7 @@ power = { path = "../crates/power" }
 drivers = { path = "../drivers", features = ["hardware"] }
 ui = { path = "../crates/ui" }
 storage = { path = "../crates/storage" }
+settings = { path = "../crates/settings" }
 logging = { path = "../crates/logging" }
 static_cell = "2.1"
 embedded-hal = { workspace = true }

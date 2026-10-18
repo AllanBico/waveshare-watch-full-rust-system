@@ -16,6 +16,7 @@ wv2/
 │   ├── voice/              # wake word, audio capture, VPS client
 │   ├── sync/               # VPS sync protocol, checkpoints
 │   ├── logging/            # ring buffer, wake reason tracking
+│   ├── settings/           # runtime settings schema, defaults, persistence
 │   └── common/             # shared types, errors, events
 ├── firmware/               # ONE crate, ONE binary; main branches to watch_init/desk_init
 ├── drivers/                # chip drivers (CO5300, FT3168, QMI8658, AXP2101, PCF85063A, ES8311); board.rs pin map
@@ -72,11 +73,14 @@ Wraps TicKV. Provides two layers: a raw KV API (`set`, `get`, `delete`) and a ti
 **`logging`**
 A RAM ring buffer for runtime events (wake reasons, mode switches, errors). Flushes to `storage` only in desk mode or on significant events. Provides the `log!` macro that compiles to nothing when the `logging` feature is off. This is what feeds your power analysis.
 
+**`settings`**
+The single owner of runtime settings: typed groups, defaults, validation, schema versioning, dirty tracking, and per-key persistence over the `hal::Storage` trait. Compile-time configuration stays in typed config structs. Device state such as logs, alarms, and sync checkpoints does not belong here. Apps read a snapshot and queue intents; firmware owns the store and applies side effects.
+
 **`ui`**
 The custom engine: theme tokens, widget tree, layout, renderer backend, dirty-rect diffing, animation. Depends on `hal` for the display trait and `common` for events. Does not know about storage, power, or voice. Receives a `RenderPolicy` and a `Surface` and renders the current app state. Backend-agnostic: hardware display on target, SDL on desktop.
 
 **`apps`**
-Each app is a module implementing a common `App` trait: `render()`, `handle_event()`, `on_enter()`, `on_exit()`. Apps depend on `ui` for widgets, `common` for events, and optionally `storage` or `voice` if they need data. The clock app needs nothing but `ui`. The settings app needs `storage`. The voice app needs `voice`. Apps never touch hardware directly, and never branch on `Mode`.
+Each app is a module implementing a common `App` trait: `render()`, `handle_event()`, `on_enter()`, `on_exit()`. Apps depend on `ui` for widgets, `common` for events, and optionally `settings`, `storage`, or `voice` if they need data. The clock app needs nothing but `ui`. The settings app needs `settings`. The voice app needs `voice`. Apps never touch hardware directly, and never branch on `Mode`.
 
 **`voice`**
 Wake word, audio capture, PCM streaming, VPS client, TTS playback. The wake word is a hand-rolled `no_std` pipeline (I2S, `microfft`, MFCC, small NN with `const` weights) gated by VAD. Contains no Opus; the VPS does that. Only activated in desk mode. Depends on `hal` for the audio trait and `common` for events.
@@ -98,6 +102,7 @@ hal ← drivers, ui, voice
 drivers ← power, firmware
 power ← firmware
 storage ← logging, sync, apps
+settings ← apps, firmware
 ui ← apps, firmware
 apps ← firmware
 voice ← firmware
