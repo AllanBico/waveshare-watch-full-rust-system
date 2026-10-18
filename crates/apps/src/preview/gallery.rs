@@ -1,25 +1,46 @@
-//! A component gallery for tuning spacing, states, and typography.
+//! A sectioned component gallery for tuning spacing, states, and typography.
+
+mod pages;
 
 use ui::{
-    Align, BadgeProps, ButtonProps, CheckboxProps, IconButtonProps, IconId, InputProps, LabelProps,
-    Length, ProgressProps, RadioProps, SliderProps, Status, StatusIndicatorProps, TabsProps,
-    TextAlign, TextRole, TileProps, ToggleProps, Widget, WidgetKind,
+    Align, ButtonProps, IconId, LabelProps, Length, PageIndicatorProps, TextAlign, TextRole,
+    Widget, WidgetKind,
 };
 
 use crate::view::{
-    background, column, column_fit, content_padding, crown, fill_node, fit_node, leaf, node, row,
-    spacer, stack, BuildError, Builder,
+    background, column, column_fit, content_padding, crown, fill_node, fit_node, leaf, row, spacer,
+    stack, BuildError, Builder,
 };
 
 /// Number of gallery pages.
-pub const PAGES: u8 = 3;
+pub const PAGES: u8 = 11;
 
+const BG_ID: u16 = 300;
 const TITLE_ID: u16 = 302;
 const NEXT_ID: u16 = 303;
-const BG_ID: u16 = 300;
 const CROWN_ID: u16 = 304;
 const CONTENT_ID: u16 = 305;
+const BODY_ID: u16 = 306;
+const PAGE_DOTS_ID: u16 = 307;
+const FOOTER_ID: u16 = 308;
+const FOOTER_SPACER_ID: u16 = 309;
 const WIDGET_BASE: u16 = 310;
+const TOP_SPACER_ID: u16 = 320;
+const BOTTOM_SPACER_ID: u16 = 321;
+
+const SECTIONS: [&str; PAGES as usize] = [
+    "Actions",
+    "Selection",
+    "Values",
+    "Data",
+    "Inputs",
+    "Structure",
+    "Text",
+    "Overlays",
+    "States",
+    "Error state",
+    "Confirm",
+];
 
 /// Whether `id` is the next-page control.
 pub const fn is_next(id: u16) -> bool {
@@ -28,10 +49,11 @@ pub const fn is_next(id: u16) -> bool {
 
 pub(super) fn build<'a>(page: u8, view: &mut Builder<'_, 'a>) -> Result<usize, BuildError> {
     let theme = view.theme;
+    let page = page % PAGES;
     let title = Widget::new(
         TITLE_ID,
         WidgetKind::Label(LabelProps {
-            text: "Components",
+            text: SECTIONS[usize::from(page)],
             role: TextRole::Title,
             align: TextAlign::Center,
             icon: None,
@@ -40,190 +62,66 @@ pub(super) fn build<'a>(page: u8, view: &mut Builder<'_, 'a>) -> Result<usize, B
     let next = Widget::new(
         NEXT_ID,
         WidgetKind::Button(ButtonProps {
-            label: "Next page",
-            icon: None,
+            label: "Next",
+            icon: Some(IconId::CaretRight),
         }),
     );
-    let cells = widgets_for(page);
+    let dots = Widget::new(
+        PAGE_DOTS_ID,
+        WidgetKind::PageIndicator(PageIndicatorProps {
+            count: PAGES,
+            selected: page,
+        }),
+    );
+    let widgets = pages::widgets(page);
     let content_width = view
         .viewport
         .width
         .saturating_sub(theme.shape.content_inset * 2);
-    let half = content_width.saturating_sub(theme.spacing.sm) / 2;
-    let nodes = page_nodes(page, &cells, theme, view.cache, content_width, half);
-    let title_node = fill_node(&title, theme, view.cache, content_width);
-    let next_node = fill_node(&next, theme, view.cache, content_width);
+    let crown_width = view
+        .viewport
+        .width
+        .saturating_sub(theme.shape.crown_inset * 2);
+    let title_node = fill_node(&title, theme, view.cache, crown_width);
+    let next_node = fit_node(&next, theme, view.cache);
+    let dots_node = fit_node(&dots, theme, view.cache);
     view.push(background(BG_ID))?;
-    for widget in [title, next] {
-        view.push(widget)?;
-    }
-    for widget in cells {
-        view.push(widget)?;
+    view.push(title)?;
+    view.push(dots)?;
+    view.push(next)?;
+    for widget in widgets {
+        view.push(*widget)?;
     }
 
-    let pair_children = [nodes[1], nodes[2]];
-    let pair = row(320, &pair_children, theme.spacing.sm, Align::Center);
-    let body_a_children = [nodes[0], pair, nodes[3]];
-    let body_a = column_fit(321, &body_a_children, theme.spacing.sm, Align::Start);
-    let pair_b_children = [nodes[2], nodes[3]];
-    let pair_b = row(322, &pair_b_children, theme.spacing.sm, Align::Center);
-    let body_b_children = [nodes[0], nodes[1], pair_b];
-    let body_b = column_fit(323, &body_b_children, theme.spacing.sm, Align::Start);
-    let body = if page % PAGES == 2 { body_b } else { body_a };
-    let crown_children = [title_node];
-    let crown_node = crown(CROWN_ID, &crown_children, theme);
-    let content_children = [
-        body,
-        spacer(308, Length::Fill(1), Length::Fill(1)),
-        next_node,
-    ];
-    let content = column(
-        CONTENT_ID,
-        &content_children,
+    let mut nodes = [ui::Node::spacer(0, Length::Fixed(0), Length::Fixed(0)); pages::MAX_WIDGETS];
+    for (index, widget) in widgets.iter().enumerate() {
+        nodes[index] = fill_node(widget, theme, view.cache, content_width);
+    }
+    let items = column_fit(
+        BODY_ID,
+        &nodes[..widgets.len()],
         theme.spacing.sm,
         Align::Start,
-    )
-    .with_padding(content_padding(theme));
+    );
+    let footer_children = [
+        dots_node,
+        spacer(FOOTER_SPACER_ID, Length::Fill(1), Length::Fixed(0)),
+        next_node,
+    ];
+    let footer = row(FOOTER_ID, &footer_children, theme.spacing.sm, Align::Center);
+    let content_children = [
+        spacer(TOP_SPACER_ID, Length::Fill(1), Length::Fill(1)),
+        items,
+        spacer(BOTTOM_SPACER_ID, Length::Fill(1), Length::Fill(1)),
+        footer,
+    ];
+    let content =
+        column(CONTENT_ID, &content_children, 0, Align::Start).with_padding(content_padding(theme));
+    let crown_children = [title_node];
+    let crown_node = crown(CROWN_ID, &crown_children, theme);
     let body_children = [crown_node, content];
     let body = column(309, &body_children, 0, Align::Start);
     let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), body];
     let root = stack(0, &root_children, Align::Start);
     view.layout(&root)
-}
-
-fn page_nodes(
-    page: u8,
-    cells: &[Widget<'static>; 4],
-    theme: &ui::Theme,
-    cache: &mut ui::TextCache,
-    width: u16,
-    half: u16,
-) -> [ui::Node<'static>; 4] {
-    match page % PAGES {
-        0 => [
-            fill_node(&cells[0], theme, cache, width),
-            fit_node(&cells[1], theme, cache),
-            node(&cells[2], theme, cache, Length::Fill(1), width),
-            fill_node(&cells[3], theme, cache, width),
-        ],
-        1 => [
-            fill_node(&cells[0], theme, cache, width),
-            node(&cells[1], theme, cache, Length::Fill(1), half),
-            node(&cells[2], theme, cache, Length::Fill(1), half),
-            fill_node(&cells[3], theme, cache, width),
-        ],
-        _ => [
-            fill_node(&cells[0], theme, cache, width),
-            fill_node(&cells[1], theme, cache, width),
-            fit_node(&cells[2], theme, cache),
-            node(&cells[3], theme, cache, Length::Fill(1), width),
-        ],
-    }
-}
-
-fn widgets_for(page: u8) -> [Widget<'static>; 4] {
-    match page % PAGES {
-        0 => controls(),
-        1 => inputs(),
-        _ => data(),
-    }
-}
-
-fn controls() -> [Widget<'static>; 4] {
-    [
-        Widget::new(
-            WIDGET_BASE,
-            WidgetKind::Button(ButtonProps {
-                label: "Continue",
-                icon: Some(IconId::Check),
-            }),
-        ),
-        Widget::new(
-            WIDGET_BASE + 1,
-            WidgetKind::IconButton(IconButtonProps {
-                icon: IconId::GearSix,
-                label: "Settings",
-            }),
-        ),
-        Widget::new(
-            WIDGET_BASE + 2,
-            WidgetKind::Tile(TileProps {
-                icon: IconId::SquaresFour,
-                label: "Gallery",
-            }),
-        ),
-        Widget::new(
-            WIDGET_BASE + 3,
-            WidgetKind::StatusIndicator(StatusIndicatorProps {
-                label: "Connected",
-                status: Status::Ok,
-            }),
-        ),
-    ]
-}
-
-fn inputs() -> [Widget<'static>; 4] {
-    [
-        Widget::new(
-            WIDGET_BASE,
-            WidgetKind::Toggle(ToggleProps {
-                checked: true,
-                label: "Wi-Fi",
-            }),
-        ),
-        Widget::new(
-            WIDGET_BASE + 1,
-            WidgetKind::Checkbox(CheckboxProps {
-                checked: true,
-                label: "Sync",
-            }),
-        ),
-        Widget::new(
-            WIDGET_BASE + 2,
-            WidgetKind::Radio(RadioProps {
-                selected: true,
-                label: "Option A",
-            }),
-        ),
-        Widget::new(
-            WIDGET_BASE + 3,
-            WidgetKind::Slider(SliderProps {
-                value: 60,
-                label: "Volume",
-            }),
-        ),
-    ]
-}
-
-fn data() -> [Widget<'static>; 4] {
-    [
-        Widget::new(
-            WIDGET_BASE,
-            WidgetKind::Input(InputProps {
-                value: "hello",
-                placeholder: "Name",
-                masked: false,
-                caret: None,
-            }),
-        ),
-        Widget::new(
-            WIDGET_BASE + 1,
-            WidgetKind::Progress(ProgressProps {
-                value: 60,
-                label: "Sync",
-                indeterminate: false,
-            }),
-        ),
-        Widget::new(
-            WIDGET_BASE + 2,
-            WidgetKind::Badge(BadgeProps { label: "New" }),
-        ),
-        Widget::new(
-            WIDGET_BASE + 3,
-            WidgetKind::Tabs(TabsProps {
-                labels: &["Home", "Apps", "Settings"],
-                selected: 1,
-            }),
-        ),
-    ]
 }

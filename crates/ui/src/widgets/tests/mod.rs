@@ -13,11 +13,13 @@ use crate::surface::{GraySurface, MonoSurface};
 use crate::test_support::{fnv1a, gray_ppm, mono_ppm};
 use crate::theme::Theme;
 use crate::widgets::{
-    paint_widget, BadgeProps, ButtonProps, CheckboxProps, ConfirmProps, ContextMenuProps,
-    DialogProps, EmptyStateProps, ErrorStateProps, IconButtonProps, InputProps, ListItemProps,
-    LoadingStateProps, MenuItem, ProgressProps, RadioProps, ScreenScaffoldProps, SliderProps,
-    Status, StatusIndicatorProps, TabsProps, ToastProps, ToggleProps, Widget, WidgetKind,
-    WidgetState,
+    paint_widget, BadgeProps, ButtonProps, CardProps, CardTone, CheckboxProps, ConfirmProps,
+    ContextMenuProps, DialogProps, DividerOrientation, DividerProps, EmptyStateProps,
+    ErrorStateProps, IconButtonProps, IconProps, IconSize, InputProps, KeyValueRowProps,
+    ListItemProps, LoadingStateProps, MenuItem, PageIndicatorProps, ProgressProps, RadioProps,
+    RingProps, ScreenScaffoldProps, SegmentedControlProps, SettingsRowProps, SettingsTrailing,
+    SliderProps, SpinnerProps, Status, StatusIndicatorProps, StepperProps, TabsProps, ToastProps,
+    ToggleProps, Widget, WidgetKind, WidgetState,
 };
 
 fn render_watch(kind: WidgetKind<'_>, state: WidgetState, width: u16, height: u16) -> (u64, u32) {
@@ -52,7 +54,7 @@ fn render_desk(kind: WidgetKind<'_>, state: WidgetState, width: u16, height: u16
     fnv1a(&gray_ppm(&surface))
 }
 
-pub(super) const SAMPLE_KINDS: [WidgetKind<'static>; 20] = [
+pub(super) const SAMPLE_KINDS: [WidgetKind<'static>; 30] = [
     WidgetKind::Button(ButtonProps {
         label: "Continue",
         icon: None,
@@ -143,5 +145,46 @@ pub(super) const SAMPLE_KINDS: [WidgetKind<'static>; 20] = [
         body: "This cannot be undone.",
         confirm: "Delete",
         cancel: "Cancel",
+    }),
+    WidgetKind::Divider(DividerProps {
+        orientation: DividerOrientation::Horizontal,
+    }),
+    WidgetKind::Card(CardProps {
+        tone: CardTone::Surface,
+    }),
+    WidgetKind::Icon(IconProps {
+        icon: IconId::Heart,
+        size: IconSize::Lg,
+    }),
+    WidgetKind::SettingsRow(SettingsRowProps {
+        title: "Bluetooth",
+        subtitle: "Paired",
+        icon: Some(IconId::Bluetooth),
+        trailing: SettingsTrailing::Toggle(true),
+    }),
+    WidgetKind::SegmentedControl(SegmentedControlProps {
+        labels: &["Day", "Week", "Month"],
+        selected: 1,
+    }),
+    WidgetKind::Stepper(StepperProps {
+        label: "Alarm",
+        value: 7,
+        min: 0,
+        max: 23,
+        step: 1,
+        unit: "h",
+    }),
+    WidgetKind::Ring(RingProps {
+        value: 60,
+        label: "Battery",
+    }),
+    WidgetKind::Spinner(SpinnerProps { phase: 2 }),
+    WidgetKind::KeyValueRow(KeyValueRowProps {
+        key: "Steps",
+        value: "8,420",
+    }),
+    WidgetKind::PageIndicator(PageIndicatorProps {
+        count: 5,
+        selected: 2,
     }),
 ];

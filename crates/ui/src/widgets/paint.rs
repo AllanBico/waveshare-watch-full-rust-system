@@ -14,8 +14,9 @@ use super::state::WidgetState;
 use super::{Widget, WidgetKind};
 
 use super::{
-    button, checkbox, input, label, list_item, overlay, patterns, progress, radio, slider, status,
-    tabs, tile, toggle,
+    button, card, checkbox, divider, icon, input, key_value_row, label, list_item, overlay,
+    page_indicator, patterns, progress, radio, ring, segmented_control, settings_row, slider,
+    spinner, status, stepper, tabs, tile, toggle,
 };
 
 /// Paints one widget inside `rect`.
@@ -28,6 +29,7 @@ pub fn paint_widget(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
         WidgetKind::Button(_) | WidgetKind::IconButton(_) => {
             button::paint(painter, widget, rect, theme)
         }
+        WidgetKind::Icon(_) => icon::paint(painter, widget, rect, theme),
         WidgetKind::ListItem(_) => list_item::paint(painter, widget, rect, theme),
         WidgetKind::Toggle(_) => toggle::paint(painter, widget, rect, theme),
         WidgetKind::Checkbox(_) => checkbox::paint(painter, widget, rect, theme),
@@ -49,6 +51,15 @@ pub fn paint_widget(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
         | WidgetKind::LoadingState(_)
         | WidgetKind::ErrorState(_)
         | WidgetKind::Confirm(_) => patterns::paint(painter, widget, rect, theme),
+        WidgetKind::Divider(_) => divider::paint(painter, widget, rect, theme),
+        WidgetKind::Card(_) => card::paint(painter, widget, rect, theme),
+        WidgetKind::SettingsRow(_) => settings_row::paint(painter, widget, rect, theme),
+        WidgetKind::SegmentedControl(_) => segmented_control::paint(painter, widget, rect, theme),
+        WidgetKind::Stepper(_) => stepper::paint(painter, widget, rect, theme),
+        WidgetKind::Ring(_) => ring::paint(painter, widget, rect, theme),
+        WidgetKind::Spinner(_) => spinner::paint(painter, widget, rect, theme),
+        WidgetKind::KeyValueRow(_) => key_value_row::paint(painter, widget, rect, theme),
+        WidgetKind::PageIndicator(_) => page_indicator::paint(painter, widget, rect, theme),
     }
 }
 
@@ -236,6 +247,27 @@ pub(crate) fn draw_icon_centered(
 /// A centered offset for a child inside available space.
 pub(crate) fn centered_offset(available: u16, size: u16) -> u16 {
     available.saturating_sub(size) / 2
+}
+
+/// Draws a filled circle centered on `center`.
+pub(crate) fn draw_dot(painter: &mut Painter<'_>, center: (u16, u16), radius: u16, color: Luma) {
+    let radius = radius.max(1);
+    let limit = i32::from(radius);
+    let squared = limit * limit;
+    let center_x = i32::from(center.0);
+    let center_y = i32::from(center.1);
+    for dy in -limit..=limit {
+        for dx in -limit..=limit {
+            if dx * dx + dy * dy > squared {
+                continue;
+            }
+            let x = center_x + dx;
+            let y = center_y + dy;
+            if x >= 0 && y >= 0 {
+                painter.set_pixel(x as u16, y as u16, color);
+            }
+        }
+    }
 }
 
 /// Draws a focus ring around a widget that has no frame of its own.

@@ -12,6 +12,9 @@ use crate::theme::Theme;
 use super::paint::{centered_offset, colors, content, draw_start, frame, on, shrink};
 use super::{Widget, WidgetKind};
 
+/// Checkbox side length in pixels.
+pub(crate) const BOX_SIZE: u16 = 28;
+
 /// Props for an independent checkbox.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CheckboxProps<'a> {
@@ -58,7 +61,7 @@ pub(crate) fn paint(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
     frame(painter, rect, theme, widget.state, theme.radii.md);
     let colors = colors(theme, widget.state);
     let region = content(rect, theme, theme.spacing.md);
-    let size = 28;
+    let size = BOX_SIZE;
     let box_region = Region::new(
         region.x,
         region.y + centered_offset(region.height, size),
@@ -83,7 +86,7 @@ pub(crate) fn paint(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
     );
 }
 
-fn paint_box(
+pub(crate) fn paint_box(
     painter: &mut Painter<'_>,
     rect: Region,
     checked: bool,

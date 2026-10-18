@@ -30,6 +30,16 @@ fn component_goldens_are_stable() {
         (0x03dc_b279_ccc4_a514, 0x550d_47a9_c4e8_9416),
         (0x3220_6287_fb0a_67fa, 0xf70d_1e3e_87bd_b54a),
         (0xeef4_632c_3c00_4b90, 0x88b2_dec1_575f_4c6e),
+        (0x93ac_4348_b72e_922e, 0xc212_3536_061a_f72e),
+        (0x58f4_89b5_b790_43c2, 0x5388_c95c_1216_3e22),
+        (0x8c6b_18b5_d3fe_dd60, 0xd8fc_0970_7160_d566),
+        (0x052c_49f5_19a7_d535, 0xca85_d22a_cb9e_6e16),
+        (0xbad3_d14e_fc03_4888, 0xe572_27cd_4636_c6d1),
+        (0xeb34_389e_6ce0_c1dc, 0x697c_87bc_fcf7_47c5),
+        (0x4838_2319_2431_6fc1, 0xf0d9_3f0d_6753_3480),
+        (0x3cbc_5fef_b223_6496, 0x3363_f4c7_99a4_42f7),
+        (0x89c8_14b9_bd76_361d, 0xcb39_0398_5d97_3062),
+        (0xc374_69e8_6033_98f2, 0x1150_8a10_2347_2a46),
     ];
     for (index, kind) in SAMPLE_KINDS.into_iter().enumerate() {
         let watch = render_watch(kind, WidgetState::NORMAL, WIDTH, HEIGHT).0;

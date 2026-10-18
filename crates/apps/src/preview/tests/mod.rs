@@ -235,6 +235,35 @@ fn the_drawer_closes_with_back() {
 }
 
 #[test]
+fn every_gallery_page_fits_above_the_next_control() {
+    const EXPECTED: [usize; PAGES as usize] = [4, 4, 4, 4, 4, 5, 4, 3, 2, 1, 1];
+    let mut data = vec![0u8; MonoSurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
+    let mut surface = watch_surface(&mut data);
+    let mut preview = preview(Mode::Watch);
+    preview.screen = Screen::Gallery;
+    for page in 0..PAGES {
+        preview.gallery_page = page;
+        preview.invalidate();
+        preview
+            .render(&mut surface, &Theme::WATCH, VIEWPORT)
+            .unwrap();
+        let next = hit(&preview, 303);
+        let mut found = 0;
+        for id in 310..=314 {
+            let Some(target) = preview.hits.targets().iter().find(|target| target.id == id) else {
+                continue;
+            };
+            found += 1;
+            assert!(
+                target.rect.bottom() <= next.rect.y,
+                "page {page} widget {id} overlaps the footer"
+            );
+        }
+        assert_eq!(found, EXPECTED[usize::from(page)], "page {page} widgets");
+    }
+}
+
+#[test]
 fn every_gallery_page_renders_and_keeps_the_next_control() {
     let mut data = vec![0u8; MonoSurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
     let mut surface = watch_surface(&mut data);

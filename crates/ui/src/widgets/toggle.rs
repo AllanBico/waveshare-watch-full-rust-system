@@ -10,6 +10,12 @@ use crate::theme::Theme;
 use super::paint::{colors, content, draw_start, frame, shrink};
 use super::{Widget, WidgetKind};
 
+/// Switch track width in pixels.
+pub(crate) const TRACK_WIDTH: u16 = 56;
+/// Switch track height in pixels.
+pub(crate) const TRACK_HEIGHT: u16 = 32;
+const KNOB_INSET: u16 = 4;
+
 /// Props for an on/off switch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ToggleProps<'a> {
@@ -56,18 +62,16 @@ pub(crate) fn paint(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
     frame(painter, rect, theme, widget.state, theme.radii.md);
     let colors = colors(theme, widget.state);
     let region = content(rect, theme, theme.spacing.md);
-    let track_width = 56;
-    let track_height = 32;
     let track = Region::new(
-        region.right().saturating_sub(track_width),
-        region.y + (region.height.saturating_sub(track_height)) / 2,
-        track_width.min(region.width),
-        track_height.min(region.height),
+        region.right().saturating_sub(TRACK_WIDTH),
+        region.y + (region.height.saturating_sub(TRACK_HEIGHT)) / 2,
+        TRACK_WIDTH.min(region.width),
+        TRACK_HEIGHT.min(region.height),
     );
     let mut label_region = region;
     label_region.width = label_region
         .width
-        .saturating_sub(track_width + theme.spacing.md);
+        .saturating_sub(TRACK_WIDTH + theme.spacing.md);
     draw_start(
         painter,
         props.label,
@@ -85,7 +89,7 @@ pub(crate) fn paint(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
     );
 }
 
-fn paint_switch(
+pub(crate) fn paint_switch(
     painter: &mut Painter<'_>,
     track: Region,
     checked: bool,
@@ -105,7 +109,7 @@ fn paint_switch(
             inactive,
         );
     }
-    let knob_size = track.height.saturating_sub(8);
+    let knob_size = track.height.saturating_sub(KNOB_INSET.saturating_mul(2));
     let knob_radius = knob_size / 2;
     let knob_color = if checked {
         super::paint::on(theme, active)
@@ -113,10 +117,10 @@ fn paint_switch(
         active
     };
     let x = if checked {
-        track.right().saturating_sub(knob_size + 4)
+        track.right().saturating_sub(knob_size + KNOB_INSET)
     } else {
-        track.x.saturating_add(4)
+        track.x.saturating_add(KNOB_INSET)
     };
-    let knob = Region::new(x, track.y + 4, knob_size, knob_size);
+    let knob = Region::new(x, track.y + KNOB_INSET, knob_size, knob_size);
     painter.fill_rounded_rect(knob, knob_radius, knob_color);
 }

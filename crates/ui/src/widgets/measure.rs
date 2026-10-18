@@ -5,16 +5,26 @@ use crate::text::TextCache;
 use crate::theme::Theme;
 
 use super::button;
+use super::card;
 use super::checkbox;
+use super::divider;
+use super::icon;
 use super::input;
+use super::key_value_row;
 use super::label;
 use super::list_item;
 use super::overlay;
+use super::page_indicator;
 use super::patterns;
 use super::progress;
 use super::radio;
+use super::ring;
+use super::segmented_control;
+use super::settings_row;
 use super::slider;
+use super::spinner;
 use super::status;
+use super::stepper;
 use super::tabs;
 use super::tile;
 use super::toggle;
@@ -28,6 +38,7 @@ impl<'a> Widget<'a> {
             WidgetKind::Button(_) | WidgetKind::IconButton(_) => {
                 button::measure(&self.kind, theme, cache, available_width)
             }
+            WidgetKind::Icon(props) => icon::measure(props, theme, cache, available_width),
             WidgetKind::ListItem(props) => list_item::measure(props, theme, cache, available_width),
             WidgetKind::Toggle(props) => toggle::measure(props, theme, cache, available_width),
             WidgetKind::Checkbox(props) => checkbox::measure(props, theme, cache, available_width),
@@ -52,6 +63,23 @@ impl<'a> Widget<'a> {
             | WidgetKind::ErrorState(_)
             | WidgetKind::Confirm(_) => {
                 patterns::measure(&self.kind, theme, cache, available_width)
+            }
+            WidgetKind::Divider(props) => divider::measure(props, theme, cache, available_width),
+            WidgetKind::Card(props) => card::measure(props, theme, cache, available_width),
+            WidgetKind::SettingsRow(props) => {
+                settings_row::measure(props, theme, cache, available_width)
+            }
+            WidgetKind::SegmentedControl(props) => {
+                segmented_control::measure(props, theme, cache, available_width)
+            }
+            WidgetKind::Stepper(props) => stepper::measure(props, theme, cache, available_width),
+            WidgetKind::Ring(props) => ring::measure(props, theme, cache, available_width),
+            WidgetKind::Spinner(props) => spinner::measure(props, theme, cache, available_width),
+            WidgetKind::KeyValueRow(props) => {
+                key_value_row::measure(props, theme, cache, available_width)
+            }
+            WidgetKind::PageIndicator(props) => {
+                page_indicator::measure(props, theme, cache, available_width)
             }
         }
     }

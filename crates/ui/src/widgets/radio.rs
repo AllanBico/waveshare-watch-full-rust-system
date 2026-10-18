@@ -47,7 +47,7 @@ pub(crate) fn paint(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
     frame(painter, rect, theme, widget.state, theme.radii.md);
     let colors = colors(theme, widget.state);
     let region = content(rect, theme, theme.spacing.md);
-    let size = 28;
+    let size = super::checkbox::BOX_SIZE;
     let choice = Region::new(
         region.x,
         region.y + centered_offset(region.height, size),

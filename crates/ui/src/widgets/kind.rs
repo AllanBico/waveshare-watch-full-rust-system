@@ -1,18 +1,28 @@
 //! Enum-backed widget kinds and their props.
 
 use super::button::{ButtonProps, IconButtonProps};
+use super::card::CardProps;
 use super::checkbox::CheckboxProps;
+use super::divider::DividerProps;
+use super::icon::IconProps;
 use super::input::InputProps;
+use super::key_value_row::KeyValueRowProps;
 use super::label::LabelProps;
 use super::list_item::ListItemProps;
 use super::overlay::{ContextMenuProps, DialogProps, ToastProps};
+use super::page_indicator::PageIndicatorProps;
 use super::patterns::{
     ConfirmProps, EmptyStateProps, ErrorStateProps, LoadingStateProps, ScreenScaffoldProps,
 };
 use super::progress::{BadgeProps, ProgressProps};
 use super::radio::RadioProps;
+use super::ring::RingProps;
+use super::segmented_control::SegmentedControlProps;
+use super::settings_row::SettingsRowProps;
 use super::slider::SliderProps;
+use super::spinner::SpinnerProps;
 use super::status::StatusIndicatorProps;
+use super::stepper::StepperProps;
 use super::tabs::TabsProps;
 use super::tile::TileProps;
 use super::toggle::ToggleProps;
@@ -26,6 +36,8 @@ pub enum WidgetKind<'a> {
     Button(ButtonProps<'a>),
     /// A square icon-only action.
     IconButton(IconButtonProps<'a>),
+    /// A standalone icon.
+    Icon(IconProps),
     /// One row in a list.
     ListItem(ListItemProps<'a>),
     /// An on/off switch.
@@ -66,6 +78,24 @@ pub enum WidgetKind<'a> {
     ErrorState(ErrorStateProps<'a>),
     /// A confirmation prompt.
     Confirm(ConfirmProps<'a>),
+    /// A horizontal or vertical rule.
+    Divider(DividerProps),
+    /// A grouping surface.
+    Card(CardProps),
+    /// A settings row with a trailing control.
+    SettingsRow(SettingsRowProps<'a>),
+    /// A small exclusive-choice strip.
+    SegmentedControl(SegmentedControlProps<'a>),
+    /// A numeric stepper.
+    Stepper(StepperProps<'a>),
+    /// A circular value ring.
+    Ring(RingProps<'a>),
+    /// An inline activity spinner.
+    Spinner(SpinnerProps),
+    /// A label-and-value data row.
+    KeyValueRow(KeyValueRowProps<'a>),
+    /// A page position indicator.
+    PageIndicator(PageIndicatorProps),
 }
 
 impl WidgetKind<'_> {
@@ -75,6 +105,9 @@ impl WidgetKind<'_> {
             self,
             Self::Button(_)
                 | Self::IconButton(_)
+                | Self::SettingsRow(_)
+                | Self::SegmentedControl(_)
+                | Self::Stepper(_)
                 | Self::ListItem(_)
                 | Self::Toggle(_)
                 | Self::Checkbox(_)
