@@ -11,6 +11,8 @@ simulator = []
 
 [dependencies]
 common = { path = "../crates/common" }
+apps = { path = "../crates/apps" }
+shell = { path = "../crates/shell" }
 hal = { path = "../crates/hal" }
 power = { path = "../crates/power" }
 drivers = { path = "../drivers", features = ["hardware"] }

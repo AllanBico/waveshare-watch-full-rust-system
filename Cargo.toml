@@ -6,6 +6,7 @@ members = [
     "crates/power",
     "crates/storage",
     "crates/ui",
+    "crates/shell",
     "crates/apps",
     "crates/voice",
     "crates/sync",

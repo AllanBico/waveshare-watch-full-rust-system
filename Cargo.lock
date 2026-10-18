@@ -11,6 +11,10 @@ checksum = "c583acf993cf4245c4acb0a2cc2ab1f9cc097de73411bb6d3647ff6af2b1013d"
 [[package]]
 name = "apps"
 version = "0.1.0"
+dependencies = [
+ "shell",
+ "ui",
+]
 
 [[package]]
 name = "autocfg"
@@ -879,6 +883,7 @@ name = "firmware"
 version = "0.1.0"
 dependencies = [
  "allocator-api2",
+ "apps",
  "common",
  "drivers",
  "embassy-executor",
@@ -894,6 +899,7 @@ dependencies = [
  "hal",
  "logging",
  "power",
+ "shell",
  "static_cell",
  "storage",
  "ui",
@@ -1371,6 +1377,14 @@ dependencies = [
  "ryu",
  "serde",
  "unsafe-libyaml",
+]
+
+[[package]]
+name = "shell"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "ui",
 ]
 
 [[package]]
