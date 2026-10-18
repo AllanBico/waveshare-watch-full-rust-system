@@ -13,7 +13,7 @@ use embassy_time::{Duration, Instant, Timer};
 use esp_println::println;
 use static_cell::StaticCell;
 
-use apps::{Overlay, Preview};
+use apps::{Overlay, Preview, Screen};
 use common::{Mode, Percent, Region, Timestamp, TouchReport};
 use drivers::board;
 use hal::{Display, Power, Touch};
@@ -69,6 +69,11 @@ impl Session {
     }
 
     fn apply(&mut self, outcome: GestureOutcome) {
+        if self.preview.screen() == Screen::Calibrate
+            && !matches!(outcome, GestureOutcome::Tap { .. })
+        {
+            return;
+        }
         match outcome {
             GestureOutcome::Tap { x, y } => {
                 self.preview.tap(x, y, viewport());

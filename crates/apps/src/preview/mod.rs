@@ -1,5 +1,6 @@
 //! Hardware preview screens: Home, overlays, placeholders, and the gallery.
 
+mod calibrate;
 mod drawer;
 mod engine;
 mod gallery;
@@ -29,6 +30,8 @@ pub enum Screen {
     Settings,
     /// Alarms placeholder.
     Alarms,
+    /// Panel shape calibration.
+    Calibrate,
 }
 
 /// The overlay currently shown above the base screen.
@@ -49,6 +52,7 @@ pub struct Preview {
     overlay: Overlay,
     home: HomeState,
     quick: QuickState,
+    calibrate: calibrate::CalibrateState,
     gallery_page: u8,
     hits: HitRegistry,
     scene: Scene,
@@ -65,6 +69,7 @@ impl Preview {
             overlay: Overlay::None,
             home: HomeState::new(now, battery, is_charging),
             quick: QuickState::new(),
+            calibrate: calibrate::CalibrateState::new(),
             gallery_page: 0,
             hits: HitRegistry::new(),
             scene: Scene::new(),
@@ -163,6 +168,9 @@ impl Preview {
     }
 
     fn activate(&mut self, id: u16, x: u16) -> bool {
+        if self.screen == Screen::Calibrate && self.overlay == Overlay::None {
+            return self.activate_calibrate(id);
+        }
         let handled = match id {
             drawer::SETTINGS_ID => {
                 self.screen = Screen::Settings;
@@ -176,6 +184,11 @@ impl Preview {
             }
             drawer::GALLERY_ID => {
                 self.screen = Screen::Gallery;
+                self.overlay = Overlay::None;
+                true
+            }
+            drawer::CALIBRATE_ID => {
+                self.screen = Screen::Calibrate;
                 self.overlay = Overlay::None;
                 true
             }
@@ -212,6 +225,19 @@ impl Preview {
         };
         self.is_dirty |= handled;
         handled
+    }
+
+    fn activate_calibrate(&mut self, id: u16) -> bool {
+        let Some(action) = calibrate::action(id) else {
+            return false;
+        };
+        if action == calibrate::Action::Back {
+            self.screen = Screen::Home;
+        } else {
+            self.calibrate.apply(action);
+        }
+        self.is_dirty = true;
+        true
     }
 
     fn set_brightness(&mut self, id: u16, x: u16) -> bool {

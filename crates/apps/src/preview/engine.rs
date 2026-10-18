@@ -2,11 +2,11 @@
 
 use common::Region;
 use ui::{
-    paint_damage, paint_widgets, Damage, IconId, SceneArena, SceneError, SceneNode, Surface, Theme,
-    WidgetArena, WidgetError,
+    paint_damage, paint_widgets, Damage, IconId, LayoutRect, SceneArena, SceneError, SceneNode,
+    Surface, Theme, WidgetArena, WidgetError,
 };
 
-use super::{drawer, gallery, placeholder, quick, Preview, Screen};
+use super::{calibrate, drawer, gallery, placeholder, quick, Overlay, Preview, Screen};
 use crate::view::{self, BuildError};
 
 /// A preview frame failure.
@@ -52,12 +52,14 @@ impl Preview {
             overlay,
             home,
             quick,
+            calibrate,
             gallery_page,
             hits,
             scene,
             cache,
             is_dirty,
         } = self;
+        let is_calibrate = *screen == Screen::Calibrate && *overlay == Overlay::None;
         let mut widgets = WidgetArena::new();
         let mut base_entries = view::entries();
         let mut overlay_entries = view::entries();
@@ -71,7 +73,7 @@ impl Preview {
                 entries: &mut base_entries,
                 viewport,
             };
-            build_base(*screen, *mode, home, *gallery_page, &mut builder)?
+            build_base(*screen, *mode, home, calibrate, *gallery_page, &mut builder)?
         };
         let overlay_count = {
             let mut builder = view::Builder {
@@ -89,14 +91,35 @@ impl Preview {
             &mut merged,
         );
         ui::collect_hits(&widgets, &merged[..count], hits)?;
-        let frame = build_frame(&widgets, &merged[..count])?;
+        let calibration = is_calibrate.then_some(&*calibrate);
+        let frame = build_scene(&widgets, &merged[..count], calibration, viewport)?;
         let damage = scene.diff(&frame, viewport);
         paint_damage(surface, &damage, theme.tones.background, |painter, _| {
             paint_widgets(painter, &widgets, &merged[..count], theme);
+            if is_calibrate {
+                calibrate::paint(painter, calibrate, theme, viewport);
+            }
         });
         *is_dirty = false;
         Ok(damage)
     }
+}
+
+fn build_scene(
+    widgets: &WidgetArena<'_>,
+    entries: &[ui::LayoutEntry],
+    calibrate: Option<&calibrate::CalibrateState>,
+    viewport: Region,
+) -> Result<SceneArena, RenderError> {
+    let mut frame = build_frame(widgets, entries)?;
+    if let Some(state) = calibrate {
+        frame.push(SceneNode::new(
+            calibrate::SCENE_ID,
+            LayoutRect::from_region(viewport),
+            state.fingerprint(),
+        ))?;
+    }
+    Ok(frame)
 }
 
 fn build_frame(
@@ -116,6 +139,7 @@ fn build_base<'a>(
     screen: Screen,
     mode: common::Mode,
     home: &'a crate::home::HomeState,
+    calibrate: &'a calibrate::CalibrateState,
     gallery_page: u8,
     view: &mut view::Builder<'_, 'a>,
 ) -> Result<usize, BuildError> {
@@ -124,6 +148,7 @@ fn build_base<'a>(
         Screen::Gallery => gallery::build(gallery_page, view),
         Screen::Settings => placeholder::build("Settings", IconId::GearSix, view),
         Screen::Alarms => placeholder::build("Alarms", IconId::Bell, view),
+        Screen::Calibrate => calibrate::build(calibrate, view),
     }
 }
 

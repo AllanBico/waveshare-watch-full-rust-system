@@ -20,6 +20,8 @@ pub const SETTINGS_ID: u16 = 110;
 pub const ALARMS_ID: u16 = 111;
 /// Gallery tile.
 pub const GALLERY_ID: u16 = 112;
+/// Calibration tile.
+pub const CALIBRATE_ID: u16 = 113;
 
 /// Whether `id` belongs to the drawer.
 pub const fn owns(id: u16) -> bool {
@@ -52,6 +54,7 @@ pub(super) fn build<'a>(view: &mut Builder<'_, 'a>) -> Result<usize, BuildError>
     let settings = tile(SETTINGS_ID, "Settings", IconId::GearSix);
     let alarms = tile(ALARMS_ID, "Alarms", IconId::Bell);
     let gallery = tile(GALLERY_ID, "Gallery", IconId::SquaresFour);
+    let calibrate = tile(CALIBRATE_ID, "Calibrate", IconId::PencilSimple);
 
     let content_width = view.viewport.width.saturating_sub(32);
     let cell = content_width.saturating_sub(16) / 3;
@@ -60,14 +63,15 @@ pub(super) fn build<'a>(view: &mut Builder<'_, 'a>) -> Result<usize, BuildError>
     let settings_node = node(&settings, theme, view.cache, Length::Fill(1), cell);
     let alarms_node = node(&alarms, theme, view.cache, Length::Fill(1), cell);
     let gallery_node = node(&gallery, theme, view.cache, Length::Fill(1), cell);
+    let calibrate_node = node(&calibrate, theme, view.cache, Length::Fill(1), cell);
     view.push(background(BG_ID))?;
-    for widget in [title, close, settings, alarms, gallery] {
+    for widget in [title, close, settings, alarms, gallery, calibrate] {
         view.push(widget)?;
     }
 
     let header_children = [title_node, close_node];
     let header = row(104, &header_children, theme.spacing.sm, Align::Center);
-    let grid_children = [settings_node, alarms_node, gallery_node];
+    let grid_children = [settings_node, alarms_node, gallery_node, calibrate_node];
     let apps = grid(
         GRID_ID,
         &grid_children,
