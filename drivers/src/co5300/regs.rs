@@ -50,7 +50,7 @@ pub const CMD_PAGE_VENDOR: u8 = 0x00;
 /// Enable the SPI WRAM write path.
 pub const SPIMODECTL_WRAM_ENABLE: u8 = 0x80;
 /// Default display brightness.
-pub const BRIGHTNESS_DEFAULT: u8 = 0xD0;
+pub const BRIGHTNESS_DEFAULT: u8 = 0x68;
 /// Maximum high-brightness value.
 pub const BRIGHTNESS_HBM: u8 = 0xFF;
 /// CTRL display 1 default.

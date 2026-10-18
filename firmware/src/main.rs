@@ -50,11 +50,11 @@ use runtime::{halt, open_bus, report_boot, report_time, wake_reason};
 esp_bootloader_esp_idf::esp_app_desc!();
 
 /// Awake time budget granted on each watch-mode wake.
-const AWAKE_BUDGET_MS: u32 = 5_000;
+const AWAKE_BUDGET_MS: u32 = 7_000;
 
 /// How long to stay awake before sleeping in watch mode.
 // TODO(phase-6): return to the 2 s watch budget once the wake cycle is tuned.
-const AWAKE_WINDOW: Duration = Duration::from_secs(5);
+const AWAKE_WINDOW: Duration = Duration::from_secs(7);
 
 /// Deep-sleep timer interval. Longer for wake-on-motion debugging.
 const SLEEP_TIMER_MS: u32 = 30_000;
