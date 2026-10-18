@@ -1,17 +1,15 @@
 //! Desk Home: a grayscale dashboard built from the same components.
 
 use ui::{
-    Align, IconId, Insets, LabelProps, Length, ListItemProps, TextAlign, TextRole, Widget,
-    WidgetKind,
+    Align, IconId, LabelProps, Length, ListItemProps, TextAlign, TextRole, Widget, WidgetKind,
 };
 
 use super::{
-    HomeState, ALARM_ID, BATTERY_ID, BG_ID, CLOCK_ID, DATE_ID, DESK_BATTERY_ID, GRID_ID, HEADER_ID,
-    HEADER_SPACER_ID, ROOT_ID, SETTINGS_ID, SYNC_ID, TOP_SPACER_ID,
+    HomeState, ALARM_ID, BG_ID, CLOCK_ID, CONTENT_ID, CROWN_ID, DATE_ID, DESK_BATTERY_ID, GRID_ID,
+    ROOT_ID, SETTINGS_ID, SYNC_ID,
 };
 use crate::view::{
-    background, column, column_fit, fill_node, fit_node, grid, leaf, row, spacer, BuildError,
-    Builder,
+    background, column, content_padding, crown, fill_node, grid, leaf, spacer, BuildError, Builder,
 };
 
 pub(super) fn build<'a>(
@@ -23,22 +21,15 @@ pub(super) fn build<'a>(
         CLOCK_ID,
         state.clock(),
         TextRole::Numeric,
-        TextAlign::Start,
+        TextAlign::Center,
         None,
     );
     let date = label(
         DATE_ID,
         state.date(),
         TextRole::Caption,
-        TextAlign::Start,
+        TextAlign::Center,
         None,
-    );
-    let battery = label(
-        BATTERY_ID,
-        state.battery(),
-        TextRole::Caption,
-        TextAlign::End,
-        Some(IconId::BatteryHigh),
     );
     let charge = if state.is_charging() {
         "Charging"
@@ -47,51 +38,52 @@ pub(super) fn build<'a>(
     };
     let alarm = list(ALARM_ID, "Alarms", "07:00", IconId::Bell);
     let settings = list(SETTINGS_ID, "Settings", "Wi-Fi + BT", IconId::GearSix);
-    let battery_tile = list(DESK_BATTERY_ID, "Battery", charge, IconId::BatteryHigh);
+    let battery = list(DESK_BATTERY_ID, "Battery", charge, IconId::BatteryHigh);
     let sync = list(SYNC_ID, "Sync", "Idle", IconId::ArrowClockwise);
 
-    let cell = view.viewport.width.saturating_sub(40) / 2;
-    let clock_node = fit_node(&clock, theme, view.cache);
-    let date_node = fit_node(&date, theme, view.cache);
-    let battery_node = fit_node(&battery, theme, view.cache);
+    let content_width = view
+        .viewport
+        .width
+        .saturating_sub(theme.shape.content_inset * 2);
+    let cell = content_width.saturating_sub(theme.spacing.sm) / 2;
+    let clock_node = fill_node(&clock, theme, view.cache, content_width);
+    let date_node = fill_node(&date, theme, view.cache, content_width);
     let alarm_node = fill_node(&alarm, theme, view.cache, cell);
     let settings_node = fill_node(&settings, theme, view.cache, cell);
-    let battery_tile_node = fill_node(&battery_tile, theme, view.cache, cell);
+    let battery_node = fill_node(&battery, theme, view.cache, cell);
     let sync_node = fill_node(&sync, theme, view.cache, cell);
     view.push(background(BG_ID))?;
-    for widget in [clock, date, battery, alarm, settings, battery_tile, sync] {
+    for widget in [clock, date, alarm, settings, battery, sync] {
         view.push(widget)?;
     }
 
-    let clock_children = [clock_node, date_node];
-    let clock_block = column_fit(10, &clock_children, theme.spacing.xs, Align::Start);
-    let top_children = [
-        clock_block,
-        spacer(HEADER_SPACER_ID, Length::Fill(1), Length::Fixed(0)),
-        battery_node,
-    ];
-    let top = row(HEADER_ID, &top_children, theme.spacing.sm, Align::End);
-    let grid_children = [alarm_node, settings_node, battery_tile_node, sync_node];
+    let crown_children = [date_node];
+    let crown_node = crown(CROWN_ID, &crown_children, theme);
+    let grid_children = [alarm_node, settings_node, battery_node, sync_node];
     let dashboard = grid(
         GRID_ID,
         &grid_children,
         2,
-        theme.spacing.md,
-        theme.spacing.md,
+        theme.spacing.sm,
+        theme.spacing.sm,
     );
     let content_children = [
-        top,
-        spacer(
-            TOP_SPACER_ID,
-            Length::Fill(1),
-            Length::Fixed(theme.spacing.lg),
-        ),
+        spacer(12, Length::Fill(1), Length::Fill(1)),
+        clock_node,
+        spacer(13, Length::Fill(1), Length::Fixed(theme.spacing.md)),
         dashboard,
-        spacer(11, Length::Fill(1), Length::Fill(1)),
+        spacer(14, Length::Fill(1), Length::Fill(1)),
     ];
-    let content = column(ROOT_ID, &content_children, theme.spacing.sm, Align::Start)
-        .with_padding(Insets::symmetric(16, 12));
-    let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), content];
+    let content = column(
+        CONTENT_ID,
+        &content_children,
+        theme.spacing.sm,
+        Align::Start,
+    )
+    .with_padding(content_padding(theme));
+    let body_children = [crown_node, content];
+    let body = column(ROOT_ID, &body_children, 0, Align::Start);
+    let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), body];
     let root = crate::view::stack(0, &root_children, Align::Start);
     view.layout(&root)
 }

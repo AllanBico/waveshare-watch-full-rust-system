@@ -29,6 +29,7 @@ impl InputRouter {
         &mut self,
         report: &TouchReport,
         now_ms: u64,
+        viewport_width: u16,
         viewport_height: u16,
     ) -> GestureOutcome {
         let active = match self.active_id {
@@ -38,7 +39,8 @@ impl InputRouter {
         match (self.active_id, active) {
             (None, Some(point)) => {
                 self.active_id = Some(point.id);
-                self.gesture.begin(point, now_ms, viewport_height);
+                self.gesture
+                    .begin(point, now_ms, viewport_width, viewport_height);
                 GestureOutcome::None
             }
             (Some(_), Some(point)) => {

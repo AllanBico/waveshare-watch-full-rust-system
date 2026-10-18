@@ -12,6 +12,7 @@ pub use tokens::{
 use common::PixelMode;
 
 use crate::luma::Luma;
+use crate::shape::ScreenShape;
 
 /// Every UI token needed to render a screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +35,8 @@ pub struct Theme {
     pub min_touch_px: u16,
     /// Pixel format this theme targets.
     pub pixel_mode: PixelMode,
+    /// Physical panel silhouette and shape-derived insets.
+    pub shape: ScreenShape,
 }
 
 impl Theme {
@@ -60,6 +63,7 @@ impl Theme {
         motion: Motion::NONE,
         min_touch_px: 64,
         pixel_mode: PixelMode::Mono1,
+        shape: ScreenShape::PANEL,
     };
 
     /// Desk theme: black background with dark gray surfaces and antialiasing.
@@ -85,6 +89,7 @@ impl Theme {
         motion: Motion::DESK,
         min_touch_px: 64,
         pixel_mode: PixelMode::Gray8,
+        shape: ScreenShape::PANEL,
     };
 
     /// The theme for a pixel format.

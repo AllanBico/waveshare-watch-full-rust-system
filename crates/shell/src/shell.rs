@@ -214,7 +214,9 @@ impl<R: AppRegistry> Shell<R> {
             return Ok(GestureOutcome::None);
         }
         self.uptime_ms = now_ms;
-        let outcome = self.input.handle(report, now_ms, self.viewport.height);
+        let outcome = self
+            .input
+            .handle(report, now_ms, self.viewport.width, self.viewport.height);
         if let GestureOutcome::Swipe(swipe) = outcome {
             self.apply_swipe(swipe)?;
         }

@@ -96,6 +96,11 @@ pub(crate) fn fit_node(widget: &Widget<'_>, theme: &Theme, cache: &mut TextCache
     )
 }
 
+/// A leaf node for a widget with an explicit height.
+pub(crate) fn sized_node(id: NodeId, width: Length, height: u16) -> Node<'static> {
+    Node::container(id, width, Length::Fixed(height), Kind::Leaf, &[])
+}
+
 /// A full-width leaf node for a widget.
 pub(crate) fn fill_node(
     widget: &Widget<'_>,
@@ -114,6 +119,31 @@ pub(crate) fn run_layout(
     entries: &mut [LayoutEntry],
 ) -> Result<usize, BuildError> {
     layout(root, viewport, Insets::ZERO, cache, entries).map_err(BuildError::Layout)
+}
+
+/// A fixed-height crown at the top of the panel.
+pub(crate) fn crown<'a>(id: NodeId, children: &'a [Node<'a>], theme: &Theme) -> Node<'a> {
+    Node::container(
+        id,
+        Length::Fill(1),
+        Length::Fixed(theme.shape.vertical_inset()),
+        Kind::Stack {
+            align: Align::Center,
+        },
+        children,
+    )
+    .with_padding(theme.shape.crown_insets())
+}
+
+/// Padding for content below the crown.
+pub(crate) fn content_padding(theme: &Theme) -> Insets {
+    let shape = theme.shape;
+    Insets::new(
+        0,
+        shape.content_inset,
+        shape.bottom_inset(),
+        shape.content_inset,
+    )
 }
 
 /// A flexible spacer.

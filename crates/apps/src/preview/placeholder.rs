@@ -1,21 +1,19 @@
 //! Placeholder app screens reached from the preview drawer.
 
 use ui::{
-    Align, EmptyStateProps, IconButtonProps, IconId, Insets, LabelProps, Length, TextAlign,
-    TextRole, Widget, WidgetKind,
+    Align, EmptyStateProps, IconId, LabelProps, Length, TextAlign, TextRole, Widget, WidgetKind,
 };
 
-use crate::view::{background, column, fill_node, fit_node, leaf, row, BuildError, Builder};
+use crate::view::{
+    background, column, content_padding, crown, fill_node, leaf, spacer, stack, BuildError, Builder,
+};
 
 const BG_ID: u16 = 400;
-const BACK_ID: u16 = 401;
 const TITLE_ID: u16 = 402;
 const EMPTY_ID: u16 = 403;
-
-/// Whether `id` is the placeholder back control.
-pub const fn is_back(id: u16) -> bool {
-    id == BACK_ID
-}
+const CROWN_ID: u16 = 406;
+const CONTENT_ID: u16 = 407;
+const BODY_ID: u16 = 410;
 
 pub(super) fn build<'a>(
     title: &'static str,
@@ -23,19 +21,12 @@ pub(super) fn build<'a>(
     view: &mut Builder<'_, 'a>,
 ) -> Result<usize, BuildError> {
     let theme = view.theme;
-    let back = Widget::new(
-        BACK_ID,
-        WidgetKind::IconButton(IconButtonProps {
-            icon: IconId::CaretLeft,
-            label: "Back",
-        }),
-    );
     let heading = Widget::new(
         TITLE_ID,
         WidgetKind::Label(LabelProps {
             text: title,
-            role: TextRole::Label,
-            align: TextAlign::Start,
+            role: TextRole::Title,
+            align: TextAlign::Center,
             icon: None,
         }),
     );
@@ -44,31 +35,31 @@ pub(super) fn build<'a>(
         WidgetKind::EmptyState(EmptyStateProps {
             icon,
             title,
-            body: "Demo only. No backend yet.",
+            body: "Swipe from left to go back.",
         }),
     );
-    let content_width = view.viewport.width.saturating_sub(48);
-    let back_node = fit_node(&back, theme, view.cache);
+    let content_width = view
+        .viewport
+        .width
+        .saturating_sub(theme.shape.crown_inset * 2);
     let heading_node = fill_node(&heading, theme, view.cache, content_width);
+    let empty_node = leaf(EMPTY_ID, Length::Fill(1), Length::Fill(1));
     view.push(background(BG_ID))?;
-    view.push(back)?;
     view.push(heading)?;
     view.push(empty)?;
 
-    let header_children = [back_node, heading_node];
-    let header = row(404, &header_children, theme.spacing.sm, Align::Center);
-    let content_children = [header, leaf(EMPTY_ID, Length::Fill(1), Length::Fill(1))];
-    let content = column(405, &content_children, theme.spacing.sm, Align::Start)
-        .with_padding(Insets::symmetric(16, 12));
-    let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), content];
-    let root = ui::Node::container(
-        0,
-        Length::Fill(1),
-        Length::Fill(1),
-        ui::Kind::Stack {
-            align: Align::Start,
-        },
-        &root_children,
-    );
+    let crown_children = [heading_node];
+    let crown_node = crown(CROWN_ID, &crown_children, theme);
+    let content_children = [
+        spacer(408, Length::Fill(1), Length::Fill(1)),
+        empty_node,
+        spacer(409, Length::Fill(1), Length::Fill(1)),
+    ];
+    let content = column(CONTENT_ID, &content_children, 0, Align::Center)
+        .with_padding(content_padding(theme));
+    let body_children = [crown_node, content];
+    let body = column(BODY_ID, &body_children, 0, Align::Start);
+    let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), body];
+    let root = stack(0, &root_children, Align::Start);
     view.layout(&root)
 }

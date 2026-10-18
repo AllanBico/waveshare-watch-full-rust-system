@@ -1,7 +1,7 @@
 //! Radius, margin, and preview state for the calibration screen.
 
-const DEFAULT_RADIUS: u16 = 64;
-const DEFAULT_MARGIN: u16 = 12;
+use ui::ScreenShape;
+
 const MAX_RADIUS: u16 = 120;
 const MAX_MARGIN: u16 = 48;
 const READOUT_CAPACITY: usize = 64;
@@ -19,13 +19,12 @@ pub(crate) enum Action {
     Clip,
     /// Restore the defaults.
     Reset,
-    /// Leave the calibration screen.
-    Back,
 }
 
 /// Radius, margin, and preview state for the calibration screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CalibrateState {
+    base: ScreenShape,
     radii: [u16; 4],
     margin: u16,
     corner: Option<usize>,
@@ -36,11 +35,12 @@ pub(crate) struct CalibrateState {
 }
 
 impl CalibrateState {
-    /// Creates the calibration state with a deliberately generous radius.
-    pub(crate) fn new() -> Self {
+    /// Creates the calibration state from the production panel shape.
+    pub(crate) fn new(shape: ScreenShape) -> Self {
         let mut state = Self {
-            radii: [DEFAULT_RADIUS; 4],
-            margin: DEFAULT_MARGIN,
+            base: shape,
+            radii: [shape.corner_radius; 4],
+            margin: shape.content_inset,
             corner: None,
             clip_ui: false,
             version: 0,
@@ -111,12 +111,11 @@ impl CalibrateState {
             Action::Corner => self.corner = next_corner(self.corner),
             Action::Clip => self.clip_ui = !self.clip_ui,
             Action::Reset => {
-                self.radii = [DEFAULT_RADIUS; 4];
-                self.margin = DEFAULT_MARGIN;
+                self.radii = [self.base.corner_radius; 4];
+                self.margin = self.base.content_inset;
                 self.corner = None;
                 self.clip_ui = false;
             }
-            Action::Back => return,
         }
         self.version = self.version.wrapping_add(1);
         self.rewrite_readout();

@@ -1,13 +1,14 @@
-//! Watch Home: a light clock, date, battery, and minimal chrome.
+//! Watch Home: a light clock in the center with status in the crown.
 
-use ui::{Align, IconId, Insets, LabelProps, Length, TextAlign, TextRole, Widget, WidgetKind};
+use ui::{Align, IconId, LabelProps, Length, TextAlign, TextRole, Widget, WidgetKind};
 
 use super::{
-    HomeState, BATTERY_ID, BG_ID, BOTTOM_SPACER_ID, CLOCK_ID, DATE_ID, HEADER_ID, HEADER_SPACER_ID,
-    ROOT_ID, TOP_SPACER_ID,
+    HomeState, BATTERY_ID, BG_ID, BOTTOM_SPACER_ID, CLOCK_ID, CONTENT_ID, CROWN_ID, DATE_ID,
+    HEADER_ID, HEADER_SPACER_ID, ROOT_ID, TOP_SPACER_ID,
 };
 use crate::view::{
-    background, column, fill_node, fit_node, leaf, row, spacer, BuildError, Builder,
+    background, column, content_padding, crown, fill_node, fit_node, leaf, row, spacer, BuildError,
+    Builder,
 };
 
 pub(super) fn build<'a>(
@@ -42,7 +43,9 @@ pub(super) fn build<'a>(
         &clock,
         theme,
         view.cache,
-        view.viewport.width.saturating_sub(40),
+        view.viewport
+            .width
+            .saturating_sub(theme.shape.content_inset * 2),
     );
     view.push(background(BG_ID))?;
     view.push(date)?;
@@ -55,15 +58,23 @@ pub(super) fn build<'a>(
         battery_node,
     ];
     let header = row(HEADER_ID, &header_children, theme.spacing.sm, Align::Center);
+    let crown_children = [header];
+    let crown_node = crown(CROWN_ID, &crown_children, theme);
     let content_children = [
-        header,
         spacer(TOP_SPACER_ID, Length::Fill(1), Length::Fill(1)),
         clock_node,
         spacer(BOTTOM_SPACER_ID, Length::Fill(1), Length::Fill(1)),
     ];
-    let content = column(ROOT_ID, &content_children, theme.spacing.sm, Align::Center)
-        .with_padding(Insets::symmetric(20, 16));
-    let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), content];
+    let content = column(
+        CONTENT_ID,
+        &content_children,
+        theme.spacing.sm,
+        Align::Center,
+    )
+    .with_padding(content_padding(theme));
+    let body_children = [crown_node, content];
+    let body = column(ROOT_ID, &body_children, 0, Align::Start);
+    let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), body];
     let root = crate::view::stack(0, &root_children, Align::Start);
     view.layout(&root)
 }

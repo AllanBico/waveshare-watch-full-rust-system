@@ -2,11 +2,11 @@
 
 use common::Region;
 use ui::{
-    paint_damage, paint_widgets, Damage, IconId, LayoutRect, SceneArena, SceneError, SceneNode,
-    Surface, Theme, WidgetArena, WidgetError,
+    paint_damage_shaped, paint_widgets, Damage, IconId, LayoutRect, SceneArena, SceneError,
+    SceneNode, ScreenShape, Surface, Theme, WidgetArena, WidgetError,
 };
 
-use super::{calibrate, drawer, gallery, placeholder, quick, Overlay, Preview, Screen};
+use super::{calibrate, chrome, drawer, gallery, placeholder, quick, Overlay, Preview, Screen};
 use crate::view::{self, BuildError};
 
 /// A preview frame failure.
@@ -94,12 +94,25 @@ impl Preview {
         let calibration = is_calibrate.then_some(&*calibrate);
         let frame = build_scene(&widgets, &merged[..count], calibration, viewport)?;
         let damage = scene.diff(&frame, viewport);
-        paint_damage(surface, &damage, theme.tones.background, |painter, _| {
-            paint_widgets(painter, &widgets, &merged[..count], theme);
-            if is_calibrate {
-                calibrate::paint(painter, calibrate, theme, viewport);
-            }
-        });
+        let clip = if is_calibrate {
+            ScreenShape::NONE
+        } else {
+            theme.shape
+        };
+        paint_damage_shaped(
+            surface,
+            &damage,
+            theme.tones.background,
+            Some(clip),
+            |painter, _| {
+                paint_widgets(painter, &widgets, &merged[..count], theme);
+                if is_calibrate {
+                    calibrate::paint(painter, calibrate, theme, viewport);
+                } else {
+                    chrome::paint(painter, theme, *screen, *overlay, viewport);
+                }
+            },
+        );
         *is_dirty = false;
         Ok(damage)
     }

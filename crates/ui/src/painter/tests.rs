@@ -81,3 +81,20 @@ fn line_draws_every_step() {
     assert_eq!(surface.lit_pixels(), 5);
     assert_eq!(surface.pixel(2, 2), Luma::WHITE);
 }
+
+#[test]
+fn shape_clip_trims_the_corners() {
+    let mut data = vec![0u8; MonoSurface::buffer_len(10, 10)];
+    let mut surface = MonoSurface::new(10, 10, &mut data).unwrap();
+    let mut painter = Painter::new(&mut surface);
+    painter.set_shape(Some(ScreenShape {
+        corner_radius: 5,
+        content_inset: 0,
+        crown_inset: 0,
+    }));
+    painter.fill_rect(Region::full(10, 10), Luma::WHITE);
+    assert_eq!(surface.pixel(0, 0), Luma::BLACK);
+    assert_eq!(surface.pixel(9, 9), Luma::BLACK);
+    assert_eq!(surface.pixel(5, 1), Luma::WHITE);
+    assert_eq!(surface.pixel(5, 5), Luma::WHITE);
+}

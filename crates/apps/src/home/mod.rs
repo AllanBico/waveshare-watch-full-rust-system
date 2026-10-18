@@ -28,6 +28,10 @@ pub(crate) const CLOCK_ID: u16 = 7;
 pub(crate) const TOP_SPACER_ID: u16 = 8;
 /// Bottom flexible spacer.
 pub(crate) const BOTTOM_SPACER_ID: u16 = 9;
+/// Crown container.
+pub(crate) const CROWN_ID: u16 = 10;
+/// Content container below the crown.
+pub(crate) const CONTENT_ID: u16 = 11;
 /// Desk dashboard grid.
 pub(crate) const GRID_ID: u16 = 20;
 /// Desk alarm tile.

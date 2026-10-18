@@ -6,7 +6,12 @@
 use common::Region;
 
 use crate::luma::Luma;
+use crate::shape::ScreenShape;
 use crate::surface::Surface;
+
+mod geometry;
+
+use geometry::{fill_shaped_rows, inside_rounded, offset_axis};
 
 /// Maximum nested clips.
 pub const MAX_CLIP_DEPTH: usize = 8;
@@ -16,6 +21,7 @@ pub struct Painter<'a> {
     surface: &'a mut dyn Surface,
     clips: [Region; MAX_CLIP_DEPTH],
     depth: usize,
+    shape: Option<ScreenShape>,
 }
 
 impl<'a> Painter<'a> {
@@ -26,7 +32,18 @@ impl<'a> Painter<'a> {
             surface,
             clips: [clip; MAX_CLIP_DEPTH],
             depth: 1,
+            shape: None,
         }
+    }
+
+    /// Constrains every draw to the panel silhouette.
+    pub fn set_shape(&mut self, shape: Option<ScreenShape>) {
+        self.shape = shape;
+    }
+
+    /// The active panel silhouette.
+    pub const fn shape(&self) -> Option<ScreenShape> {
+        self.shape
     }
 
     /// The surface width in pixels.
@@ -80,12 +97,41 @@ impl<'a> Painter<'a> {
         if region.is_empty() {
             return;
         }
-        self.surface.fill_rect(region, color);
+        let Some(shape) = self.shape else {
+            self.surface.fill_rect(region, color);
+            return;
+        };
+        let width = self.surface.width();
+        let height = self.surface.height();
+        let radius = shape.corner_radius.min(width.min(height) / 2);
+        let middle_start = region.y.max(radius);
+        let middle_end = region.bottom().min(height.saturating_sub(radius));
+        let top_end = region.bottom().min(middle_start);
+        fill_shaped_rows(self.surface, shape, region, region.y..top_end, color);
+        if middle_start < middle_end {
+            self.surface.fill_rect(
+                Region::new(
+                    region.x,
+                    middle_start,
+                    region.width,
+                    middle_end - middle_start,
+                ),
+                color,
+            );
+        }
+        let bottom_start = region.y.max(middle_end);
+        fill_shaped_rows(
+            self.surface,
+            shape,
+            region,
+            bottom_start..region.bottom(),
+            color,
+        );
     }
 
     /// Sets one pixel, clipped to the active clip.
     pub fn set_pixel(&mut self, x: u16, y: u16, color: Luma) {
-        if self.clip().contains(x, y) {
+        if self.clip().contains(x, y) && self.inside_shape(x, y) {
             self.surface.set_pixel(x, y, color);
         }
     }
@@ -93,7 +139,7 @@ impl<'a> Painter<'a> {
     /// Blends one pixel with 4-bit coverage, clipped to the active clip.
     pub fn blend_pixel(&mut self, x: u16, y: u16, color: Luma, coverage: u8) {
         let coverage = coverage.min(15);
-        if coverage == 0 || !self.clip().contains(x, y) {
+        if coverage == 0 || !self.clip().contains(x, y) || !self.inside_shape(x, y) {
             return;
         }
         if coverage == 15 {
@@ -171,6 +217,32 @@ impl<'a> Painter<'a> {
         }
     }
 
+    /// Draws one quadrant of a one-pixel circle.
+    pub fn arc_quadrant(
+        &mut self,
+        center: (u16, u16),
+        radius: u16,
+        is_right: bool,
+        is_bottom: bool,
+        color: Luma,
+    ) {
+        if radius == 0 {
+            return;
+        }
+        let (center_x, center_y) = center;
+        let squared = u32::from(radius) * u32::from(radius);
+        for offset in 0..=u32::from(radius) {
+            let other = crate::shape::integer_sqrt(squared - offset * offset) as u16;
+            let offset = offset as u16;
+            let x = offset_axis(center_x, offset, is_right);
+            let y = offset_axis(center_y, other, is_bottom);
+            self.set_pixel(x, y, color);
+            let x = offset_axis(center_x, other, is_right);
+            let y = offset_axis(center_y, offset, is_bottom);
+            self.set_pixel(x, y, color);
+        }
+    }
+
     /// Draws a one-pixel line.
     pub fn line(&mut self, x0: u16, y0: u16, x1: u16, y1: u16, color: Luma) {
         let mut x = i32::from(x0);
@@ -198,33 +270,13 @@ impl<'a> Painter<'a> {
             }
         }
     }
-}
 
-fn inside_rounded(region: Region, radius: u16, x: u16, y: u16) -> bool {
-    let left = i32::from(region.x);
-    let top = i32::from(region.y);
-    let right = i32::from(region.right());
-    let bottom = i32::from(region.bottom());
-    let radius = i32::from(radius);
-    let x = i32::from(x);
-    let y = i32::from(y);
-    let center_x = if x < left + radius {
-        left + radius
-    } else if x >= right - radius {
-        right - radius
-    } else {
-        return true;
-    };
-    let center_y = if y < top + radius {
-        top + radius
-    } else if y >= bottom - radius {
-        bottom - radius
-    } else {
-        return true;
-    };
-    let dx = (x * 2 + 1) - center_x * 2;
-    let dy = (y * 2 + 1) - center_y * 2;
-    dx * dx + dy * dy <= (radius * 2) * (radius * 2)
+    fn inside_shape(&self, x: u16, y: u16) -> bool {
+        match self.shape {
+            Some(shape) => shape.contains(x, y, self.surface.width(), self.surface.height()),
+            None => true,
+        }
+    }
 }
 
 #[cfg(test)]

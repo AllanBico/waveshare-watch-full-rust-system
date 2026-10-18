@@ -67,6 +67,7 @@ impl<R: AppRegistry> Shell<R> {
                 self.dispatch(Action::OpenQuickSettings)
             }
             (SwipeOrigin::TopEdge, SwipeDirection::Up) => self.dispatch(Action::CloseQuickSettings),
+            (SwipeOrigin::LeftEdge, SwipeDirection::Right) => self.dispatch(Action::Back),
             _ => Ok(()),
         }
     }

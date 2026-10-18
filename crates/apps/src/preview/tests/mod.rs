@@ -5,6 +5,8 @@ use ui::{GraySurface, MonoSurface, Surface as _, Theme};
 
 use super::*;
 
+mod calibration;
+
 const VIEWPORT: Region = Region::new(0, 0, 410, 502);
 const NOW: Timestamp = Timestamp::from_secs(1_760_000_000);
 
@@ -85,8 +87,7 @@ fn the_drawer_opens_without_a_full_redraw_and_launches_placeholders() {
     preview
         .render(&mut surface, &Theme::WATCH, VIEWPORT)
         .unwrap();
-    let back = hit(&preview, 401);
-    assert!(preview.tap(back.rect.x + 1, back.rect.y + 1, VIEWPORT));
+    assert!(preview.back());
     assert_eq!(preview.screen(), Screen::Home);
 }
 
@@ -138,8 +139,7 @@ fn the_gallery_cycles_pages_and_returns_home() {
     preview
         .render(&mut surface, &Theme::WATCH, VIEWPORT)
         .unwrap();
-    let back = hit(&preview, 301);
-    assert!(preview.tap(back.rect.x + 1, back.rect.y + 1, VIEWPORT));
+    assert!(preview.back());
     assert_eq!(preview.screen(), Screen::Home);
 }
 
@@ -153,6 +153,44 @@ fn desk_home_renders_in_grayscale() {
         .unwrap();
     assert!(damage.is_full());
     assert!(data.iter().any(|&pixel| pixel != 0));
+}
+
+#[test]
+fn preview_paints_only_inside_the_panel_shape() {
+    let mut mono = vec![0u8; MonoSurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
+    let mut watch = watch_surface(&mut mono);
+    let mut watch_preview = preview(Mode::Watch);
+    watch_preview
+        .render(&mut watch, &Theme::WATCH, VIEWPORT)
+        .unwrap();
+    assert_outside_shape(&watch, Theme::WATCH.shape);
+    watch_preview.open_drawer();
+    watch_preview
+        .render(&mut watch, &Theme::WATCH, VIEWPORT)
+        .unwrap();
+    assert_outside_shape(&watch, Theme::WATCH.shape);
+
+    let mut gray = vec![0u8; GraySurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
+    let mut desk = GraySurface::new(VIEWPORT.width, VIEWPORT.height, &mut gray).unwrap();
+    let mut desk_preview = preview(Mode::Desk);
+    desk_preview
+        .render(&mut desk, &Theme::DESK, VIEWPORT)
+        .unwrap();
+    assert_outside_shape(&desk, Theme::DESK.shape);
+}
+
+fn assert_outside_shape(surface: &impl ui::Surface, shape: ui::ScreenShape) {
+    for y in 0..surface.height() {
+        for x in 0..surface.width() {
+            if !shape.contains(x, y, surface.width(), surface.height()) {
+                assert_eq!(
+                    surface.pixel(x, y),
+                    ui::Luma::BLACK,
+                    "lit pixel outside the shape at {x},{y}"
+                );
+            }
+        }
+    }
 }
 
 fn hit(preview: &Preview, id: u16) -> ui::HitTarget {
@@ -181,7 +219,7 @@ fn home_complications_fit_inside_the_panel() {
 }
 
 #[test]
-fn the_drawer_closes_from_its_close_button() {
+fn the_drawer_closes_with_back() {
     let mut data = vec![0u8; MonoSurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
     let mut surface = watch_surface(&mut data);
     let mut preview = preview(Mode::Watch);
@@ -192,8 +230,7 @@ fn the_drawer_closes_from_its_close_button() {
     preview
         .render(&mut surface, &Theme::WATCH, VIEWPORT)
         .unwrap();
-    let close = hit(&preview, 102);
-    assert!(preview.tap(close.rect.x + 1, close.rect.y + 1, VIEWPORT));
+    assert!(preview.back());
     assert_eq!(preview.overlay(), Overlay::None);
 }
 
@@ -213,90 +250,4 @@ fn every_gallery_page_renders_and_keeps_the_next_control() {
         assert!(preview.tap(next.rect.x + 1, next.rect.y + 1, VIEWPORT));
     }
     assert_eq!(preview.screen(), Screen::Gallery);
-}
-
-#[test]
-fn calibration_draws_the_candidate_outline_on_both_surfaces() {
-    let mut mono = vec![0u8; MonoSurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
-    let mut watch = watch_surface(&mut mono);
-    let mut watch_preview = preview(Mode::Watch);
-    watch_preview.screen = Screen::Calibrate;
-    let damage = watch_preview
-        .render(&mut watch, &Theme::WATCH, VIEWPORT)
-        .unwrap();
-    assert!(damage.is_full());
-    assert!(watch.pixel(0, VIEWPORT.height / 2).is_lit());
-    assert!(!watch.pixel(0, 0).is_lit());
-
-    let mut gray = vec![0u8; GraySurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
-    let mut desk = GraySurface::new(VIEWPORT.width, VIEWPORT.height, &mut gray).unwrap();
-    let mut desk_preview = preview(Mode::Desk);
-    desk_preview.screen = Screen::Calibrate;
-    desk_preview
-        .render(&mut desk, &Theme::DESK, VIEWPORT)
-        .unwrap();
-    assert!(gray.iter().any(|&pixel| pixel != 0));
-}
-
-#[test]
-fn calibration_controls_adjust_and_reset_the_shape() {
-    let mut data = vec![0u8; MonoSurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
-    let mut surface = watch_surface(&mut data);
-    let mut preview = preview(Mode::Watch);
-    preview.screen = Screen::Calibrate;
-    preview
-        .render(&mut surface, &Theme::WATCH, VIEWPORT)
-        .unwrap();
-    let initial_radius = preview.calibrate.radii()[0];
-    let initial_margin = preview.calibrate.margin();
-
-    let plus = hit(&preview, calibrate::RADIUS_PLUS_1_ID);
-    assert!(preview.tap(plus.rect.x + 1, plus.rect.y + 1, VIEWPORT));
-    assert_eq!(preview.calibrate.radii()[0], initial_radius + 1);
-    preview
-        .render(&mut surface, &Theme::WATCH, VIEWPORT)
-        .unwrap();
-
-    let corner = hit(&preview, calibrate::CORNER_ID);
-    assert!(preview.tap(corner.rect.x + 1, corner.rect.y + 1, VIEWPORT));
-    assert_eq!(preview.calibrate.corner(), Some(0));
-    preview
-        .render(&mut surface, &Theme::WATCH, VIEWPORT)
-        .unwrap();
-
-    let clip = hit(&preview, calibrate::CLIP_ID);
-    assert!(preview.tap(clip.rect.x + 1, clip.rect.y + 1, VIEWPORT));
-    assert!(preview.calibrate.clip_ui());
-    preview
-        .render(&mut surface, &Theme::WATCH, VIEWPORT)
-        .unwrap();
-
-    let reset = hit(&preview, calibrate::RESET_ID);
-    assert!(preview.tap(reset.rect.x + 1, reset.rect.y + 1, VIEWPORT));
-    assert_eq!(preview.calibrate.radii()[0], initial_radius);
-    assert_eq!(preview.calibrate.margin(), initial_margin);
-    assert_eq!(preview.calibrate.corner(), None);
-    assert!(!preview.calibrate.clip_ui());
-
-    let back = hit(&preview, calibrate::BACK_ID);
-    assert!(preview.tap(back.rect.x + 1, back.rect.y + 1, VIEWPORT));
-    assert_eq!(preview.screen(), Screen::Home);
-}
-
-#[test]
-fn the_drawer_opens_the_calibration_screen() {
-    let mut data = vec![0u8; MonoSurface::buffer_len(VIEWPORT.width, VIEWPORT.height)];
-    let mut surface = watch_surface(&mut data);
-    let mut preview = preview(Mode::Watch);
-    preview
-        .render(&mut surface, &Theme::WATCH, VIEWPORT)
-        .unwrap();
-    preview.open_drawer();
-    preview
-        .render(&mut surface, &Theme::WATCH, VIEWPORT)
-        .unwrap();
-    let calibrate = hit(&preview, drawer::CALIBRATE_ID);
-    assert!(preview.tap(calibrate.rect.x + 1, calibrate.rect.y + 1, VIEWPORT));
-    assert_eq!(preview.screen(), Screen::Calibrate);
-    assert_eq!(preview.overlay(), Overlay::None);
 }

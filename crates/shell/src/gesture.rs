@@ -13,6 +13,8 @@ pub struct GestureConfig {
     pub velocity_px_per_s: u16,
     /// Distance from the top or bottom edge that starts an edge gesture.
     pub edge_margin_px: u16,
+    /// Distance from the left or right edge that starts a side gesture.
+    pub side_edge_margin_px: u16,
     /// Maximum press duration for a tap.
     pub tap_max_ms: u16,
 }
@@ -24,6 +26,7 @@ impl GestureConfig {
         threshold_px: 96,
         velocity_px_per_s: 500,
         edge_margin_px: 32,
+        side_edge_margin_px: 32,
         tap_max_ms: 300,
     };
 }
@@ -41,6 +44,10 @@ pub enum SwipeOrigin {
     TopEdge,
     /// Started inside the bottom edge margin.
     BottomEdge,
+    /// Started in the left edge band.
+    LeftEdge,
+    /// Started in the right edge band.
+    RightEdge,
     /// Started in the content area.
     Content,
 }
@@ -65,9 +72,9 @@ pub struct Swipe {
     pub origin: SwipeOrigin,
     /// The dominant direction.
     pub direction: SwipeDirection,
-    /// Vertical travel in pixels.
+    /// Travel along the swipe axis in pixels.
     pub distance_px: u16,
-    /// Signed vertical velocity in pixels per second.
+    /// Signed velocity along the swipe axis in pixels per second.
     pub velocity_px_per_s: i32,
 }
 
@@ -136,11 +143,17 @@ impl EdgeGesture {
     }
 
     /// Starts tracking a touch.
-    pub fn begin(&mut self, point: TouchPoint, now_ms: u64, viewport_height: u16) {
+    pub fn begin(
+        &mut self,
+        point: TouchPoint,
+        now_ms: u64,
+        viewport_width: u16,
+        viewport_height: u16,
+    ) {
         self.start = point;
         self.last = point;
         self.start_ms = now_ms;
-        self.origin = edge_origin(point.y, viewport_height, self.config.edge_margin_px);
+        self.origin = edge_origin(point, viewport_width, viewport_height, self.config);
         self.phase = GesturePhase::Pressed;
     }
 
@@ -153,7 +166,8 @@ impl EdgeGesture {
         self.last = point;
         let dx = point.x.abs_diff(self.start.x);
         let dy = point.y.abs_diff(self.start.y);
-        if dx > self.config.slop_px && dx > dy {
+        let side_edge = matches!(self.origin, SwipeOrigin::LeftEdge | SwipeOrigin::RightEdge);
+        if dx > self.config.slop_px && dx > dy && !side_edge {
             self.phase = GesturePhase::Cancelled;
         } else if dx > self.config.slop_px || dy > self.config.slop_px {
             self.phase = GesturePhase::Tracking;
@@ -188,8 +202,27 @@ impl EdgeGesture {
                 y: self.last.y,
             };
         }
-        if dy.abs() < dx.abs() {
-            return GestureOutcome::Cancelled;
+        if dx.abs() > dy.abs() {
+            let direction = if dx > 0 {
+                SwipeDirection::Right
+            } else {
+                SwipeDirection::Left
+            };
+            if !side_swipe(self.origin, direction) {
+                return GestureOutcome::Cancelled;
+            }
+            let velocity = velocity(dx, duration_ms);
+            let is_fast = velocity.unsigned_abs() >= u32::from(self.config.velocity_px_per_s);
+            let is_far = dx.unsigned_abs() >= u32::from(self.config.threshold_px);
+            if !is_fast && !is_far {
+                return GestureOutcome::Cancelled;
+            }
+            return GestureOutcome::Swipe(Swipe {
+                origin: self.origin,
+                direction,
+                distance_px: dx.unsigned_abs().min(u32::from(u16::MAX)) as u16,
+                velocity_px_per_s: velocity,
+            });
         }
 
         let velocity = velocity(dy, duration_ms);
@@ -212,14 +245,34 @@ impl EdgeGesture {
     }
 }
 
-fn edge_origin(y: u16, viewport_height: u16, margin: u16) -> SwipeOrigin {
-    if y < margin {
+fn edge_origin(
+    point: TouchPoint,
+    viewport_width: u16,
+    viewport_height: u16,
+    config: GestureConfig,
+) -> SwipeOrigin {
+    let vertical = config.edge_margin_px;
+    let side = config.side_edge_margin_px;
+    let in_side_band = point.y >= vertical && point.y < viewport_height.saturating_sub(vertical);
+    if in_side_band && point.x < side {
+        SwipeOrigin::LeftEdge
+    } else if in_side_band && point.x >= viewport_width.saturating_sub(side) {
+        SwipeOrigin::RightEdge
+    } else if point.y < vertical {
         SwipeOrigin::TopEdge
-    } else if y >= viewport_height.saturating_sub(margin) {
+    } else if point.y >= viewport_height.saturating_sub(vertical) {
         SwipeOrigin::BottomEdge
     } else {
         SwipeOrigin::Content
     }
+}
+
+fn side_swipe(origin: SwipeOrigin, direction: SwipeDirection) -> bool {
+    matches!(
+        (origin, direction),
+        (SwipeOrigin::LeftEdge, SwipeDirection::Right)
+            | (SwipeOrigin::RightEdge, SwipeDirection::Left)
+    )
 }
 
 fn velocity(dy: i32, duration_ms: u64) -> i32 {

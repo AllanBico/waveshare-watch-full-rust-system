@@ -64,14 +64,26 @@ impl Session {
     fn step(&mut self, report: &TouchReport, uptime_ms: u64) {
         let now = Timestamp::from_millis(self.base_now.as_millis().saturating_add(uptime_ms));
         self.preview.update(now, self.battery, self.is_charging);
-        let outcome = self.input.handle(report, uptime_ms, board::LCD_HEIGHT);
+        let outcome = self
+            .input
+            .handle(report, uptime_ms, board::LCD_WIDTH, board::LCD_HEIGHT);
         self.apply(outcome);
     }
 
     fn apply(&mut self, outcome: GestureOutcome) {
-        if self.preview.screen() == Screen::Calibrate
-            && !matches!(outcome, GestureOutcome::Tap { .. })
-        {
+        if self.preview.screen() == Screen::Calibrate {
+            match outcome {
+                GestureOutcome::Tap { x, y } => {
+                    self.preview.tap(x, y, viewport());
+                }
+                GestureOutcome::Swipe(swipe)
+                    if swipe.origin == SwipeOrigin::LeftEdge
+                        && swipe.direction == SwipeDirection::Right =>
+                {
+                    self.preview.back();
+                }
+                _ => {}
+            }
             return;
         }
         match outcome {
@@ -84,6 +96,10 @@ impl Session {
     }
 
     fn swipe(&mut self, swipe: shell::Swipe) {
+        if swipe.origin == SwipeOrigin::LeftEdge && swipe.direction == SwipeDirection::Right {
+            self.preview.back();
+            return;
+        }
         if swipe.direction == SwipeDirection::Down && self.preview.overlay() == Overlay::Drawer {
             self.preview.close_overlay();
             return;

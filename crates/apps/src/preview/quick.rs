@@ -5,7 +5,7 @@ use ui::{
     WidgetKind,
 };
 
-use crate::view::{background, column, fit_node, grid, leaf, node, BuildError, Builder};
+use crate::view::{background, column, crown, fill_node, grid, leaf, node, BuildError, Builder};
 
 /// Quick-settings panel height.
 pub const HEIGHT: u16 = 300;
@@ -14,6 +14,9 @@ const PANEL_ID: u16 = 200;
 const BG_ID: u16 = 201;
 const TITLE_ID: u16 = 202;
 const GRID_ID: u16 = 203;
+const CROWN_ID: u16 = 204;
+const CONTENT_ID: u16 = 205;
+const BODY_ID: u16 = 206;
 
 /// Wi-Fi toggle.
 pub const WIFI_ID: u16 = 210;
@@ -70,34 +73,17 @@ pub(super) fn build<'a>(
     view: &mut Builder<'_, 'a>,
 ) -> Result<usize, BuildError> {
     let theme = view.theme;
-    let title = Widget::new(
-        TITLE_ID,
-        WidgetKind::Label(LabelProps {
-            text: "Quick settings",
-            role: TextRole::Label,
-            align: TextAlign::Start,
-            icon: None,
-        }),
-    );
-    let wifi = toggle(WIFI_ID, "Wi-Fi", state.wifi);
-    let bluetooth = toggle(BLUETOOTH_ID, "BT", state.bluetooth);
-    let dnd = toggle(DND_ID, "DND", state.dnd);
-    let sync = toggle(SYNC_ID, "Sync", state.sync);
-    let brightness = Widget::new(
-        BRIGHTNESS_ID,
-        WidgetKind::Slider(SliderProps {
-            value: state.brightness.min(100),
-            label: "Brightness",
-        }),
-    );
-
-    let content_width = view.viewport.width.saturating_sub(48);
+    let content_width = view
+        .viewport
+        .width
+        .saturating_sub(theme.shape.content_inset * 2);
     let cell = content_width.saturating_sub(theme.spacing.sm) / 2;
-    let title_node = fit_node(&title, theme, view.cache);
-    let wifi_node = node(&wifi, theme, view.cache, Length::Fill(1), cell);
-    let bluetooth_node = node(&bluetooth, theme, view.cache, Length::Fill(1), cell);
-    let dnd_node = node(&dnd, theme, view.cache, Length::Fill(1), cell);
-    let sync_node = node(&sync, theme, view.cache, Length::Fill(1), cell);
+    let title = title();
+    let toggles = toggles(state);
+    let brightness = brightness(state);
+    let title_node = fill_node(&title, theme, view.cache, content_width);
+    let toggle_nodes =
+        toggles.map(|widget| node(&widget, theme, view.cache, Length::Fill(1), cell));
     let brightness_node = node(
         &brightness,
         theme,
@@ -105,23 +91,49 @@ pub(super) fn build<'a>(
         Length::Fill(1),
         content_width,
     );
+
     view.push(background(BG_ID))?;
-    for widget in [title, wifi, bluetooth, dnd, sync, brightness] {
+    view.push(title)?;
+    for widget in toggles {
         view.push(widget)?;
     }
+    view.push(brightness)?;
 
-    let grid_children = [wifi_node, bluetooth_node, dnd_node, sync_node];
-    let toggles = grid(
+    let crown_children = [title_node];
+    let crown_node = crown(CROWN_ID, &crown_children, theme);
+    let toggles_grid = grid(
         GRID_ID,
-        &grid_children,
+        &toggle_nodes,
         2,
         theme.spacing.md,
         theme.spacing.md,
     );
-    let content_children = [title_node, toggles, brightness_node];
-    let content = column(207, &content_children, theme.spacing.sm, Align::Start)
-        .with_padding(Insets::symmetric(16, 12));
-    let panel_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), content];
+    layout_panel(view, crown_node, toggles_grid, brightness_node)
+}
+
+fn layout_panel<'a, 'n>(
+    view: &mut Builder<'_, 'a>,
+    crown_node: ui::Node<'n>,
+    toggles: ui::Node<'n>,
+    brightness: ui::Node<'n>,
+) -> Result<usize, BuildError> {
+    let theme = view.theme;
+    let content_children = [toggles, brightness];
+    let content = column(
+        CONTENT_ID,
+        &content_children,
+        theme.spacing.sm,
+        Align::Start,
+    )
+    .with_padding(Insets::new(
+        0,
+        theme.shape.content_inset,
+        theme.shape.content_inset,
+        theme.shape.content_inset,
+    ));
+    let body_children = [crown_node, content];
+    let body = column(BODY_ID, &body_children, 0, Align::Start);
+    let panel_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), body];
     let panel = ui::Node::container(
         PANEL_ID,
         Length::Fill(1),
@@ -144,6 +156,37 @@ pub(super) fn build<'a>(
     view.layout(&root)
 }
 
-fn toggle<'a>(id: u16, label: &'a str, checked: bool) -> Widget<'a> {
+fn title() -> Widget<'static> {
+    Widget::new(
+        TITLE_ID,
+        WidgetKind::Label(LabelProps {
+            text: "Quick settings",
+            role: TextRole::Title,
+            align: TextAlign::Center,
+            icon: None,
+        }),
+    )
+}
+
+fn toggles(state: &QuickState) -> [Widget<'static>; 4] {
+    [
+        toggle(WIFI_ID, "Wi-Fi", state.wifi),
+        toggle(BLUETOOTH_ID, "BT", state.bluetooth),
+        toggle(DND_ID, "DND", state.dnd),
+        toggle(SYNC_ID, "Sync", state.sync),
+    ]
+}
+
+fn brightness(state: &QuickState) -> Widget<'static> {
+    Widget::new(
+        BRIGHTNESS_ID,
+        WidgetKind::Slider(SliderProps {
+            value: state.brightness.min(100),
+            label: "Brightness",
+        }),
+    )
+}
+
+fn toggle(id: u16, label: &'static str, checked: bool) -> Widget<'static> {
     Widget::new(id, WidgetKind::Toggle(ToggleProps { checked, label }))
 }

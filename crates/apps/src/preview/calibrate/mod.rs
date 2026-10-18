@@ -10,19 +10,19 @@ pub(super) use state::{Action, CalibrateState};
 
 use common::Region;
 use ui::{
-    Align, ButtonProps, IconButtonProps, IconId, Insets, Kind, LabelProps, Length, Node, Painter,
-    TextAlign, TextRole, Theme, Widget, WidgetKind,
+    Align, ButtonProps, Kind, LabelProps, Length, Node, Painter, TextAlign, TextRole, Theme,
+    Widget, WidgetKind,
 };
 
 use crate::view::{
-    background, column, fill_node, fit_node, leaf, row, spacer, stack, BuildError, Builder,
+    background, column, content_padding, crown, fill_node, leaf, row, spacer, stack, BuildError,
+    Builder,
 };
 
 /// Scene id used to damage the shape when it changes.
 pub(super) const SCENE_ID: u16 = 600;
 
 const BG_ID: u16 = 500;
-pub(super) const BACK_ID: u16 = 501;
 const TITLE_ID: u16 = 502;
 const READOUT_ID: u16 = 503;
 
@@ -39,17 +39,15 @@ pub(super) const CLIP_ID: u16 = 519;
 pub(super) const RESET_ID: u16 = 520;
 const MODE_LABEL_ID: u16 = 521;
 
-const HEADER_ID: u16 = 530;
 const RADIUS_ROW_ID: u16 = 531;
 const MARGIN_ROW_ID: u16 = 532;
 const MODE_ROW_ID: u16 = 533;
 const CONTENT_ID: u16 = 534;
 const TOP_SPACER_ID: u16 = 535;
 const BOTTOM_SPACER_ID: u16 = 536;
+const CROWN_ID: u16 = 537;
 const ROOT_ID: u16 = 0;
 
-const PADDING_X: u16 = 32;
-const PADDING_Y: u16 = 16;
 const SMALL_STEP: i16 = 1;
 const LARGE_STEP: i16 = 5;
 const OUTLINE_THICKNESS: u16 = 2;
@@ -71,7 +69,6 @@ pub(super) const fn action(id: u16) -> Option<Action> {
         CORNER_ID => Some(Action::Corner),
         CLIP_ID => Some(Action::Clip),
         RESET_ID => Some(Action::Reset),
-        BACK_ID => Some(Action::Back),
         _ => None,
     }
 }
@@ -82,27 +79,41 @@ pub(super) fn build<'a>(
     view: &mut Builder<'_, 'a>,
 ) -> Result<usize, BuildError> {
     let theme = view.theme;
-    let content_width = view.viewport.width.saturating_sub(PADDING_X * 2);
-    let readout = label(READOUT_ID, state.readout(), TextRole::Caption);
-    let mode_label = label(MODE_LABEL_ID, "Corner / Clip", TextRole::Caption);
+    let content_width = view
+        .viewport
+        .width
+        .saturating_sub(theme.shape.content_inset * 2);
+    let title = label(TITLE_ID, "Calibration", TextRole::Title, TextAlign::Center);
+    let readout = label(
+        READOUT_ID,
+        state.readout(),
+        TextRole::Caption,
+        TextAlign::Start,
+    );
+    let mode_label = label(
+        MODE_LABEL_ID,
+        "Corner / Clip",
+        TextRole::Caption,
+        TextAlign::Start,
+    );
+    let title_node = fill_node(&title, theme, view.cache, content_width);
     let readout_node = fill_node(&readout, theme, view.cache, content_width);
     let mode_label_node = fill_node(&mode_label, theme, view.cache, content_width);
 
     view.push(background(BG_ID))?;
-    view.push(readout)?;
-    view.push(mode_label)?;
+    for widget in [title, readout, mode_label] {
+        view.push(widget)?;
+    }
 
-    let mut header_nodes = [EMPTY_NODE; 2];
     let mut radius_nodes = [EMPTY_NODE; 4];
     let mut margin_nodes = [EMPTY_NODE; 4];
     let mut mode_nodes = [EMPTY_NODE; 3];
-    let header = header_row(view, &mut header_nodes, content_width)?;
     let radius_row = radius_row(view, &mut radius_nodes, content_width)?;
     let margin_row = margin_row(view, &mut margin_nodes, content_width)?;
     let mode_row = mode_row(state, view, &mut mode_nodes, content_width)?;
 
     let parts = Parts {
-        header,
+        title: title_node,
         readout: readout_node,
         radius: radius_row,
         margin: margin_row,
@@ -113,7 +124,7 @@ pub(super) fn build<'a>(
 }
 
 struct Parts<'n> {
-    header: Node<'n>,
+    title: Node<'n>,
     readout: Node<'n>,
     radius: Node<'n>,
     margin: Node<'n>,
@@ -123,8 +134,9 @@ struct Parts<'n> {
 
 fn layout_root<'a, 'n>(view: &mut Builder<'_, 'a>, parts: &Parts<'n>) -> Result<usize, BuildError> {
     let theme = view.theme;
+    let crown_children = [parts.title];
+    let crown_node = crown(CROWN_ID, &crown_children, theme);
     let content_children = [
-        parts.header,
         spacer(TOP_SPACER_ID, Length::Fill(1), Length::Fill(1)),
         parts.readout,
         parts.radius,
@@ -139,25 +151,12 @@ fn layout_root<'a, 'n>(view: &mut Builder<'_, 'a>, parts: &Parts<'n>) -> Result<
         theme.spacing.sm,
         Align::Start,
     )
-    .with_padding(Insets::symmetric(PADDING_X, PADDING_Y));
-    let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), content];
-    let root = stack(ROOT_ID, &root_children, Align::Start);
+    .with_padding(content_padding(theme));
+    let body_children = [crown_node, content];
+    let body = column(ROOT_ID, &body_children, 0, Align::Start);
+    let root_children = [leaf(BG_ID, Length::Fill(1), Length::Fill(1)), body];
+    let root = stack(0, &root_children, Align::Start);
     view.layout(&root)
-}
-
-fn header_row<'a, 'n>(
-    view: &mut Builder<'_, 'a>,
-    nodes: &'n mut [Node<'n>; 2],
-    content_width: u16,
-) -> Result<Node<'n>, BuildError> {
-    let theme = view.theme;
-    let back = icon_button(BACK_ID, IconId::CaretLeft, "Back");
-    let title = label(TITLE_ID, "Calibration", TextRole::Title);
-    nodes[0] = fit_node(&back, theme, view.cache);
-    nodes[1] = fill_node(&title, theme, view.cache, content_width);
-    view.push(back)?;
-    view.push(title)?;
-    Ok(row(HEADER_ID, nodes, theme.spacing.sm, Align::Center))
 }
 
 fn radius_row<'a, 'n>(
@@ -250,13 +249,13 @@ pub(super) fn paint(
     );
 }
 
-fn label<'a>(id: u16, text: &'a str, role: TextRole) -> Widget<'a> {
+fn label<'a>(id: u16, text: &'a str, role: TextRole, align: TextAlign) -> Widget<'a> {
     Widget::new(
         id,
         WidgetKind::Label(LabelProps {
             text,
             role,
-            align: TextAlign::Start,
+            align,
             icon: None,
         }),
     )
@@ -270,8 +269,4 @@ fn button(id: u16, text: &'static str) -> Widget<'static> {
             icon: None,
         }),
     )
-}
-
-fn icon_button(id: u16, icon: IconId, label: &'static str) -> Widget<'static> {
-    Widget::new(id, WidgetKind::IconButton(IconButtonProps { icon, label }))
 }

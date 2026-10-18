@@ -18,6 +18,7 @@ mod luma;
 mod painter;
 mod render;
 mod scene;
+mod shape;
 mod surface;
 #[cfg(test)]
 mod test_support;
@@ -34,11 +35,12 @@ pub use layout::{
 };
 pub use luma::Luma;
 pub use painter::{Painter, MAX_CLIP_DEPTH};
-pub use render::{flush, paint_damage, FlushError, Rgb565Source};
+pub use render::{flush, paint_damage, paint_damage_shaped, FlushError, Rgb565Source};
 pub use scene::{
     Damage, FramePacer, RedrawReason, Scene, SceneArena, SceneError, SceneNode, WidgetId,
     DESK_FRAME_INTERVAL_MS, MAX_DAMAGE_RECTS, SCENE_CAPACITY,
 };
+pub use shape::ScreenShape;
 pub use surface::{GraySurface, MonoSurface, Surface, SurfaceError};
 pub use text::{
     draw_text, ellipsis_prefix, font_asset, layout_text, measure_layout, measure_text,

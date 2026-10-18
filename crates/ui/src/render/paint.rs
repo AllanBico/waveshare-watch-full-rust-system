@@ -5,17 +5,32 @@ use common::Region;
 use crate::luma::Luma;
 use crate::painter::Painter;
 use crate::scene::Damage;
+use crate::shape::ScreenShape;
 use crate::surface::Surface;
 
 /// Repaints every dirty region, clipped to that region.
 ///
 /// The callback draws the current scene once per dirty region. The painter is
 /// already clipped, so drawing may safely ignore the damage bounds.
-pub fn paint_damage<F>(surface: &mut dyn Surface, damage: &Damage, background: Luma, mut draw: F)
+pub fn paint_damage<F>(surface: &mut dyn Surface, damage: &Damage, background: Luma, draw: F)
 where
     F: FnMut(&mut Painter<'_>, Region),
 {
+    paint_damage_shaped(surface, damage, background, None, draw);
+}
+
+/// Repaints every dirty region inside the panel silhouette.
+pub fn paint_damage_shaped<F>(
+    surface: &mut dyn Surface,
+    damage: &Damage,
+    background: Luma,
+    shape: Option<ScreenShape>,
+    mut draw: F,
+) where
+    F: FnMut(&mut Painter<'_>, Region),
+{
     let mut painter = Painter::new(surface);
+    painter.set_shape(shape);
     for region in damage.regions() {
         if !painter.push_clip(*region) {
             continue;

@@ -1,6 +1,7 @@
 //! Hardware preview screens: Home, overlays, placeholders, and the gallery.
 
 mod calibrate;
+mod chrome;
 mod drawer;
 mod engine;
 mod gallery;
@@ -63,13 +64,17 @@ pub struct Preview {
 impl Preview {
     /// Creates a preview booted to Home.
     pub fn new(mode: Mode, now: Timestamp, battery: Percent, is_charging: bool) -> Self {
+        let shape = match mode {
+            Mode::Watch => ui::Theme::WATCH.shape,
+            Mode::Desk => ui::Theme::DESK.shape,
+        };
         Self {
             mode,
             screen: Screen::Home,
             overlay: Overlay::None,
             home: HomeState::new(now, battery, is_charging),
             quick: QuickState::new(),
-            calibrate: calibrate::CalibrateState::new(),
+            calibrate: calibrate::CalibrateState::new(shape),
             gallery_page: 0,
             hits: HitRegistry::new(),
             scene: Scene::new(),
@@ -135,6 +140,20 @@ impl Preview {
         }
     }
 
+    /// Navigates back one level, closing an overlay first.
+    pub fn back(&mut self) -> bool {
+        if self.overlay != Overlay::None {
+            self.close_overlay();
+            return true;
+        }
+        if self.screen != Screen::Home {
+            self.screen = Screen::Home;
+            self.is_dirty = true;
+            return true;
+        }
+        false
+    }
+
     /// Handles a tap at screen coordinates.
     pub fn tap(&mut self, x: u16, y: u16, _viewport: common::Region) -> bool {
         if self.dismiss_outside_overlay(y) {
@@ -192,10 +211,6 @@ impl Preview {
                 self.overlay = Overlay::None;
                 true
             }
-            id if drawer::is_close(id) => {
-                self.overlay = Overlay::None;
-                true
-            }
             quick::WIFI_ID => {
                 self.quick.wifi = !self.quick.wifi;
                 true
@@ -213,10 +228,6 @@ impl Preview {
                 true
             }
             quick::BRIGHTNESS_ID => self.set_brightness(id, x),
-            id if gallery::is_back(id) || placeholder::is_back(id) => {
-                self.screen = Screen::Home;
-                true
-            }
             id if gallery::is_next(id) => {
                 self.gallery_page = (self.gallery_page + 1) % PAGES;
                 true
@@ -231,11 +242,7 @@ impl Preview {
         let Some(action) = calibrate::action(id) else {
             return false;
         };
-        if action == calibrate::Action::Back {
-            self.screen = Screen::Home;
-        } else {
-            self.calibrate.apply(action);
-        }
+        self.calibrate.apply(action);
         self.is_dirty = true;
         true
     }
