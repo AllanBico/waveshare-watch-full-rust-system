@@ -76,6 +76,9 @@
 - Theme tokens only. No hardcoded tones, spacing, radii, borders, or motion values.
 - Themes are compiled-in structs, never trait objects or globals. Runtime switch without reboot. A theme switch dirties all visible widgets.
 - Fonts and icons are compiled in. No runtime font, icon, SVG, or theme parsing or loading.
+- All text and icons are drawn through `ui`; apps never embed fonts or raw SVGs.
+- Used icons are selected in `assets/manifest.toml`. The full Phosphor source may stay in `assets/icons/phosphor/`, but unused icons are never compiled.
+- Default faces: Sora for UI, JetBrains Mono for numeric. Numeric glyphs are tabular.
 - Text rendering lives only in `ui`. Text measurement is cached. Clock and data digits are tabular.
 - Assets use 4-bit coverage masks. Watch thresholds to 1-bit; desk blends. Watch icon output is 1-bit, with no animated icons.
 - Report asset sizes at build time; no asset over 64 KB without approval.
@@ -90,6 +93,16 @@
 - Never drive QSPI into an unpowered panel. Sleep the panel before cutting its enable.
 - After panel power loss, re-run full init and re-flush the retained frame.
 - Target 80 MHz QSPI in desk. Keep watch at the lowest rate that meets the wake budget.
+
+## Asset Pipeline
+- `assets/manifest.toml` is the only list of compiled fonts and icons.
+- `tools/assetgen` is host-only. It must never enter the firmware dependency graph.
+- Use `tools/gen-assets.sh` to regenerate and `tools/gen-assets.sh --check` to verify. The wrapper pins the host target and stable toolchain.
+- Source assets live in `assets/`; generated masks live in `crates/ui/assets/` and generated Rust in `crates/ui/src/assets/`. Both are committed.
+- Never hand-edit generated assets. Change the source or manifest, regenerate, and commit both.
+- Generated asset sources are excluded from rustfmt by `rustfmt.toml`. Do not reformat them.
+- Fonts are static OFL TTFs; icons are Phosphor SVGs. No runtime asset parsing or loading.
+- Split or subset an asset instead of exceeding the 64 KB per-file limit.
 
 ## Storage Rules
 - TicKV as KV engine. Custom time-series on top.
@@ -138,6 +151,8 @@
 - No feature ships without a way to verify it.
 - Every mode-switch transition has a test.
 - UI changes require golden-frame tests for both watch and desk.
+- Font and icon changes require a text/icon golden frame.
+- Asset changes require `tools/gen-assets.sh --check`.
 - Damage-rect behavior is tested for move, insert, remove, and theme switch.
 - Watch UI must pass the 5% lit-pixel budget.
 
@@ -237,6 +252,7 @@
 - Does this assume hardware state?
 - No hardcoded values.
 - No unsafe without justification.
+- Asset check passes. Generated assets are not hand-edited.
 - Errors handled. No silent failures.
 - Comments explain why. Public items documented.
 - Tests pass. Clippy clean. Rustfmt clean.
@@ -250,6 +266,7 @@
 - One session per phase. Start a fresh session or compact at phase boundaries.
 - Do not re-read `AGENTS.MD`, `GUIDE.MD`, or `roadmap.md` in full. Grep the section you need.
 - Never search `target/`, `/tmp`, or `~/.cargo/registry` broadly. Scope every search to the relevant source or docs directory.
+- Do not inspect or edit generated asset trees. Use `assets/manifest.toml` and `tools/gen-assets.sh`.
 
 ## Commit Rules
 - Do not commit to git. Suggest commit messages only.
