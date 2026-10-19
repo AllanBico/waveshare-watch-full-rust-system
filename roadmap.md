@@ -785,3 +785,8 @@ and sleeps correctly after desk use.
 - Sync tenth because it needs storage and voice.
 - AI eleventh because it needs voice and sync.
 - Polish last because it needs everything.
+
+
+## CPU
+- CPU0 (PRO_CPU) — the one running everything today: boot, UI, shell, touch, display flush, logs.
+- CPU1 (APP_CPU) — parked by the bootloader and never unparked in this firmware. esp_rtos::start() only brings up the scheduler on CPU0; starting CPU1 needs an explicit start_second_core with its own software interrupt, CPU_CTRL, and static stack. We never call it, so it sits idle/parked.
