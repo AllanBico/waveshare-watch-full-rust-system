@@ -1,8 +1,8 @@
 //! Firmware-owned app registry.
 //!
-//! Phase 7.5 registers Home and Settings in both modes, plus the drawer and
-//! the blank quick-settings overlay. The watch app set stays minimal; the desk
-//! registry diverges in Phase 8.3.
+//! Registers Home, Settings, and Logs in both modes, plus the drawer and the
+//! blank quick-settings overlay. The registry stays shared until an app needs
+//! to be mode-exclusive.
 
 use apps::{Drawer, Home, LogsApp, QuickSettings, SettingsApp, LOGS_APP_ID, SETTINGS_APP_ID};
 use common::{Mode, Percent, Timestamp};

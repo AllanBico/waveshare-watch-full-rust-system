@@ -67,12 +67,6 @@ pub fn init_touch(bus: Bus, reset: GPIO9<'static>, log: bool) -> Touch {
             println!("[tp] init failed: {}", error);
         }
     }
-    if log {
-        match touch.read_chip_id() {
-            Ok(id) => println!("[tp] FT3168 id 0x{:02X}", id),
-            Err(_) => println!("[tp] FT3168 id unreadable"),
-        }
-    }
     touch
 }
 
@@ -87,13 +81,5 @@ pub fn init_imu(imu: &mut Imu, log: bool) -> Option<u16> {
             Some(error.to_common().code())
         }
     };
-    if log {
-        match (imu.read_chip_id().ok(), imu.read_revision().ok()) {
-            (Some(id), Some(revision)) => {
-                println!("[imu] QMI8658 id 0x{:02X} rev 0x{:02X}", id, revision)
-            }
-            _ => println!("[imu] identity unreadable"),
-        }
-    }
     error
 }

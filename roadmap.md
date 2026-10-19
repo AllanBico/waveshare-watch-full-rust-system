@@ -362,8 +362,7 @@ switch, watch under 5% lit pixels, desk 30 fps budget, no full flush after boot.
 live mode switching. Preview leaves the build. No mode-specific UI yet.
 
 ### 6.1 Preview Retirement & First Light
-- Tag the preview source `preview-reference`; keep it as reference, out of the
-  build.
+- Tag the preview source as a reference; keep it out of the build.
 - Remove the preview module from the firmware build and boot path.
 - Remove `Preview` from the `apps` compiled API; keep `home` and `format`.
 - Drop the simulator: remove the `simulator` feature, the `.cargo/config.toml`
@@ -565,19 +564,20 @@ watch behavior is unchanged.
 apply immediately.
 
 ### 8.5 Preview Cleanup
-- Retire the last preview-derived reference usage.
-- Delete the `preview-reference` tag or branch and remove it from the docs.
+- The retired preview tag is deleted and historical docs no longer name it.
 - Remove bring-up diagnostics that have no product role.
 
 **Test:** The repository contains no preview build path or dead references; the
 docs match reality.
 
 ### 8.6 Desk Gate
-- Full desk UI, graceful switching, settings persistence, and no power saving
-  while on VBUS.
-- Voice, sync, and AI remain out of scope for this phase.
+- Desk slice: Home, drawer with Settings and Logs, blank quick settings,
+  Settings, and Logs.
+- Graceful switching, settings persistence, and no power saving while on VBUS.
+- Voice, sync, AI, animations, and battery stats remain out of scope. Host
+  checks pass; hardware rows live in `docs/desk-gate.md`.
 
-**Test:** The full desk experience works end-to-end on USB; watch still boots
+**Test:** The scoped desk experience works end-to-end on USB; watch still boots
 and sleeps correctly after desk use.
 
 ---

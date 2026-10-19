@@ -5,7 +5,6 @@
 use core::cell::RefCell;
 
 use embassy_time::{Duration, Timer};
-use esp_hal::efuse::Efuse;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::peripherals::GPIO10;
@@ -53,8 +52,6 @@ pub async fn open_bus(
 }
 
 /// Reads the RTC time; seeds a default if the oscillator had stopped.
-///
-/// Serial output is desk-only; watch keeps the retained counters instead.
 pub fn report_time(clock: &mut Pcf85063a<Bus>, log: bool) {
     let default = DateTime::new(2000, 1, 1, 0, 0, 0);
     if let Err(error) = clock.init() {
@@ -63,21 +60,8 @@ pub fn report_time(clock: &mut Pcf85063a<Bus>, log: bool) {
         }
         return;
     }
-    match clock.read_datetime() {
-        Ok(dt) => {
-            if log {
-                print_datetime("time", &dt);
-            }
-        }
-        Err(_) => {
-            if clock.set_datetime(&default).is_ok() {
-                if log {
-                    print_datetime("time set", &default);
-                }
-            } else if log {
-                println!("[rtc] set failed");
-            }
-        }
+    if clock.read_datetime().is_err() && clock.set_datetime(&default).is_err() && log {
+        println!("[rtc] set failed");
     }
 }
 
@@ -88,14 +72,6 @@ pub fn read_timestamp(clock: &mut Pcf85063a<Bus>) -> Timestamp {
         .ok()
         .and_then(|datetime| datetime.to_timestamp())
         .unwrap_or(Timestamp::from_secs(0))
-}
-
-/// Prints a date/time.
-fn print_datetime(label: &str, dt: &DateTime) {
-    println!(
-        "[rtc] {} {:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        label, dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
-    );
 }
 
 /// Maps the SoC wake cause onto a coarse shared wake reason.
@@ -118,27 +94,13 @@ pub async fn halt() -> ! {
     }
 }
 
-/// Prints the silicon facts read at runtime, plus the selected mode and PSRAM.
+/// Reports the selected mode, clock, PSRAM, and reset reason.
 pub fn report_boot(mode: Mode, psram_bytes: usize, log: bool) {
     if !log {
         return;
     }
-    let revision = Efuse::chip_revision();
-    let mac = Efuse::mac_address();
-
-    println!("=== wv2 firmware (Phase 7.2 boot chain) ===");
-    println!(
-        "chip:  {} rev v{}.{}",
-        esp_hal::chip!(),
-        revision / 100,
-        revision % 100
-    );
     println!("cpu:   {} MHz", BOOT_CPU_CLOCK_MHZ);
     println!("mode:  {:?}", mode);
-    println!(
-        "mac:   {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
-    );
     if psram_bytes == 0 {
         println!("psram: disabled");
     } else {
