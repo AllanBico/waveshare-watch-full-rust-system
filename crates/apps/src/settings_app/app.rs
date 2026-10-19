@@ -107,6 +107,7 @@ impl SettingsApp {
         viewport: Region,
     ) -> Result<Damage, RenderError> {
         let Self {
+            mode,
             settings,
             brightness_text,
             brightness_len,
@@ -125,6 +126,7 @@ impl SettingsApp {
             settings,
             brightness,
             sleep,
+            *mode == Mode::Desk,
             theme,
             cache,
             &mut widgets,
@@ -219,6 +221,7 @@ fn build<'a>(
     settings: &'a Settings,
     brightness: &'a str,
     sleep: &'a str,
+    show_theme: bool,
     theme: &Theme,
     cache: &mut TextCache,
     widgets: &mut WidgetArena<'a>,
@@ -227,6 +230,11 @@ fn build<'a>(
 ) -> Result<usize, BuildError> {
     let title = title();
     let rows = rows(settings, brightness, sleep);
+    let row_count = if show_theme {
+        rows.len()
+    } else {
+        rows.len() - 1
+    };
     let title_node = fill_node(&title, theme, cache, viewport.width);
     let row_nodes = rows.map(|row| fill_node(&row, theme, cache, viewport.width));
 
@@ -239,14 +247,19 @@ fn build<'a>(
     };
     builder.push(background(BG_ID))?;
     builder.push(title)?;
-    for row in rows {
-        builder.push(row)?;
+    for row in &rows[..row_count] {
+        builder.push(*row)?;
     }
 
     let crown_children = [title_node];
     let crown_node = crown(CROWN_ID, &crown_children, theme);
-    let content = column(CONTENT_ID, &row_nodes, theme.spacing.xs, ui::Align::Start)
-        .with_padding(content_padding(theme));
+    let content = column(
+        CONTENT_ID,
+        &row_nodes[..row_count],
+        theme.spacing.xs,
+        ui::Align::Start,
+    )
+    .with_padding(content_padding(theme));
     let body_children = [crown_node, content];
     let body = column(BODY_ID, &body_children, 0, ui::Align::Start);
     let root_children = [
@@ -275,9 +288,11 @@ fn text(bytes: &[u8], len: usize) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::super::rows::{BRIGHTNESS_ID, DATE_FORMAT_ID, SLEEP_TIMEOUT_ID, TIME_FORMAT_ID};
+    use super::super::rows::{
+        BRIGHTNESS_ID, DATE_FORMAT_ID, SLEEP_TIMEOUT_ID, THEME_ID, TIME_FORMAT_ID,
+    };
     use super::*;
-    use common::{Percent, Region};
+    use common::{Percent, Region, ThemeId};
     use settings::{DateFormat, TimeFormat};
     use ui::{MonoSurface, Theme};
 
@@ -349,5 +364,27 @@ mod tests {
         assert!(ids.contains(&DATE_FORMAT_ID));
         assert!(ids.contains(&BRIGHTNESS_ID));
         assert!(ids.contains(&SLEEP_TIMEOUT_ID));
+        assert!(!ids.contains(&THEME_ID));
+    }
+
+    #[test]
+    fn theme_row_is_desk_only_and_queues_the_next_theme() {
+        let mut desk = SettingsApp::new(Mode::Desk, Settings::new());
+        let mut data = vec![0u8; MonoSurface::buffer_len(410, 502)];
+        let mut surface = MonoSurface::new(410, 502, &mut data).unwrap();
+        desk.render_frame(&mut surface, &Theme::DESK, Region::full(410, 502))
+            .unwrap();
+        let ids: Vec<u16> = desk.hits.targets().iter().map(|target| target.id).collect();
+        assert!(ids.contains(&SLEEP_TIMEOUT_ID));
+        assert!(ids.contains(&THEME_ID));
+
+        assert!(desk.activate(THEME_ID));
+        assert_eq!(
+            desk.pop_intent(),
+            Some((
+                SettingId::DisplayTheme,
+                SettingValue::Theme(ThemeId::HighContrast)
+            ))
+        );
     }
 }

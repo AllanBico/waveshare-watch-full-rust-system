@@ -257,6 +257,17 @@ fn ten_mode_switches_reset_to_home_and_force_a_full_redraw() {
 }
 
 #[test]
+fn invalidate_active_reaches_the_active_app() {
+    let log = Log::default();
+    let mut shell = new_shell(log.clone());
+    shell.start().unwrap();
+    log.borrow_mut().clear();
+
+    shell.invalidate_active();
+    assert_eq!(log.borrow().as_slice(), &[Event::Invalidate(HOME)]);
+}
+
+#[test]
 fn unknown_app_is_rejected_without_route_change() {
     let mut shell = new_shell(Log::default());
     shell.start().unwrap();

@@ -72,7 +72,7 @@
 - Paint only inside damage rects. Never paint or flush what is not visible.
 - No full framebuffer push except boot, mode switch, or theme switch. Use TE-synced partial writes.
 - Watch: no animations, repaint only on state change, under 5% lit pixels.
-- Desk: 60 fps cap, damage-based animation, 80 MHz QSPI target.
+- Desk: 30 fps cap, damage-based animation, 80 MHz QSPI target.
 - Theme tokens only. No hardcoded tones, spacing, radii, borders, or motion values.
 - Themes are compiled-in structs, never trait objects or globals. Runtime switch without reboot. A theme switch dirties all visible widgets.
 - Fonts and icons are compiled in. No runtime font, icon, SVG, or theme parsing or loading.

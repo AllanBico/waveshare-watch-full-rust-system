@@ -232,6 +232,34 @@ mod tests {
     }
 
     #[test]
+    fn two_columns_put_settings_and_logs_side_by_side() {
+        let mut data = vec![0u8; MonoSurface::buffer_len(410, 502)];
+        let mut surface = MonoSurface::new(410, 502, &mut data).unwrap();
+        let mut drawer = Drawer::new(2);
+        drawer
+            .render_frame(&mut surface, &Theme::DESK, Region::full(410, 502))
+            .unwrap();
+
+        let settings = drawer
+            .hits
+            .targets()
+            .iter()
+            .find(|target| target.id == SETTINGS_ID)
+            .copied()
+            .unwrap();
+        let logs = drawer
+            .hits
+            .targets()
+            .iter()
+            .find(|target| target.id == LOGS_ID)
+            .copied()
+            .unwrap();
+        assert_eq!(settings.rect.y, logs.rect.y);
+        assert!(settings.rect.x < logs.rect.x);
+        assert_eq!(settings.rect.width, logs.rect.width);
+    }
+
+    #[test]
     fn drawer_renders_one_tile_and_shell_routes_a_tap() {
         let mut data = vec![0u8; MonoSurface::buffer_len(410, 502)];
         let mut surface = MonoSurface::new(410, 502, &mut data).unwrap();

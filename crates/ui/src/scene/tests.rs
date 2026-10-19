@@ -123,8 +123,8 @@ fn damage_merges_touching_regions_but_keeps_disjoint_ones() {
 fn frame_pacer_caps_animated_frames() {
     let mut pacer = FramePacer::new();
     assert!(pacer.allow(0, true));
-    assert!(!pacer.allow(8, true));
-    assert!(pacer.allow(16, true));
-    assert!(pacer.allow(17, false));
-    assert!(pacer.allow(18, false));
+    assert!(!pacer.allow(16, true));
+    assert!(pacer.allow(33, true));
+    assert!(pacer.allow(34, false));
+    assert!(pacer.allow(35, false));
 }

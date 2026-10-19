@@ -17,7 +17,7 @@ use common::{Event, LogEntry, Mode, Percent, Region, Timestamp, TouchReport};
 use drivers::board;
 use drivers::flash::FlashDevice;
 use drivers::haptics::Motor;
-use settings::{BootPolicy, Settings, SettingsStore};
+use settings::{BootPolicy, Settings, SettingsEvent, SettingsStore};
 use shell::{GestureOutcome, Shell, ShellError};
 
 use crate::boot::{self, VBUS_POLL_PERIOD};
@@ -373,7 +373,10 @@ where
                 println!("[shell] tick failed: {:?}", error);
             }
         }
-        let changed = sync_settings(shell, settings, log);
+        let (changed, theme_changed) = sync_settings(shell, settings, log);
+        if theme_changed {
+            shell.invalidate_active();
+        }
         let is_settings = shell.active_app() == Some(SETTINGS_APP_ID);
         if was_settings && !is_settings {
             commit_settings(settings, battery_mv, log);
@@ -410,11 +413,15 @@ fn sync_settings(
     shell: &mut Shell<Registry>,
     store: &mut SettingsStore<SettingsBackend>,
     log: bool,
-) -> bool {
+) -> (bool, bool) {
     let mut changed = false;
+    let mut theme_changed = false;
     while let Some((id, value)) = shell.registry_mut().pop_setting_intent() {
         match store.set(id, value) {
-            Ok(_) => changed = true,
+            Ok(event) => {
+                changed = true;
+                theme_changed |= matches!(event, SettingsEvent::Theme);
+            }
             Err(error) => {
                 if log {
                     println!("[set] rejected {}: {}", id.label(), error);
@@ -426,7 +433,7 @@ fn sync_settings(
         let mode = shell.mode();
         shell.registry_mut().apply_settings(mode, store.settings());
     }
-    changed
+    (changed, theme_changed)
 }
 
 fn commit_settings(store: &mut SettingsStore<SettingsBackend>, battery_mv: u16, log: bool) {
@@ -500,7 +507,10 @@ where
                 println!("[shell] tick failed: {:?}", error);
             }
         }
-        let changed = sync_settings(shell, settings, log);
+        let (changed, theme_changed) = sync_settings(shell, settings, log);
+        if theme_changed {
+            shell.invalidate_active();
+        }
         let is_settings = shell.active_app() == Some(SETTINGS_APP_ID);
         if was_settings && !is_settings {
             commit_settings(settings, battery_mv, log);

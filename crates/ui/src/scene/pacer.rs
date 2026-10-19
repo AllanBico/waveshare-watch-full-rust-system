@@ -1,9 +1,9 @@
 //! Desk frame pacing.
 
 /// Minimum interval between animated desk frames, in milliseconds.
-pub const DESK_FRAME_INTERVAL_MS: u64 = 16;
+pub const DESK_FRAME_INTERVAL_MS: u64 = 33;
 
-/// Caps animated frames at 60 fps.
+/// Caps animated frames at 30 fps.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FramePacer {
     last_ms: Option<u64>,
@@ -22,7 +22,7 @@ impl FramePacer {
 
     /// Whether a frame may render at `now_ms`.
     ///
-    /// Non-animated modes always pass. Animated modes are capped to 60 fps.
+    /// Non-animated modes always pass. Animated modes are capped to 30 fps.
     pub fn allow(&mut self, now_ms: u64, is_animated: bool) -> bool {
         if !is_animated {
             self.last_ms = Some(now_ms);

@@ -14,39 +14,54 @@ pub(super) const DATE_FORMAT_ID: u16 = ROW_BASE + 1;
 pub(super) const BRIGHTNESS_ID: u16 = ROW_BASE + 2;
 /// Sleep timeout row.
 pub(super) const SLEEP_TIMEOUT_ID: u16 = ROW_BASE + 3;
+/// Theme row, desk only.
+pub(super) const THEME_ID: u16 = ROW_BASE + 4;
 
 const SLEEP_STEPS: [u16; 6] = [5, 10, 15, 30, 60, 120];
+const LIVE: &str = "Live";
+const NEXT_SLEEP: &str = "Next sleep";
 
-/// Builds the four watch settings rows.
+/// Builds the settings rows. The theme row is last and desk-only.
 pub(super) fn rows<'a>(
     settings: &Settings,
     brightness: &'a str,
     sleep: &'a str,
-) -> [Widget<'a>; 4] {
+) -> [Widget<'a>; 5] {
     [
         row(
             TIME_FORMAT_ID,
             "Time format",
+            LIVE,
             IconId::Clock,
             SettingsTrailing::Value(settings.display.time_format.label()),
         ),
         row(
             DATE_FORMAT_ID,
             "Date format",
+            LIVE,
             IconId::List,
             SettingsTrailing::Value(settings.display.date_format.label()),
         ),
         row(
             BRIGHTNESS_ID,
             "Brightness",
+            LIVE,
             IconId::Sun,
             SettingsTrailing::Value(brightness),
         ),
         row(
             SLEEP_TIMEOUT_ID,
             "Sleep timeout",
+            NEXT_SLEEP,
             IconId::Power,
             SettingsTrailing::Value(sleep),
+        ),
+        row(
+            THEME_ID,
+            "Theme",
+            LIVE,
+            IconId::Moon,
+            SettingsTrailing::Value(settings.display.theme.label()),
         ),
     ]
 }
@@ -78,6 +93,10 @@ pub(super) fn next_value(
                 SettingValue::Seconds(next_sleep(current, cap)),
             )
         }
+        THEME_ID => (
+            SettingId::DisplayTheme,
+            SettingValue::Theme(settings.display.theme.next()),
+        ),
         _ => return None,
     };
     Some(change)
@@ -105,12 +124,18 @@ pub(super) fn seconds_text(seconds: u16, out: &mut [u8; 8]) -> &str {
     text(out, len + 1)
 }
 
-fn row<'a>(id: u16, label: &'a str, icon: IconId, trailing: SettingsTrailing<'a>) -> Widget<'a> {
+fn row<'a>(
+    id: u16,
+    label: &'a str,
+    subtitle: &'a str,
+    icon: IconId,
+    trailing: SettingsTrailing<'a>,
+) -> Widget<'a> {
     Widget::new(
         id,
         WidgetKind::SettingsRow(SettingsRowProps {
             title: label,
-            subtitle: "",
+            subtitle,
             icon: Some(icon),
             trailing,
             compact: true,

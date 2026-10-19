@@ -9,7 +9,7 @@ use crate::painter::Painter;
 use crate::text::{draw_text, measure_text, measure_uncached, TextAlign, TextCache};
 use crate::theme::Theme;
 
-use super::paint::{centered_offset, colors, content, frame};
+use super::paint::{centered_offset, colors, frame};
 use super::{checkbox, toggle, Widget, WidgetKind};
 
 const UNBOUNDED_WIDTH: u16 = 240;
@@ -64,7 +64,7 @@ pub(crate) fn measure(
     } else {
         theme.spacing.xs.saturating_add(subtitle.height)
     });
-    let inset = inset(theme);
+    let inset = inset(theme, props);
     Size::new(
         if available == UNBOUNDED {
             UNBOUNDED_WIDTH
@@ -75,12 +75,20 @@ pub(crate) fn measure(
     )
 }
 
-fn inset(theme: &Theme) -> u16 {
+fn padding(props: &SettingsRowProps<'_>, theme: &Theme) -> u16 {
+    if props.compact && !props.subtitle.is_empty() {
+        theme.spacing.xxs
+    } else {
+        theme.spacing.md
+    }
+}
+
+fn inset(theme: &Theme, props: &SettingsRowProps<'_>) -> u16 {
     theme
         .borders
         .thick
         .saturating_add(1)
-        .saturating_add(theme.spacing.md)
+        .saturating_add(padding(props, theme))
         .saturating_mul(2)
 }
 
@@ -91,7 +99,22 @@ pub(crate) fn paint(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
     };
     frame(painter, rect, theme, widget.state, theme.radii.md);
     let colors = colors(theme, widget.state);
-    let region = content(rect, theme, theme.spacing.md);
+    let horizontal = theme
+        .borders
+        .thick
+        .saturating_add(1)
+        .saturating_add(theme.spacing.md);
+    let vertical = theme
+        .borders
+        .thick
+        .saturating_add(1)
+        .saturating_add(padding(props, theme));
+    let region = Region::new(
+        rect.x.saturating_add(horizontal),
+        rect.y.saturating_add(vertical),
+        rect.width.saturating_sub(horizontal.saturating_mul(2)),
+        rect.height.saturating_sub(vertical.saturating_mul(2)),
+    );
     let mut text_region = region;
     if let Some(icon) = props.icon {
         let size = theme.icons.md.min(region.height);

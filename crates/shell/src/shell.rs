@@ -157,6 +157,13 @@ impl<R: AppRegistry> Shell<R> {
         self.status.set_battery(percent, is_charging);
     }
 
+    /// Invalidates the active app so its next frame is a full redraw.
+    pub fn invalidate_active(&mut self) {
+        if let Some(id) = self.active_app() {
+            let _ = self.call_app(id, |app, _| app.invalidate());
+        }
+    }
+
     /// Switches runtime mode, closes the active route, and enters Home.
     pub fn set_mode(&mut self, mode: Mode) -> Result<(), ShellError> {
         if self.mode == mode {

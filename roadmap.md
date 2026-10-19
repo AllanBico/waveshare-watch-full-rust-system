@@ -313,7 +313,7 @@ clip, scroll viewport.
 - Collapse a moving container to one dirty rect.
 - Repair damage inside one framebuffer, clipped to the damage rect.
 - Expand Mono bits and convert Gray8 through a luma LUT.
-- Sync flushes to TE; cap desk at 60 fps.
+- Sync flushes to TE; cap desk at 30 fps.
 - Full redraw only on boot, mode switch, or theme switch.
 
 **Test:** Move, insert, and remove produce expected dirty rects; no full-screen
@@ -352,7 +352,7 @@ and per-component watch pixel budget.
 - Switch theme and mode at runtime without reboot.
 
 **Test:** Boot to Home, drawer and quick-settings gestures, theme switch, mode
-switch, watch under 5% lit pixels, desk 60 fps budget, no full flush after boot.
+switch, watch under 5% lit pixels, desk 30 fps budget, no full flush after boot.
 
 ---
 
@@ -541,21 +541,25 @@ gracefully to watch; no watch power policy is active in desk.
 **Test:** 10 plug/unplug cycles with no crashes, persistent state intact, rails
 correct, and no full flush except on mode or theme switch.
 
-### 8.3 Full UI Port
-- Port the shipping screens from preview inspiration: settings, app drawer,
-  quick settings, overlays, dialogs, toasts, and calibration if it ships.
-- Restore animations, transitions, and desk grayscale rendering.
-- Implement per-mode registry divergence: desk gets the full app set.
+### 8.3 Desk UI Slice
+- Ship the app drawer with Settings and Logs in both modes; desk uses two
+  columns with no placeholder tiles.
+- Keep quick settings truly blank until its controls are designed.
+- Keep the shared registry; mode-exclusive apps are added when they exist.
+- Animation, transitions, calibration, dialogs, and toast polish move to a
+  dedicated later animation phase. The desk animation ceiling is 30 fps.
 
-**Test:** Navigate all apps; animations play; desk holds the 60 fps cap;
-flushes are damage-only; watch behavior is unchanged.
+**Test:** The drawer opens in both modes with both apps; quick settings is
+blank; Settings and Logs render in watch and desk; flushes are damage-only;
+watch behavior is unchanged.
 
 ### 8.4 Settings App
-- Change theme, brightness, battery stats, and logs; persist across reboot.
-- Surface which settings take effect live versus at the next sleep or mode
-  switch.
-- Wire the remaining safe settings; keep diagnostics, clock, and VBUS out of
-  user settings.
+- Change theme (desk only) and brightness; persist across reboot.
+- Keep time/date and sleep timeout; show which settings apply live versus at
+  the next sleep.
+- Applying a theme forces one full redraw.
+- Logs stay in the drawer; battery stats wait for a dedicated screen.
+- Keep diagnostics, clock time, and VBUS out of user settings.
 
 **Test:** Changes persist after reboot; boot policy reflects them; live changes
 apply immediately.
@@ -707,7 +711,7 @@ and sleeps correctly after desk use.
 - No dropped frames.
 - Theme transitions.
 
-**Test:** 60 FPS in desk mode. No visual glitches.
+**Test:** 30 FPS in desk mode. No visual glitches.
 
 ### 12.3 Error Handling
 - Brownout graceful shutdown.
