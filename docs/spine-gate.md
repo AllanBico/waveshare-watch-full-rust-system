@@ -36,7 +36,7 @@ Use this checklist before starting Phase 7. A failed row blocks the phase.
 | Case | Steps | Expected | Result |
 |---|---|---|---|
 | Watch cold boot | Flash, unplug USB, reset on battery | Serial: `cpu: 80 MHz`, `mode: Watch`, `psram: disabled`; panel shows Home; sleeps after the awake budget | pending |
-| Desk cold boot | Flash, keep USB connected, reset | Serial: `mode: Desk`, `psram: 8388608 bytes`, `[boot] policy ...`; panel shows Home; stays awake | pending |
+| Desk cold boot | Flash, keep USB connected, reset | Serial: `cpu: 80 MHz`, `mode: Desk`, `psram: 8388608 bytes`, `[boot] policy ...`; panel shows Home; stays awake | pending |
 | Boot error visibility | Remove the panel or force a display init failure | Serial reports `[lcd] ...`; boot does not silently hang | pending |
 
 ## Live switch matrix
@@ -80,8 +80,9 @@ Settings that are intentionally not wired in this phase: `power_saving`,
 
 ## Known temporary items
 
-- Both modes boot at 80 MHz; the desk may raise clocks in Phase 8.
-- Desk audio is not initialized; it returns in Phase 8.
+- Both modes boot at 80 MHz; raising desk to 240 MHz is a documented Phase 8
+  follow-up, not a gate.
+- Desk audio is not initialized; it is deferred to Phase 9 (voice foundation).
 - PSRAM is initialized lazily on the first desk entry.
 - VBUS insert while asleep relies on motion, button, or alarm wake.
 

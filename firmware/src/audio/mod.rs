@@ -6,7 +6,7 @@
 //! clocks alive during capture, and PA_CTRL is low except during playback.
 
 // The loopback path is parked until voice lands in the shell.
-// TODO(phase-8): remove this allow when the voice pipeline uses capture/playback.
+// TODO(phase-9): remove this allow when the voice pipeline uses capture/playback.
 #![allow(dead_code)]
 
 use alloc::vec::Vec;

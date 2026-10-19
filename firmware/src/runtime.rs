@@ -20,7 +20,8 @@ use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
 use embedded_hal_bus::i2c::RefCellDevice;
 
-/// CPU clock for the shared boot chain. Both modes boot watch-safe.
+/// CPU clock for the shared boot chain. Both modes boot watch-safe at 80 MHz;
+/// raising desk mode to 240 MHz is a documented follow-up.
 pub const BOOT_CPU_CLOCK_MHZ: u32 = 80;
 
 /// Number of PWR button samples used for the boot debounce.

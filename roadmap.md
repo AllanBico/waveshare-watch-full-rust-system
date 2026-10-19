@@ -519,10 +519,10 @@ and a baseline exists.
 no power saving.
 
 ### 8.1 Full Desk Init
-- Desk boot brings up the full peripheral set: PSRAM, touch, and display; audio
-  as available. Radios remain for the sync phase.
-- Raise the CPU to 240 MHz if runtime re-clocking is clean; otherwise document
-  80 MHz with a follow-up.
+- Desk boot brings up PSRAM, touch, and display. Radios remain for the sync
+  phase. Audio is deferred to Phase 9 with the voice foundation.
+- Desk stays at 80 MHz for this phase; runtime re-clocking to 240 MHz is a
+  documented follow-up, not a Phase 8 gate.
 - Desk stays awake while VBUS is present; no watch power policies apply.
 
 **Test:** Plug USB and get a desk boot with full init; unplug and switch

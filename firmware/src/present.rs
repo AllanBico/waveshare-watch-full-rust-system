@@ -3,7 +3,7 @@
 
 use core::fmt::Debug;
 
-use alloc::vec;
+use alloc::vec::Vec;
 use hal::Display;
 use static_cell::StaticCell;
 
@@ -19,6 +19,8 @@ const STAGING_BYTES: usize = 4096;
 
 /// The watch framebuffer lives in internal SRAM.
 const WATCH_FRAMEBUFFER_BYTES: usize = MonoSurface::buffer_len(board::LCD_WIDTH, board::LCD_HEIGHT);
+/// The desk framebuffer is allocated once from PSRAM on the first desk frame.
+const DESK_FRAMEBUFFER_BYTES: usize = GraySurface::buffer_len(board::LCD_WIDTH, board::LCD_HEIGHT);
 
 static WATCH_FRAMEBUFFER: StaticCell<[u8; WATCH_FRAMEBUFFER_BYTES]> = StaticCell::new();
 static STAGING: StaticCell<[u8; STAGING_BYTES]> = StaticCell::new();
@@ -38,6 +40,8 @@ pub enum RenderError {
 pub struct Workspace {
     /// Watch framebuffer in internal SRAM.
     framebuffer: &'static mut [u8; WATCH_FRAMEBUFFER_BYTES],
+    /// Desk framebuffer in PSRAM, allocated on the first desk frame and reused.
+    desk: Vec<u8>,
     /// Chunked flush staging.
     staging: &'static mut [u8; STAGING_BYTES],
 }
@@ -46,6 +50,7 @@ pub struct Workspace {
 pub fn workspace() -> Workspace {
     Workspace {
         framebuffer: WATCH_FRAMEBUFFER.init([0; WATCH_FRAMEBUFFER_BYTES]),
+        desk: Vec::new(),
         staging: STAGING.init([0; STAGING_BYTES]),
     }
 }
@@ -99,8 +104,15 @@ fn render_gray<D: Display>(
 where
     D::Error: Debug,
 {
-    let mut data = vec![0u8; GraySurface::buffer_len(board::LCD_WIDTH, board::LCD_HEIGHT)];
-    let Ok(mut surface) = GraySurface::new(board::LCD_WIDTH, board::LCD_HEIGHT, &mut data) else {
+    let Workspace { desk, staging, .. } = workspace;
+    if desk.len() < DESK_FRAMEBUFFER_BYTES {
+        let missing = DESK_FRAMEBUFFER_BYTES - desk.len();
+        if desk.try_reserve_exact(missing).is_err() {
+            return Err(RenderError::Surface);
+        }
+        desk.resize(DESK_FRAMEBUFFER_BYTES, 0);
+    }
+    let Ok(mut surface) = GraySurface::new(board::LCD_WIDTH, board::LCD_HEIGHT, desk) else {
         return Err(RenderError::Surface);
     };
     let damage = shell
@@ -109,5 +121,5 @@ where
     if damage.is_empty() {
         return Ok(());
     }
-    flush(display, &surface, &damage, workspace.staging).map_err(|_| RenderError::Flush)
+    flush(display, &surface, &damage, &mut staging[..]).map_err(|_| RenderError::Flush)
 }
