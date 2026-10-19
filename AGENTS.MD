@@ -176,9 +176,9 @@
 
 ## Feature Flag Rules
 - There are no `watch` or `desk` feature flags. Mode is runtime, not compile-time.
-- Only genuine variants are features: `simulator`, `logging`, `trace`.
-- The simulator is a host tool and test target, not a watch or desk mode.
-- The simulator must never compile hardware drivers.
+- Only genuine variants are features: `logging`, `trace`.
+- The `simulator` feature is retired in Phase 6.1. There is no desktop
+  simulator target; host render and lifecycle tests cover the UI.
 - Feature flags must be documented in the workspace `Cargo.toml`.
 
 ## File Size

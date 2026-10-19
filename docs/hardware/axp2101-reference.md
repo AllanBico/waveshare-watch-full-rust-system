@@ -176,9 +176,10 @@ Other wiring observed on the sheet:
   (AXP ignores TS). Follow that default in 1.1; revisit for charge safety.
 - AXP IRQ (pin 38) shares a net labelled `EXIO5` / `AXP IRQ`. Confirm whether it
   reaches a direct ESP32 GPIO or an I/O expander. Phase 1.4 polls VBUS, so not
-  blocking for power bring-up.
+  blocking for power bring-up; the Phase 6.5 gate resolves whether it can wake
+  the SoC on USB insert.
 - PWROK (pin 29) ties to the ESP32 `CHIP_PU`. The AXP can gate ESP32 power/reset —
-  relevant to `power_off()` and brownout handling (Phases 1.2, 11.3).
+  relevant to `power_off()` and brownout handling (Phases 1.2, 12.3).
 
 **Consequence for the rail API:** the board uses DCDC, ALDO, **BLDO**, and
 **CPUSLDO**, plus the RTC rail. The "families we use" set must include those, not

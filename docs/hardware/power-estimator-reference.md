@@ -27,4 +27,4 @@ the render policy and rails), as pure host-testable math.
   for payload"; confirm BLE is actually used before budgeting it.
 - No vibration motor may exist on this board (see `board-pins.md`); do not budget
   power for it until confirmed.
-- This is a Phase 1.2+ / Phase 11 concern, not part of the 1.1 driver.
+- This is a Phase 1.2+ / Phase 12 concern, not part of the 1.1 driver.

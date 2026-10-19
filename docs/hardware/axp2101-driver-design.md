@@ -123,4 +123,5 @@ burst atomicity, rail encode/decode + error paths, IRQ mask, error mapping.
 - Battery NTC on TS; follow vendor default (TS measurement disabled) in 1.1.
 - RTCLDO powers the RTC through sleep; `power` leaves it alone.
 - PWROK → ESP32 `CHIP_PU`; enables a real power-off path.
-- AXP IRQ net (`EXIO5`) may route through an expander; 1.4 polls VBUS, so fine.
+- AXP IRQ net (`EXIO5`) may route through an expander; Phase 1.4 polls VBUS. The
+  Phase 6.5 gate decides whether it can wake the SoC on USB insert.

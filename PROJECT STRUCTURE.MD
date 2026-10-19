@@ -18,12 +18,11 @@ wv2/
 │   ├── logging/            # ring buffer, wake reason tracking
 │   ├── settings/           # runtime settings schema, defaults, persistence
 │   └── common/             # shared types, errors, events
-├── firmware/               # ONE crate, ONE binary; main branches to watch_init/desk_init
+├── firmware/               # ONE crate, ONE binary; one boot chain with watch/desk hooks
 ├── drivers/                # chip drivers (CO5300, FT3168, QMI8658, AXP2101, PCF85063A, ES8311); board.rs pin map
 ├── vps/                    # companion Rust server (separate binary, separate rules)
 ├── assets/                 # fonts, icons, wake word model weights
-├── tools/                  # host-side utilities (log parser, sim)
-└── simulator/              # desktop UI simulator
+└── tools/                  # host-side utilities (log parser, asset generation, host tests)
 ```
 
 ### 🔌 Hardware Target
@@ -49,9 +48,9 @@ wv2/
 
 ### 🔀 One Binary, Two Modes
 
-`firmware/` builds a single binary. `main` reads VBUS from the AXP2101 and calls either `watch_init` or `desk_init`. `watch_init` brings up only the minimum peripherals and enters the sleep loop; it never starts voice, sync, or radios. `desk_init` brings up the full set. Mode is runtime state owned by `power`, never a compile-time feature.
+`firmware/` builds a single binary. `main` reads VBUS from the AXP2101, selects watch or desk, and runs one boot chain with mode-specific hooks. Watch brings up only the minimum peripherals and enters the sleep loop; it never starts voice, sync, or radios. Desk brings up the full set. Mode is runtime state owned by `power`, never a compile-time feature or a second boot implementation.
 
-Until Phase 0.2, `firmware` is a `no_std` library exposing `watch_init` and `desk_init`. Linking a bare-metal binary needs the Xtensa GCC linker and `esp-hal`, both introduced with hardware bring-up.
+`watch_init` and `desk_init` are hooks on the shared spine, not duplicated entry points. The single binary owns all initialization; the mode state machine selects the hooks. Linking a bare-metal binary needs the Xtensa GCC linker and `esp-hal`, both already introduced with hardware bring-up.
 
 ### 🎯 Purpose of Each Crate
 
@@ -89,7 +88,7 @@ Wake word, audio capture, PCM streaming, VPS client, TTS playback. The wake word
 VPS sync protocol, checkpoint tracking, conflict resolution. Depends on `storage` to read unsynced records and the network layer to transmit. Only active in desk mode.
 
 **`firmware`**
-The single entry point and binary. Reads VBUS, dispatches to `watch_init` or `desk_init`, and runs the mode state machine. It owns initialization; every other crate is a component it wires together.
+The single entry point and binary. Reads VBUS, selects watch or desk, runs one boot chain with mode hooks, and owns the mode state machine. It owns initialization; every other crate is a component it wires together.
 
 **`vps`**
 The companion Rust service. WebSocket server, LLM agent, tool registry, Opus encode/decode, TTS, endpointing, and sync endpoint. Governed by the server guide, not this one. Free to use C crates.
@@ -120,10 +119,9 @@ A virtual workspace manifest cannot declare `[features]`, so the flags live on t
 default = []
 logging = []      # RAM ring buffer, flush to TicKV
 trace = []        # verbose structured tracing for development
-simulator = []    # desktop UI target; never compiles hardware drivers
 ```
 
-**Note:** There are no `watch` or `desk` features. Mode is runtime state, not a build variant. Features are reserved for genuine build variants only.
+**Note:** There are no `watch` or `desk` features. Mode is runtime state, not a build variant. Features are reserved for genuine build variants only. The `simulator` feature is retired in Phase 6.1; host render and lifecycle tests replace it.
 
 ### 🧪 What This Gives You
 

@@ -45,10 +45,10 @@ There is no mature pure-Rust equivalent of microWakeWord, and TFLite is C, so we
 **Decision: WebSocket over WiFi in desk mode. The watch sends PCM; the VPS does Opus.**
 HTTP is too heavy for streaming; WebSocket gives bidirectional streaming with acceptable latency. There is no pure-Rust Opus encoder, so the watch does not run Opus. It captures PCM (or a simple Rust-side compression) and streams it. The VPS, which is free to use C, handles Opus encode/decode, TTS, and endpointing. The watch uses a small ring buffer for DMA playback, never storing the full audio clip.
 
-### 🧪 Development Workflow: Simulator First, Hardware Second
+### 🧪 Development Workflow: Hardware First, Host Tests for the UI
 
-**Decision: Desktop simulator target from day one.**
-Compile the UI for desktop with an SDL backend before touching hardware. The custom engine's `Surface` trait already supports this. You'll catch layout bugs, theme issues, and animation problems without flashing. Hardware testing is for power, timing, and peripheral integration. This saves hours of flash cycles.
+**Decision: no desktop simulator.**
+The real firmware is the only UI integration target. Host tests cover layout, paint, damage, lifecycle, and no-allocation rules; hardware covers power, timing, and peripherals. The preview layer is retired in Phase 6, and the `simulator` feature is removed with it. Revisit a desktop target only if UI or gesture iteration becomes painful on hardware.
 
 ### 💡 MVP: Clock + Log + Sleep
 

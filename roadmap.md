@@ -5,7 +5,7 @@
 ### 0.1 Workspace Setup
 - Create workspace with empty crates: `common`, `hal`, `drivers`, `power`, `storage`, `ui`, `apps`, `voice`, `sync`, `logging`, `firmware`.
 - `core` is named `common` because a crate named `core` shadows the `core` prelude.
-- Set up feature flags on the `firmware` package: `logging`, `trace`, `simulator`. Mode is runtime, not a feature. (A virtual workspace root cannot declare `[features]`.)
+- Set up feature flags on the `firmware` package: `logging`, `trace`, `simulator`. Mode is runtime, not a feature. (A virtual workspace root cannot declare `[features]`.) The `simulator` flag is retired in Phase 6.1.
 - Pin the `esp` toolchain in `rust-toolchain.toml`.
 - Configure `.cargo/config.toml` for the ESP32-S3 target, with `build-std = ["core"]` since the esp toolchain ships no prebuilt `core` for Xtensa.
 - Keep `firmware` a `no_std` library for now; it becomes a binary in Phase 0.2.
@@ -356,109 +356,254 @@ switch, watch under 5% lit pixels, desk 60 fps budget, no full flush after boot.
 
 ---
 
-## Phase 6: Watch Mode Integration
+## Phase 6: Firmware Spine
 
-**Goal:** Full watch mode works end-to-end. Battery lasts measurable time.
+**Goal:** One real firmware with one boot chain, a working shell, blank Home, and
+live mode switching. Preview leaves the build. No mode-specific UI yet.
 
-### 6.1 Watch Mode Entry
-- Boot into watch mode.
-- Initialize minimum peripherals.
-- Enter deep sleep.
+### 6.1 Preview Retirement & First Light
+- Tag the preview source `preview-reference`; keep it as reference, out of the
+  build.
+- Remove the preview module from the firmware build and boot path.
+- Remove `Preview` from the `apps` compiled API; keep `home` and `format`.
+- Drop the simulator: remove the `simulator` feature, the `.cargo/config.toml`
+  comment, and the simulator references in the docs.
+- Paint one line (`WATCH`/`DESK`) directly through the real surface and flush
+  path, with no shell and no apps.
+- Report boot-stage failures visibly: a line on the panel when possible, serial
+  detail always.
 
-**Test:** Watch boots, shows Home, sleeps.
+**Test:** Firmware builds with no preview symbols; the label paints on both
+mono and gray surfaces; a failed boot is visible, never a silent halt.
 
-### 6.2 Wake Cycle
-- Wake on motion, button, or timer.
-- Verify wake reason.
-- Show Home if appropriate.
-- Return to sleep.
+### 6.2 One Boot Chain
+- Use one boot sequence with explicit mode hooks, not duplicated `watch_init`
+  and `desk_init` bodies.
+- Order: PMIC -> RTC -> storage/settings -> VBUS mode decision -> clock/PSRAM
+  hooks -> peripherals -> shell.
+- Boot both modes at 80 MHz. PSRAM is a desk-only hook; watch never initializes
+  it.
+- Watch init: PMIC, RTC, I2C, IMU, display, mono surface.
+- Desk init: the watch set plus PSRAM, touch, and the gray surface. No audio and
+  no radios yet.
+- Load one settings snapshot before wake configuration; no scattered reads.
 
-**Test:** 100 wake cycles. No crashes. Battery voltage logged each time.
+**Test:** Both modes reach the same spine; no duplicated boot bodies; no PSRAM
+access in watch; cold boot succeeds in both modes.
 
-### 6.3 Alarm Support
+### 6.3 Shell, Registry, Blank Home
+- Implement `AppRegistry` in firmware and boot the shell with a firmware-owned
+  debug Home that shows only the mode label.
+- Wire lifecycle (`enter`, `exit`, `tick`, `action`), the route stack, status
+  ownership, and minimal overlay blocking.
+- Keep the label out of `apps::Home`, so no app branches on `Mode`.
+- Keep the app set identical in both modes; registry divergence is a declared
+  seam, not implemented yet.
+
+**Test:** Lifecycle ordering, registry resolution, back order, and modal
+blocking; blank Home renders in both policies; the label changes with mode; no
+`if mode` in shell or apps; watch render allocates zero.
+
+### 6.4 Settings -> Boot Policy
+- Derive a boot policy from settings: `wake_on_motion`, `motion_sensitivity`,
+  `sleep_timeout_secs`, and `haptics`.
+- Clamp safety limits. Settings tune behavior; they never remove hard caps.
+- Classify effects: live (brightness, theme), next sleep (wake and sleep
+  settings).
+- Leave `power_saving`, `always_on`, and screen timeout unwired, with explicit
+  semantics documented.
+- Keep alarms in storage state, not settings.
+
+**Test:** Settings are honored on cold boot and after a mode switch; thresholds
+clamp; schema and persistence tests pass.
+
+### 6.5 Mode Switch & VBUS Wake
+- Hardware gate first: confirm `EXIO5`/`AXP_IRQ` reaches an RTC-capable GPIO and
+  stays powered in deep sleep.
+- If it passes, add the AXP VBUS-insert IRQ as a third Ext1 source and wake into
+  desk on insert.
+- If it fails, fall back to motion/button wake sampling VBUS. Do not add
+  periodic polling in watch.
+- Poll VBUS for removal in desk; desk is full power and pays no power cost.
+- Switch gracefully both ways: flush, finish the operation, apply the rail plan
+  and render policy, re-enter the active app, and preserve state.
+- Add retained wake counters and boot/wake diagnostics.
+
+**Test:** 10 switch cycles while awake preserve state; sleep on battery then plug
+USB wakes into desk (or uses the documented fallback); unplug switches to watch
+and sleeps; no VBUS polling in watch; rails match the plan after every switch.
+
+### 6.6 Spine Gate
+- Record a hardware checklist for boot, switch, sleep, and wake.
+- Temporary bring-up logging is still allowed; removing it is a watch-phase
+  task.
+
+**Test:** Both modes boot to a labeled blank Home; switching works while awake
+and from sleep; preview is absent from the binary; no mode forks in the spine;
+settings are honored at boot.
+
+---
+
+## Phase 7: Watch Mode
+
+**Goal:** Real watch mode end-to-end: Home, minimal init, wake cycles, alarms,
+ultra-low power, and a battery baseline.
+
+### 7.1 Watch Home
+- Port the watch Home from preview as inspiration, not by copying its structure:
+  clock, date, battery, minimal chrome.
+- Home becomes a real `App`; the debug Home is retired.
+- Keep the watch-only app set minimal; no drawer or quick settings unless Home
+  needs them.
+
+**Test:** Watch Home renders in 1-bit; under 5% lit pixels on idle; no
+allocation; golden frames.
+
+### 7.2 Watch Boot & Purity
+- Boot straight to watch Home on battery.
+- Initialize only watch-needed peripherals; keep PSRAM uninitialized and radios,
+  audio, and the mic rail off.
+- Remove bring-up serial logging from watch; keep retained counters only.
+- Enforce watch purity in tests: no voice or sync task, no mic rail, no heap in
+  the render or wake paths.
+
+**Test:** Watch boots, shows Home, and sleeps; purity tests pass; no logging in
+watch.
+
+### 7.3 Wake Cycle
+- Wake on motion, button, timer, or alarm; verify and record the reason.
+- Show Home when appropriate, honor the awake budget, run the pre-sleep
+  checklist, and return to deep sleep.
+- Apply wake and sleep settings before each sleep.
+
+**Test:** 100 wake cycles with no crashes; battery voltage recorded each cycle;
+budget expiry forces sleep; the motion threshold respects settings.
+
+### 7.4 Alarms
 - Store alarms in TicKV.
-- Set RTC timer to next alarm before sleep.
-- Vibrate on alarm.
+- Set the next RTC wake to `min(next alarm, housekeeping timer)` before sleep.
+- Vibrate on alarm using the haptics setting.
+- Handle missed alarms after a long sleep.
 
-**Test:** Set alarm 1 minute ahead. Watch vibrates on time.
+**Test:** An alarm one minute ahead vibrates on time; alarms persist across
+reboot; the next-wake calculation is correct.
 
-### 6.4 Battery Life Baseline
-- Full charge.
-- Normal usage pattern.
-- Measure time to shutdown.
+### 7.5 Watch Input & Settings
+- Limit touch and gestures to what watch Home needs.
+- Wire brightness, the watch theme variant, time format, and date format live.
+- Fix timeout semantics: screen timeout is desk-only; deep sleep is the watch
+  timeout.
 
-**Test:** Record a first battery-life baseline. This is a goal, not a gate; later phases must not regress it.
+**Test:** Settings apply live or at next sleep as classified; persistence
+survives reboot.
 
----
+### 7.6 Battery Life Baseline
+- Measure current in sleep, idle-awake, and render states.
+- Run a normal usage pattern from full charge to shutdown.
+- Record the first baseline for later phases.
 
-## Phase 7: Desk Mode Foundation
+**Test:** Baseline recorded; measured states documented; later phases must not
+regress it.
 
-**Goal:** USB detection switches to desk mode. Full UI renders. No voice yet.
-
-### 7.1 Desk Mode Entry
-- Detect VBUS in `main`, dispatch to `desk_init` (same binary as watch mode).
-- Initialize full peripherals.
-- Flip the render policy to desk mode.
-
-**Test:** Plug USB, UI switches to desk monochrome theme.
-
-### 7.2 Mode Switch
-- Graceful switch from watch to desk.
-- Graceful switch from desk to watch.
-- State preserved across switch.
-
-**Test:** Plug and unplug USB 10 times. No crashes. State intact.
-
-### 7.3 Full UI
-- All apps available.
-- Animations enabled.
-- Smooth transitions.
-
-**Test:** Navigate all apps. Animations play.
-
-### 7.4 Settings App
-- Change theme.
-- Change brightness.
-- View battery stats.
-- View logs.
-
-**Test:** Change setting, verify persistence after reboot.
+**Phase gate:** Watch is pure, ultra-low-power, wakes correctly, alarms work,
+and a baseline exists.
 
 ---
 
-## Phase 8: Voice Foundation
+## Phase 8: Desk Mode
+
+**Goal:** Full-power desk mode on VBUS, full UI, animations, settings, logs, and
+no power saving.
+
+### 8.1 Full Desk Init
+- Desk boot brings up the full peripheral set: PSRAM, touch, and display; audio
+  as available. Radios remain for the sync phase.
+- Raise the CPU to 240 MHz if runtime re-clocking is clean; otherwise document
+  80 MHz with a follow-up.
+- Desk stays awake while VBUS is present; no watch power policies apply.
+
+**Test:** Plug USB and get a desk boot with full init; unplug and switch
+gracefully to watch; no watch power policy is active in desk.
+
+### 8.2 Switch Hardening
+- Exercise watch and desk switching repeatedly with real state, not blank Home.
+- Verify flush and finish ordering, state preservation, rail audit, and
+  render-policy changes.
+- No leaks or duplicate init across cycles.
+
+**Test:** 10 plug/unplug cycles with no crashes, state intact, rails correct, and
+no full flush except on mode or theme switch.
+
+### 8.3 Full UI Port
+- Port the shipping screens from preview inspiration: settings, app drawer,
+  quick settings, overlays, dialogs, toasts, and calibration if it ships.
+- Restore animations, transitions, and desk grayscale rendering.
+- Implement per-mode registry divergence: desk gets the full app set.
+
+**Test:** Navigate all apps; animations play; desk holds the 60 fps cap;
+flushes are damage-only; watch behavior is unchanged.
+
+### 8.4 Settings App
+- Change theme, brightness, battery stats, and logs; persist across reboot.
+- Surface which settings take effect live versus at the next sleep or mode
+  switch.
+- Wire the remaining safe settings; keep diagnostics, clock, and VBUS out of
+  user settings.
+
+**Test:** Changes persist after reboot; boot policy reflects them; live changes
+apply immediately.
+
+### 8.5 Preview Cleanup
+- Retire the last preview-derived reference usage.
+- Delete the `preview-reference` tag or branch and remove it from the docs.
+- Remove bring-up diagnostics that have no product role.
+
+**Test:** The repository contains no preview build path or dead references; the
+docs match reality.
+
+### 8.6 Desk Gate
+- Full desk UI, graceful switching, settings persistence, and no power saving
+  while on VBUS.
+- Voice, sync, and AI remain out of scope for this phase.
+
+**Test:** The full desk experience works end-to-end on USB; watch still boots
+and sleeps correctly after desk use.
+
+---
+
+## Phase 9: Voice Foundation
 
 **Goal:** Wake word works locally. Audio streams to VPS. TTS plays back.
 
-### 8.1 Audio Hardware
+### 9.1 Audio Hardware
 - ES8311 codec init.
 - I2S microphone capture.
 - I2S speaker playback.
 
 **Test:** Record 5 seconds, play back.
 
-### 8.2 Wake Word
+### 9.2 Wake Word
 - Hand-rolled `no_std` pipeline: I2S capture, `microfft` FFT, MFCC, small NN with `const` weights.
 - Train the small model and embed the weights as constants.
 - VAD gates the model; add a confidence threshold.
 
 **Test:** Say wake word, detection triggers. Soft speech does not trigger. False-accept rate is acceptable.
 
-### 8.3 Audio Streaming
+### 9.3 Audio Streaming
 - Stream PCM (or simple Rust-side compression) over WebSocket.
 - No Opus on the watch; the VPS handles codecs.
 - VPS performs endpointing.
 
 **Test:** VPS receives audio, saves to file.
 
-### 8.4 TTS Playback
+### 9.4 TTS Playback
 - Receive PCM from the VPS (VPS decodes Opus).
 - Play through speaker.
 - Ring buffer for DMA.
 
 **Test:** VPS sends TTS, watch plays it.
 
-### 8.5 Voice Pipeline
+### 9.5 Voice Pipeline
 - Wake word → stream → VPS → TTS → playback.
 - End-to-end latency under 2 seconds.
 
@@ -466,39 +611,39 @@ switch, watch under 5% lit pixels, desk 60 fps budget, no full flush after boot.
 
 ---
 
-## Phase 9: Sync Foundation
+## Phase 10: Sync Foundation
 
 **Goal:** Watch syncs logs and settings with VPS. Alarms sync. Checkpoints work.
 
-### 9.1 Sync Protocol
+### 10.1 Sync Protocol
 - Define message format (CBOR or custom).
 - Define checkpoint semantics.
 - Define ACK handling.
 
 **Test:** Send dummy record, receive ACK.
 
-### 9.2 Log Sync
+### 10.2 Log Sync
 - Read unsynced logs from TicKV.
 - Push to VPS.
 - Mark as synced on ACK.
 
 **Test:** Generate logs, sync, verify VPS has them.
 
-### 9.3 Settings Sync
+### 10.3 Settings Sync
 - Pull settings from VPS.
 - Apply to watch.
 - Push local changes.
 
 **Test:** Change setting on VPS, watch receives it.
 
-### 9.4 Alarm Sync
+### 10.4 Alarm Sync
 - Pull alarms from VPS.
 - Store in TicKV.
 - Push local alarms.
 
 **Test:** Create alarm on VPS, watch vibrates on time.
 
-### 9.5 Conflict Resolution
+### 10.5 Conflict Resolution
 - Define precedence: VPS wins or watch wins.
 - Handle duplicate records.
 
@@ -506,11 +651,11 @@ switch, watch under 5% lit pixels, desk 60 fps budget, no full flush after boot.
 
 ---
 
-## Phase 10: AI Integration
+## Phase 11: AI Integration
 
 **Goal:** VPS node handles LLM, tools, TTS. Watch is thin client.
 
-### 10.1 VPS Node Setup
+### 11.1 VPS Node Setup
 - Rust service on VPS.
 - WebSocket server.
 - DeepSeek API integration.
@@ -518,20 +663,20 @@ switch, watch under 5% lit pixels, desk 60 fps budget, no full flush after boot.
 
 **Test:** Send text to VPS, receive TTS audio.
 
-### 10.2 Tool Calling
+### 11.2 Tool Calling
 - Define tool registry in Rust.
 - Implement `save_note`, `get_notes`, `set_timer`.
 - LLM calls tools, executes, responds.
 
 **Test:** Say "save note milk", verify note stored.
 
-### 10.3 Voice Command Pipeline
+### 11.3 Voice Command Pipeline
 - Wake word → stream → VPS → LLM → tool → TTS → playback.
 - End-to-end under 3 seconds.
 
 **Test:** Say "set timer 5 minutes", watch vibrates after 5 minutes.
 
-### 10.4 Offline Fallback
+### 11.4 Offline Fallback
 - VPS unreachable → queue request or local command.
 - User notified.
 
@@ -539,60 +684,60 @@ switch, watch under 5% lit pixels, desk 60 fps budget, no full flush after boot.
 
 ---
 
-## Phase 11: Polish & Optimization
+## Phase 12: Polish & Optimization
 
 **Goal:** Battery life maximized. UI smooth. Edge cases handled.
 
-### 11.1 Power Audit
+### 12.1 Power Audit
 - Measure current in every state.
 - Identify leaks.
 - Fix leaks.
 
 **Test:** Watch mode idle current under 50 µA.
 
-### 11.2 UI Polish
+### 12.2 UI Polish
 - Smooth animations.
 - No dropped frames.
 - Theme transitions.
 
 **Test:** 60 FPS in desk mode. No visual glitches.
 
-### 11.3 Error Handling
+### 12.3 Error Handling
 - Brownout graceful shutdown.
 - Flash corruption recovery.
 - Network failure handling.
 
 **Test:** Simulate brownout, verify no corruption.
 
-### 11.4 Battery Life Retention Test
+### 12.4 Battery Life Retention Test
 - Full charge.
 - Mixed usage: 23 hours watch mode, 1 hour desk mode.
-- Measure and compare against the Phase 6.4 baseline.
+- Measure and compare against the Phase 7.6 baseline.
 
 **Test:** No regression against the baseline, and the target goal is met if reachable.
 
 ---
 
-## Phase 12: Stretch Goals
+## Phase 13: Stretch Goals
 
 **Goal:** Optional features if time permits.
 
-### 12.1 Custom Case
+### 13.1 Custom Case
 - 3D printed case for larger battery.
 - Speaker removal.
 
-### 12.2 OTA Updates
+### 13.2 OTA Updates
 - `edge-ota` integration.
 - A/B partition.
 - Rollback on failure.
 
-### 12.3 Additional Apps
+### 13.3 Additional Apps
 - Stopwatch.
 - Timer.
 - Step counter.
 - Heart rate (if sensor added).
 
-### 12.4 Advanced Voice
+### 13.4 Advanced Voice
 - Local command recognition (10 commands).
 - Multi-turn conversation.
 - Context awareness.
@@ -604,7 +749,7 @@ switch, watch under 5% lit pixels, desk 60 fps budget, no full flush after boot.
 - Every phase has a testable deliverable.
 - No phase advances until deliverable is verified.
 - Hardware tests on real device.
-- Simulator tests on desktop.
+- Host render and lifecycle tests on desktop; there is no simulator target.
 - Power tests with multimeter or INA219.
 - Battery figures are goals and baselines, not hard gates. Never regress a measured baseline.
 - Mode-switch transitions are tested both directions, repeatedly.
@@ -621,9 +766,11 @@ switch, watch under 5% lit pixels, desk 60 fps budget, no full flush after boot.
 - Display third because UI depends on it.
 - Input fourth because wake depends on it.
 - UI fifth because apps depend on it.
-- Watch mode sixth because it's the primary use case.
-- Desk mode seventh because it unlocks everything else.
-- Voice eighth because it needs desk mode.
-- Sync ninth because it needs storage and voice.
-- AI tenth because it needs voice and sync.
+- Firmware spine sixth because one binary, one boot chain, and the mode seams
+  must exist before either mode is built.
+- Watch mode seventh because it is the primary use case and drives power.
+- Desk mode eighth because it unlocks everything else.
+- Voice ninth because it needs desk mode.
+- Sync tenth because it needs storage and voice.
+- AI eleventh because it needs voice and sync.
 - Polish last because it needs everything.

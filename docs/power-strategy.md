@@ -14,11 +14,15 @@ esp-hal 1.0.0 marks GPIO0–21 as RTC pins (deep-sleep wake capable). Therefore:
 | Touch | GPIO38 | **no** |
 | PCF85063A RTC INT | GPIO39 | **no** |
 
-- Wake set: **motion + button + internal RTC timer**. Touch cannot wake the SoC.
+- Wake set: **motion + button + internal RTC timer**, plus the AXP VBUS-insert
+  IRQ as a third Ext1 source if the Phase 6.5 hardware gate passes. Touch cannot
+  wake the SoC.
 - Alarms are scheduled on the ESP32-S3 internal RTC timer (compute delta before
   sleep); the external RTC is wall-clock persistence only.
-- Confirm whether the AXP IRQ (`EXIO5` net) reaches a wake pin. If not, USB
-  insert cannot wake a sleeping watch — it is noticed on the next wake.
+- Phase 6.5 gate: confirm whether the AXP IRQ (`EXIO5` net) reaches an
+  RTC-capable wake pin and stays powered in deep sleep. If it does, USB insert
+  wakes a sleeping watch. If not, fall back to motion/button wake sampling VBUS;
+  do not add periodic polling in watch mode.
 
 ## Display strategy
 - Watch mode sleeps with the panel dark. Clock shows on motion/tap/button.
@@ -77,5 +81,5 @@ The power estimator reads this same table so display and behavior cannot drift.
 - Every wake has a budget; on expiry, force sleep and log the reason.
 
 ## Target
-- Roadmap 11.1's sub-50 µA idle is likely unreachable with AXP + IMU + RTC + LDO
+- Roadmap 12.1's sub-50 µA idle is likely unreachable with AXP + IMU + RTC + LDO
   quiescent current. Measure a baseline, set a realistic goal, and never regress.
