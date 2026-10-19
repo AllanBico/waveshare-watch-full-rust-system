@@ -6,19 +6,26 @@ use core::cell::RefCell;
 
 use embassy_time::{Duration, Timer};
 use esp_hal::efuse::Efuse;
+use esp_hal::gpio::Input;
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::rtc_cntl::wakeup_cause;
 use esp_hal::system::SleepSource;
 use esp_hal::time::Rate;
 use esp_println::println;
 
-use common::{DateTime, Timestamp, WakeReason};
+use common::{DateTime, Mode, Timestamp, WakeReason};
 use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
 use embedded_hal_bus::i2c::RefCellDevice;
 
-/// CPU clock for bring-up. Mode-based clock switching comes later.
-pub const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
+/// CPU clock for the shared boot chain. Both modes boot watch-safe.
+pub const BOOT_CPU_CLOCK_MHZ: u32 = 80;
+
+/// Number of PWR button samples used for the boot debounce.
+pub const BUTTON_SAMPLES: u8 = 4;
+
+/// Spacing between PWR button samples.
+pub const BUTTON_SAMPLE_PERIOD: Duration = Duration::from_millis(5);
 
 /// I2C bus device handle shared by all on-board peripherals.
 pub type Bus = RefCellDevice<'static, I2c<'static, esp_hal::Blocking>>;
@@ -98,26 +105,43 @@ pub async fn halt() -> ! {
     }
 }
 
-/// Prints the silicon facts read at runtime, plus the PSRAM size.
-pub fn report_boot(psram_bytes: usize) {
+/// Prints the silicon facts read at runtime, plus the selected mode and PSRAM.
+pub fn report_boot(mode: Mode, psram_bytes: usize) {
     let revision = Efuse::chip_revision();
     let mac = Efuse::mac_address();
 
-    println!("=== wv2 firmware (Phase 4.4 button wake) ===");
+    println!("=== wv2 firmware (Phase 6.2 boot chain) ===");
     println!(
         "chip:  {} rev v{}.{}",
         esp_hal::chip!(),
         revision / 100,
         revision % 100
     );
-    println!("cpu:   {} MHz", BRINGUP_CPU_CLOCK_MHZ);
+    println!("cpu:   {} MHz", BOOT_CPU_CLOCK_MHZ);
+    println!("mode:  {:?}", mode);
     println!(
         "mac:   {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
-    println!("psram: {} bytes", psram_bytes);
+    if psram_bytes == 0 {
+        println!("psram: disabled");
+    } else {
+        println!("psram: {} bytes", psram_bytes);
+    }
     match esp_hal::system::reset_reason() {
         Some(reason) => println!("reset: {:?}", reason),
         None => println!("reset: unknown"),
     }
+}
+
+/// Samples the PWR button to reject a bounce on the wake edge.
+pub async fn debounce_button(pin: &Input<'_>) -> bool {
+    let mut high = 0u8;
+    for _ in 0..BUTTON_SAMPLES {
+        if pin.is_high() {
+            high += 1;
+        }
+        Timer::after(BUTTON_SAMPLE_PERIOD).await;
+    }
+    high * 2 > BUTTON_SAMPLES
 }

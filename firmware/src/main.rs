@@ -1,10 +1,10 @@
 //! Firmware entry point.
 //!
-//! Brings up the AXP2101, PCF85063A, FT3168, and QMI8658 on one I2C bus,
-//! chooses the runtime mode from VBUS (USB -> Desk, else Watch), owns the
-//! display and input devices across the awake window, and deep-sleeps. The
-//! external RTC keeps wall-clock time. The pieces `main` calls live in
-//! [`runtime`] and [`display`].
+//! Runs one boot chain for both modes: PMIC, RTC, mode selection, storage and
+//! settings, then the PSRAM and peripheral hooks named by [`boot::Plan`]. Watch
+//! and desk never duplicate that sequence; only the plan and the awake loop
+//! differ. The external RTC keeps wall-clock time. The pieces `main` calls live
+//! in [`runtime`], [`boot`], [`bringup`], and [`display`].
 
 #![no_std]
 #![no_main]
@@ -15,9 +15,7 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
-use esp_hal::gpio::{
-    Input, InputConfig, Level, Output, OutputConfig, Pull, RtcPin, RtcPinWithResistors,
-};
+use esp_hal::gpio::{Input, InputConfig, Pull, RtcPin, RtcPinWithResistors};
 use esp_hal::rtc_cntl::sleep::{Ext1WakeupSource, TimerWakeupSource, WakeupLevel};
 use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
@@ -26,15 +24,12 @@ use esp_println::println;
 use common::{Mode, WakeOnMotion, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
-use drivers::es7210::Es7210;
-use drivers::es8311::Es8311;
-use drivers::ft3168::Ft3168;
 use drivers::pcf85063a::Pcf85063a;
 use drivers::qmi8658::Qmi8658;
 use embedded_hal_bus::i2c::RefCellDevice;
 use power::PowerManager;
 
-mod audio;
+mod boot;
 mod bringup;
 mod display;
 mod log_boot;
@@ -45,7 +40,7 @@ mod runtime;
 use esp_alloc as _;
 use esp_backtrace as _;
 
-use runtime::{halt, open_bus, report_boot, report_time, wake_reason};
+use runtime::{debounce_button, halt, open_bus, report_boot, report_time, wake_reason};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -67,11 +62,6 @@ const WOM_THRESHOLD_MG: u8 = 80;
 /// Accelerometer samples ignored after entering Wake-on-Motion.
 const WOM_BLANKING_SAMPLES: u8 = 10;
 
-/// Number of PWR button samples used for the boot debounce.
-const BUTTON_SAMPLES: u8 = 4;
-/// Spacing between PWR button samples.
-const BUTTON_SAMPLE_PERIOD: Duration = Duration::from_millis(5);
-
 /// SRAM heap size reserved for the runtime.
 const SRAM_HEAP_BYTES: usize = 96 * 1024;
 
@@ -79,10 +69,7 @@ const SRAM_HEAP_BYTES: usize = 96 * 1024;
 async fn main(_spawner: Spawner) {
     esp_alloc::heap_allocator!(size: SRAM_HEAP_BYTES);
 
-    let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::_160MHz));
-
-    let (_, psram_bytes) = esp_hal::psram::psram_raw_parts(&peripherals.PSRAM);
-    esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
+    let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::_80MHz));
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
@@ -99,8 +86,8 @@ async fn main(_spawner: Spawner) {
         false
     };
 
-    report_boot(psram_bytes);
-
+    // One boot chain: PMIC -> RTC -> mode -> storage/settings -> PSRAM ->
+    // display -> mode peripherals. `Plan` is the only mode seam.
     let bus = open_bus(peripherals.I2C0, peripherals.GPIO15, peripherals.GPIO14).await;
 
     let mut pmic = match Axp2101::new(RefCellDevice::new(bus), board::PMIC_I2C_ADDR) {
@@ -161,9 +148,18 @@ async fn main(_spawner: Spawner) {
     let battery_mv = snapshot
         .map(|snapshot| snapshot.battery.value())
         .unwrap_or(0);
-    let boot = persist::init(peripherals.FLASH, mode, battery_mv, wake, now);
-    let report = boot.report;
-    let _settings = boot.settings;
+    let persisted = persist::init(peripherals.FLASH, mode, battery_mv, wake, now);
+    let report = persisted.report;
+    let _settings = persisted.settings;
+
+    let plan = boot::Plan::for_mode(mode);
+    let psram_bytes = if plan.initialize_psram {
+        boot::init_psram(peripherals.PSRAM)
+    } else {
+        0
+    };
+    report_boot(mode, psram_bytes);
+
     if mode == Mode::Desk {
         println!(
             "[kv] {} boot {} log {:?} buf {} drop {} batt {} error {:?}",
@@ -196,45 +192,18 @@ async fn main(_spawner: Spawner) {
         }
     };
     // Touch stays powered across the awake window; reset and put it to sleep
-    // explicitly so the FT3168 stops scanning before deep sleep.
-    let mut touch = Ft3168::new(
-        RefCellDevice::new(bus),
-        board::TP_I2C_ADDR,
-        Output::new(peripherals.GPIO9, Level::Low, OutputConfig::default()),
-        Delay::new(),
-    );
-    if let Err(error) = touch.init() {
-        if mode == Mode::Desk {
-            println!("[tp] init failed: {}", error);
-        }
-    }
-    let chip_id = touch.read_chip_id().ok();
-    if mode == Mode::Desk {
-        match chip_id {
-            Some(id) => println!("[tp] FT3168 id 0x{:02X}", id),
-            None => println!("[tp] FT3168 id unreadable"),
-        }
-    }
-
-    let imu_error = match imu.init() {
-        Ok(()) => None,
-        Err(error) => {
-            if mode == Mode::Desk {
-                println!("[imu] init failed: {}", error);
-            }
-            Some(error.to_common().code())
-        }
+    // explicitly so the FT3168 stops scanning before deep sleep. Watch skips it.
+    let mut touch = if plan.initialize_touch {
+        Some(boot::init_touch(
+            RefCellDevice::new(bus),
+            peripherals.GPIO9,
+            plan.logging,
+        ))
+    } else {
+        None
     };
-    let imu_id = imu.read_chip_id().ok();
-    let revision = imu.read_revision().ok();
-    if mode == Mode::Desk {
-        match (imu_id, revision) {
-            (Some(id), Some(revision)) => {
-                println!("[imu] QMI8658 id 0x{:02X} rev 0x{:02X}", id, revision)
-            }
-            _ => println!("[imu] identity unreadable"),
-        }
-    }
+
+    let imu_error = boot::init_imu(&mut imu, plan.logging);
 
     if let Some(panel) = display.as_mut() {
         if let Err(error) = panel.init() {
@@ -249,48 +218,11 @@ async fn main(_spawner: Spawner) {
     }
 
     if mode == Mode::Desk {
-        let mut audio = match audio::Audio::new(
-            audio::Peripherals {
-                i2s: peripherals.I2S0,
-                dma: peripherals.DMA_CH1,
-                mclk: peripherals.GPIO16,
-                bclk: peripherals.GPIO41,
-                ws: peripherals.GPIO45,
-                dout: peripherals.GPIO40,
-                din: peripherals.GPIO42,
-                pa: peripherals.GPIO46,
-            },
-            Es8311::new(RefCellDevice::new(bus), board::ES8311_I2C_ADDR),
-            Es7210::new(RefCellDevice::new(bus), board::ES7210_I2C_ADDR),
-        ) {
-            Ok(mut audio) => match audio.init() {
-                Ok(()) => {
-                    println!("[audio] codecs ready");
-                    Some(audio)
-                }
-                Err(error) => {
-                    println!("[audio] init failed: {:?}", error);
-                    if let Err(error) = audio.shutdown() {
-                        println!("[audio] shutdown failed: {:?}", error);
-                    }
-                    None
-                }
-            },
-            Err(error) => {
-                println!("[audio] I2S init failed: {:?}", error);
-                None
-            }
-        };
         if let Some(panel) = display.as_mut() {
             bringup::draw(panel, Mode::Desk, bringup::staging());
         }
         while power.is_vbus_present().unwrap_or(true) {
             Timer::after(VBUS_POLL_PERIOD).await;
-        }
-        if let Some(audio) = audio.as_mut() {
-            if let Err(error) = audio.shutdown() {
-                println!("[audio] shutdown failed: {:?}", error);
-            }
         }
         if let Err(error) = power.set_mode(Mode::Watch) {
             println!("[pm] set_mode failed: {}", error.to_common());
@@ -308,14 +240,16 @@ async fn main(_spawner: Spawner) {
     if imu_error.is_none() {
         let config = WakeOnMotion::new(WOM_THRESHOLD_MG, WOM_BLANKING_SAMPLES);
         if let Err(error) = imu.configure_wake_on_motion(config) {
-            if mode == Mode::Desk {
+            if plan.logging {
                 println!("[imu] wake-on-motion failed: {}", error);
             }
         }
     }
-    if let Err(error) = touch.sleep() {
-        if mode == Mode::Desk {
-            println!("[tp] sleep failed: {}", error);
+    if let Some(touch) = touch.as_mut() {
+        if let Err(error) = touch.sleep() {
+            if plan.logging {
+                println!("[tp] sleep failed: {}", error);
+            }
         }
     }
 
@@ -345,15 +279,4 @@ async fn main(_spawner: Spawner) {
     let mut wake_pins: [&mut dyn RtcPin; 2] = [&mut pwr_button, &mut imu_int];
     let external = Ext1WakeupSource::new(&mut wake_pins, WakeupLevel::High);
     rtc.sleep_deep(&[&timer, &external]);
-}
-
-async fn debounce_button(pin: &Input<'_>) -> bool {
-    let mut high = 0u8;
-    for _ in 0..BUTTON_SAMPLES {
-        if pin.is_high() {
-            high += 1;
-        }
-        Timer::after(BUTTON_SAMPLE_PERIOD).await;
-    }
-    high * 2 > BUTTON_SAMPLES
 }
