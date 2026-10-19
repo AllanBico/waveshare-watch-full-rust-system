@@ -12,7 +12,7 @@
 extern crate alloc;
 
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Instant, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
 use esp_hal::gpio::{Input, InputConfig, Pull, RtcPin, RtcPinWithResistors};
@@ -21,21 +21,29 @@ use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
-use common::{Mode, WakeOnMotion, WakeReason};
+use common::{Mode, Percent, Region, WakeOnMotion, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
 use drivers::qmi8658::Qmi8658;
 use embedded_hal_bus::i2c::RefCellDevice;
 use power::PowerManager;
+use shell::Shell;
 
 mod boot;
 mod bringup;
 mod display;
 mod log_boot;
 mod persist;
+mod registry;
 mod retained;
 mod runtime;
+
+use boot::{
+    AWAKE_BUDGET_MS, AWAKE_WINDOW, SLEEP_TIMER_MS, SRAM_HEAP_BYTES, VBUS_POLL_PERIOD,
+    WOM_BLANKING_SAMPLES, WOM_THRESHOLD_MG,
+};
+use registry::{Registry, HOME_ID};
 
 use esp_alloc as _;
 use esp_backtrace as _;
@@ -43,27 +51,6 @@ use esp_backtrace as _;
 use runtime::{debounce_button, halt, open_bus, report_boot, report_time, wake_reason};
 
 esp_bootloader_esp_idf::esp_app_desc!();
-
-/// Awake time budget granted on each watch-mode wake.
-const AWAKE_BUDGET_MS: u32 = 7_000;
-
-/// How long to stay awake before sleeping in watch mode.
-// TODO(phase-7): return to the 2 s watch budget once the wake cycle is tuned.
-const AWAKE_WINDOW: Duration = Duration::from_secs(7);
-
-/// How often desk mode checks whether USB was removed.
-const VBUS_POLL_PERIOD: Duration = Duration::from_millis(500);
-
-/// Deep-sleep timer interval. Longer for wake-on-motion debugging.
-const SLEEP_TIMER_MS: u32 = 30_000;
-
-/// Wake-on-Motion threshold. Tune on hardware during wake verification.
-const WOM_THRESHOLD_MG: u8 = 80;
-/// Accelerometer samples ignored after entering Wake-on-Motion.
-const WOM_BLANKING_SAMPLES: u8 = 10;
-
-/// SRAM heap size reserved for the runtime.
-const SRAM_HEAP_BYTES: usize = 96 * 1024;
 
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) {
@@ -148,6 +135,12 @@ async fn main(_spawner: Spawner) {
     let battery_mv = snapshot
         .map(|snapshot| snapshot.battery.value())
         .unwrap_or(0);
+    let battery_percent = snapshot
+        .map(|snapshot| snapshot.percent)
+        .unwrap_or(Percent::new(0));
+    let is_charging = snapshot
+        .map(|snapshot| snapshot.status.charging)
+        .unwrap_or(false);
     let persisted = persist::init(peripherals.FLASH, mode, battery_mv, wake, now);
     let report = persisted.report;
     let _settings = persisted.settings;
@@ -217,12 +210,32 @@ async fn main(_spawner: Spawner) {
         }
     }
 
+    let mut shell = Shell::new(
+        Registry::new(),
+        HOME_ID,
+        mode,
+        Region::full(board::LCD_WIDTH, board::LCD_HEIGHT),
+    );
+    shell.set_time(now);
+    shell.set_battery(battery_percent, is_charging);
+    if let Err(error) = shell.start() {
+        println!("[shell] start failed: {:?}", error);
+        halt().await
+    }
+    if let Err(error) = shell.tick(0) {
+        println!("[shell] tick failed: {:?}", error);
+    }
+
     if mode == Mode::Desk {
         if let Some(panel) = display.as_mut() {
-            bringup::draw(panel, Mode::Desk, bringup::staging());
+            bringup::draw(panel, shell.mode(), bringup::staging());
         }
+        let started = Instant::now();
         while power.is_vbus_present().unwrap_or(true) {
             Timer::after(VBUS_POLL_PERIOD).await;
+            if let Err(error) = shell.tick((Instant::now() - started).as_millis()) {
+                println!("[shell] tick failed: {:?}", error);
+            }
         }
         if let Err(error) = power.set_mode(Mode::Watch) {
             println!("[pm] set_mode failed: {}", error.to_common());
@@ -231,7 +244,7 @@ async fn main(_spawner: Spawner) {
         Timer::after(AWAKE_WINDOW).await;
     } else {
         if let Some(panel) = display.as_mut() {
-            bringup::draw(panel, Mode::Watch, bringup::staging());
+            bringup::draw(panel, shell.mode(), bringup::staging());
         }
         Timer::after(AWAKE_WINDOW).await;
     }

@@ -1,7 +1,9 @@
 mod support;
 
 use common::{Mode, Region, TouchPoint, TouchReport};
-use shell::{Action, AppError, GestureOutcome, LayerKind, Shell, ShellError, ROUTE_CAPACITY};
+use shell::{
+    Action, AppError, AppId, GestureOutcome, LayerKind, Shell, ShellError, ROUTE_CAPACITY,
+};
 use support::{Event, Log, Registry, HOME, OTHER};
 
 fn new_shell(log: Log) -> Shell<Registry> {
@@ -217,6 +219,19 @@ fn mode_switch_reenters_the_active_app_and_clears_overlays() {
             Event::Enter(OTHER),
         ]
     );
+}
+
+#[test]
+fn unknown_app_is_rejected_without_route_change() {
+    let mut shell = new_shell(Log::default());
+    shell.start().unwrap();
+    let unknown = AppId::new(99);
+    assert_eq!(
+        shell.dispatch(Action::OpenApp(unknown)),
+        Err(ShellError::UnknownApp(unknown))
+    );
+    assert_eq!(shell.routes().depth(), 1);
+    assert_eq!(shell.active_app(), Some(HOME));
 }
 
 #[test]

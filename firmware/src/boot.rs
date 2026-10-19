@@ -4,6 +4,7 @@
 //! between watch and desk, so there are no duplicate `watch_init`/`desk_init`
 //! bodies.
 
+use embassy_time::Duration;
 use esp_hal::delay::Delay;
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::peripherals::{GPIO9, PSRAM};
@@ -21,6 +22,28 @@ pub type Touch = Ft3168<Bus, Output<'static>, Delay>;
 
 /// IMU driver type owned by the boot chain.
 pub type Imu = Qmi8658<Bus, Delay>;
+
+/// SRAM heap size reserved for the runtime.
+pub const SRAM_HEAP_BYTES: usize = 96 * 1024;
+
+/// Awake time budget granted on each watch-mode wake.
+pub const AWAKE_BUDGET_MS: u32 = 7_000;
+
+/// How long to stay awake before sleeping in watch mode.
+// TODO(phase-7): return to the 2 s watch budget once the wake cycle is tuned.
+pub const AWAKE_WINDOW: Duration = Duration::from_secs(7);
+
+/// How often desk mode checks whether USB was removed.
+pub const VBUS_POLL_PERIOD: Duration = Duration::from_millis(500);
+
+/// Deep-sleep timer interval. Longer for wake-on-motion debugging.
+pub const SLEEP_TIMER_MS: u32 = 30_000;
+
+/// Wake-on-Motion threshold. Tune on hardware during wake verification.
+pub const WOM_THRESHOLD_MG: u8 = 80;
+
+/// Accelerometer samples ignored after entering Wake-on-Motion.
+pub const WOM_BLANKING_SAMPLES: u8 = 10;
 
 /// The boot steps that differ between modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

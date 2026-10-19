@@ -397,8 +397,9 @@ access in watch; cold boot succeeds in both modes.
 - Wire lifecycle (`enter`, `exit`, `tick`, `action`), the route stack, status
   ownership, and minimal overlay blocking.
 - Keep the label out of `apps::Home`, so no app branches on `Mode`.
-- Keep the app set identical in both modes; registry divergence is a declared
-  seam, not implemented yet.
+- Register only the firmware-owned `DebugHome` in both modes; the real app set
+  begins in 7.1 and 8.3. Registry divergence is a declared seam, not implemented
+  yet.
 
 **Test:** Lifecycle ordering, registry resolution, back order, and modal
 blocking; blank Home renders in both policies; the label changes with mode; no
