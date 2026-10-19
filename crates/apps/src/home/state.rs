@@ -73,6 +73,7 @@ impl HomeState {
             speed_len: 0,
         };
         state.update(now, battery, is_charging);
+        state.battery_len = percent_text(battery, &mut state.battery_text).len();
         state.write_stats();
         state
     }
@@ -239,6 +240,7 @@ mod tests {
     #[test]
     fn battery_and_charge_changes_are_reported() {
         let mut home = HomeState::new(timestamp(7, 5), Percent::new(80), false);
+        assert_eq!(home.battery(), "80%");
         assert!(home.update(timestamp(7, 5), Percent::new(79), false));
         assert_eq!(home.battery(), "79%");
         assert!(home.update(timestamp(7, 5), Percent::new(79), true));
