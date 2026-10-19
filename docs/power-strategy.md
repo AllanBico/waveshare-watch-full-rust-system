@@ -19,10 +19,12 @@ esp-hal 1.0.0 marks GPIO0–21 as RTC pins (deep-sleep wake capable). Therefore:
   wake the SoC.
 - Alarms are scheduled on the ESP32-S3 internal RTC timer (compute delta before
   sleep); the external RTC is wall-clock persistence only.
-- Phase 6.5 gate: confirm whether the AXP IRQ (`EXIO5` net) reaches an
-  RTC-capable wake pin and stays powered in deep sleep. If it does, USB insert
-  wakes a sleeping watch. If not, fall back to motion/button wake sampling VBUS;
-  do not add periodic polling in watch mode.
+- Phase 6.5 gate result: `EXIO5`/`AXP_IRQ` is not mapped to an ESP GPIO in the
+  repository, so the IRQ wake path is not implemented. The fallback is active:
+  a plug while asleep is detected on the next motion, button, or timer wake,
+  which re-samples VBUS and boots into desk. While awake, the session polls VBUS
+  and switches live. Add the IRQ to Ext1 once the schematic/expander path is
+  confirmed; do not add periodic polling in watch mode as a substitute.
 
 ## Display strategy
 - Watch mode sleeps with the panel dark. Clock shows on motion/tap/button.

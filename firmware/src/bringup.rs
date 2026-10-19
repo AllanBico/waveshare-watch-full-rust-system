@@ -25,9 +25,20 @@ const WATCH_FRAMEBUFFER_BYTES: usize = MonoSurface::buffer_len(board::LCD_WIDTH,
 static WATCH_FRAMEBUFFER: StaticCell<[u8; WATCH_FRAMEBUFFER_BYTES]> = StaticCell::new();
 static STAGING: StaticCell<[u8; STAGING_BYTES]> = StaticCell::new();
 
-/// Reusable flush staging storage.
-pub fn staging() -> &'static mut [u8; STAGING_BYTES] {
-    STAGING.init([0; STAGING_BYTES])
+/// Reusable buffers for repeated first-light frames.
+pub struct Workspace {
+    /// Watch framebuffer in internal SRAM.
+    pub framebuffer: &'static mut [u8; WATCH_FRAMEBUFFER_BYTES],
+    /// Chunked flush staging.
+    pub staging: &'static mut [u8; STAGING_BYTES],
+}
+
+/// Initializes the reusable buffers once per boot.
+pub fn workspace() -> Workspace {
+    Workspace {
+        framebuffer: WATCH_FRAMEBUFFER.init([0; WATCH_FRAMEBUFFER_BYTES]),
+        staging: STAGING.init([0; STAGING_BYTES]),
+    }
 }
 
 /// The label for a mode.
@@ -39,22 +50,21 @@ pub const fn label(mode: Mode) -> &'static str {
 }
 
 /// Paints the mode label and flushes it to the panel.
-pub fn draw<D: Display>(display: &mut D, mode: Mode, theme_id: ThemeId, staging: &mut [u8])
+pub fn draw<D: Display>(display: &mut D, mode: Mode, theme_id: ThemeId, workspace: &mut Workspace)
 where
     D::Error: Debug,
 {
     let theme = Theme::for_id(theme_id, RenderPolicy::for_mode(mode).pixel);
     match mode {
-        Mode::Watch => draw_mono(display, theme, staging),
-        Mode::Desk => draw_gray(display, theme, staging),
+        Mode::Watch => draw_mono(display, theme, workspace.framebuffer, workspace.staging),
+        Mode::Desk => draw_gray(display, theme, workspace.staging),
     }
 }
 
-fn draw_mono<D: Display>(display: &mut D, theme: &Theme, staging: &mut [u8])
+fn draw_mono<D: Display>(display: &mut D, theme: &Theme, data: &mut [u8], staging: &mut [u8])
 where
     D::Error: Debug,
 {
-    let data = WATCH_FRAMEBUFFER.init([0; WATCH_FRAMEBUFFER_BYTES]);
     let Ok(mut surface) = MonoSurface::new(board::LCD_WIDTH, board::LCD_HEIGHT, data) else {
         println!("[ui] watch framebuffer too small");
         return;

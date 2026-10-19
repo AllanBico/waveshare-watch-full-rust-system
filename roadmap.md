@@ -421,10 +421,11 @@ clamp; schema and persistence tests pass.
 ### 6.5 Mode Switch & VBUS Wake
 - Hardware gate first: confirm `EXIO5`/`AXP_IRQ` reaches an RTC-capable GPIO and
   stays powered in deep sleep.
-- If it passes, add the AXP VBUS-insert IRQ as a third Ext1 source and wake into
-  desk on insert.
-- If it fails, fall back to motion/button wake sampling VBUS. Do not add
-  periodic polling in watch.
+- Gate result: the repository does not map `EXIO5` to an ESP GPIO, so the IRQ
+  path is not implemented. Fall back to motion/button/timer wake sampling VBUS.
+  Do not add periodic polling in watch.
+- If the pin is later confirmed, add the AXP VBUS-insert IRQ as a third Ext1
+  source and wake into desk on insert.
 - Poll VBUS for removal in desk; desk is full power and pays no power cost.
 - Switch gracefully both ways: flush, finish the operation, apply the rail plan
   and render policy, re-enter the active app, and preserve state.

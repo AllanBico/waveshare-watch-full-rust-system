@@ -40,7 +40,7 @@ mod retained;
 mod runtime;
 mod session;
 
-use boot::{AWAKE_WINDOW, SLEEP_TIMER_MS, SRAM_HEAP_BYTES, VBUS_POLL_PERIOD, WOM_BLANKING_SAMPLES};
+use boot::{SLEEP_TIMER_MS, SRAM_HEAP_BYTES, VBUS_POLL_PERIOD, WOM_BLANKING_SAMPLES};
 
 use esp_alloc as _;
 use esp_backtrace as _;
@@ -94,7 +94,9 @@ async fn main(_spawner: Spawner) {
         halt().await
     }
 
-    // Mode is chosen from VBUS only: USB -> Desk, otherwise Watch.
+    // Mode is chosen from VBUS only. AXP IRQ routing to an RTC GPIO is
+    // unconfirmed, so a plug while asleep is picked up on the next motion,
+    // button, or timer wake; while awake, `session` polls VBUS.
     let vbus = power.is_vbus_present().unwrap_or(false);
     let mode = if vbus { Mode::Desk } else { Mode::Watch };
 
@@ -144,8 +146,13 @@ async fn main(_spawner: Spawner) {
     let policy = BootPolicy::from_settings(settings.settings());
 
     let plan = boot::Plan::for_mode(mode);
+    let mut psram = Some(peripherals.PSRAM);
     let psram_bytes = if plan.initialize_psram {
-        boot::init_psram(peripherals.PSRAM)
+        if let Some(token) = psram.take() {
+            boot::init_psram(token)
+        } else {
+            0
+        }
     } else {
         0
     };
@@ -203,7 +210,6 @@ async fn main(_spawner: Spawner) {
         if let Err(error) = panel.init() {
             println!("[lcd] init failed: {:?}", error);
         }
-        boot::apply_brightness(panel, settings.settings(), mode, plan.logging);
     }
 
     if let Some(reason) = wake {
@@ -219,36 +225,34 @@ async fn main(_spawner: Spawner) {
             halt().await
         }
     };
-    let theme = settings.settings().display.theme;
-
-    if mode == Mode::Desk {
-        if let Some(panel) = display.as_mut() {
-            session::run_desk(panel, &mut shell, theme, bringup::staging(), &mut power).await;
-        } else {
-            while power.is_vbus_present().unwrap_or(true) {
-                Timer::after(VBUS_POLL_PERIOD).await;
-            }
+    if let Some(panel) = display.as_mut() {
+        if let Err(error) = session::run(
+            panel,
+            &mut shell,
+            &mut power,
+            settings.settings(),
+            &mut psram,
+            plan.logging,
+        )
+        .await
+        {
+            println!("[session] failed: {:?}", error);
+            halt().await
+        }
+    } else if mode == Mode::Desk {
+        while power.is_vbus_present().unwrap_or(true) {
+            Timer::after(VBUS_POLL_PERIOD).await;
         }
         if let Err(error) = power.set_mode(Mode::Watch) {
             println!("[pm] set_mode failed: {}", error.to_common());
             halt().await
         }
-        Timer::after(AWAKE_WINDOW).await;
     } else {
-        if let Some(panel) = display.as_mut() {
-            session::run_watch(
-                panel,
-                &shell,
-                theme,
-                bringup::staging(),
-                policy.awake_budget_ms,
-            )
-            .await;
-        } else {
-            Timer::after(Duration::from_millis(u64::from(policy.awake_budget_ms))).await;
-        }
+        Timer::after(Duration::from_millis(u64::from(policy.awake_budget_ms))).await;
     }
 
+    // Re-derive after any live switch so pre-sleep wake settings are current.
+    let policy = BootPolicy::from_settings(settings.settings());
     // Arm Wake-on-Motion only when the derived policy allows it.
     if imu_error.is_none() && policy.wake_on_motion {
         let config = WakeOnMotion::new(policy.motion_threshold_mg, WOM_BLANKING_SAMPLES);

@@ -30,11 +30,7 @@ pub type Imu = Qmi8658<Bus, Delay>;
 /// SRAM heap size reserved for the runtime.
 pub const SRAM_HEAP_BYTES: usize = 96 * 1024;
 
-/// How long to stay awake in desk mode after USB is removed.
-// TODO(phase-7): return to the 2 s watch budget once the wake cycle is tuned.
-pub const AWAKE_WINDOW: Duration = Duration::from_secs(7);
-
-/// How often desk mode checks whether USB was removed.
+/// How often the awake loops poll VBUS.
 pub const VBUS_POLL_PERIOD: Duration = Duration::from_millis(500);
 
 /// Deep-sleep timer interval. Longer for wake-on-motion debugging.
