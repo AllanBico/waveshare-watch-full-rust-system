@@ -12,7 +12,7 @@
 extern crate alloc;
 
 use embassy_executor::Spawner;
-use embassy_time::{Instant, Timer};
+use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
 use esp_hal::gpio::{Input, InputConfig, Pull, RtcPin, RtcPinWithResistors};
@@ -21,14 +21,14 @@ use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
-use common::{Mode, Percent, Region, WakeOnMotion, WakeReason};
+use common::{Mode, Percent, WakeOnMotion, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
 use drivers::qmi8658::Qmi8658;
 use embedded_hal_bus::i2c::RefCellDevice;
 use power::PowerManager;
-use shell::Shell;
+use settings::BootPolicy;
 
 mod boot;
 mod bringup;
@@ -38,12 +38,9 @@ mod persist;
 mod registry;
 mod retained;
 mod runtime;
+mod session;
 
-use boot::{
-    AWAKE_BUDGET_MS, AWAKE_WINDOW, SLEEP_TIMER_MS, SRAM_HEAP_BYTES, VBUS_POLL_PERIOD,
-    WOM_BLANKING_SAMPLES, WOM_THRESHOLD_MG,
-};
-use registry::{Registry, HOME_ID};
+use boot::{AWAKE_WINDOW, SLEEP_TIMER_MS, SRAM_HEAP_BYTES, VBUS_POLL_PERIOD, WOM_BLANKING_SAMPLES};
 
 use esp_alloc as _;
 use esp_backtrace as _;
@@ -143,7 +140,8 @@ async fn main(_spawner: Spawner) {
         .unwrap_or(false);
     let persisted = persist::init(peripherals.FLASH, mode, battery_mv, wake, now);
     let report = persisted.report;
-    let _settings = persisted.settings;
+    let settings = persisted.settings;
+    let policy = BootPolicy::from_settings(settings.settings());
 
     let plan = boot::Plan::for_mode(mode);
     let psram_bytes = if plan.initialize_psram {
@@ -152,6 +150,9 @@ async fn main(_spawner: Spawner) {
         0
     };
     report_boot(mode, psram_bytes);
+    if plan.logging {
+        println!("[boot] policy {:?}", policy);
+    }
 
     if mode == Mode::Desk {
         println!(
@@ -202,39 +203,30 @@ async fn main(_spawner: Spawner) {
         if let Err(error) = panel.init() {
             println!("[lcd] init failed: {:?}", error);
         }
+        boot::apply_brightness(panel, settings.settings(), mode, plan.logging);
     }
 
     if let Some(reason) = wake {
-        if let Err(error) = power.request_awake(reason, AWAKE_BUDGET_MS, 0) {
+        if let Err(error) = power.request_awake(reason, policy.awake_budget_ms, 0) {
             println!("[pm] awake failed: {}", error.to_common());
         }
     }
 
-    let mut shell = Shell::new(
-        Registry::new(),
-        HOME_ID,
-        mode,
-        Region::full(board::LCD_WIDTH, board::LCD_HEIGHT),
-    );
-    shell.set_time(now);
-    shell.set_battery(battery_percent, is_charging);
-    if let Err(error) = shell.start() {
-        println!("[shell] start failed: {:?}", error);
-        halt().await
-    }
-    if let Err(error) = shell.tick(0) {
-        println!("[shell] tick failed: {:?}", error);
-    }
+    let mut shell = match session::boot(mode, now, battery_percent, is_charging) {
+        Ok(shell) => shell,
+        Err(error) => {
+            println!("[shell] boot failed: {:?}", error);
+            halt().await
+        }
+    };
+    let theme = settings.settings().display.theme;
 
     if mode == Mode::Desk {
         if let Some(panel) = display.as_mut() {
-            bringup::draw(panel, shell.mode(), bringup::staging());
-        }
-        let started = Instant::now();
-        while power.is_vbus_present().unwrap_or(true) {
-            Timer::after(VBUS_POLL_PERIOD).await;
-            if let Err(error) = shell.tick((Instant::now() - started).as_millis()) {
-                println!("[shell] tick failed: {:?}", error);
+            session::run_desk(panel, &mut shell, theme, bringup::staging(), &mut power).await;
+        } else {
+            while power.is_vbus_present().unwrap_or(true) {
+                Timer::after(VBUS_POLL_PERIOD).await;
             }
         }
         if let Err(error) = power.set_mode(Mode::Watch) {
@@ -244,14 +236,22 @@ async fn main(_spawner: Spawner) {
         Timer::after(AWAKE_WINDOW).await;
     } else {
         if let Some(panel) = display.as_mut() {
-            bringup::draw(panel, shell.mode(), bringup::staging());
+            session::run_watch(
+                panel,
+                &shell,
+                theme,
+                bringup::staging(),
+                policy.awake_budget_ms,
+            )
+            .await;
+        } else {
+            Timer::after(Duration::from_millis(u64::from(policy.awake_budget_ms))).await;
         }
-        Timer::after(AWAKE_WINDOW).await;
     }
 
-    // Leave the IMU in Wake-on-Motion so the next motion can wake the SoC.
-    if imu_error.is_none() {
-        let config = WakeOnMotion::new(WOM_THRESHOLD_MG, WOM_BLANKING_SAMPLES);
+    // Arm Wake-on-Motion only when the derived policy allows it.
+    if imu_error.is_none() && policy.wake_on_motion {
+        let config = WakeOnMotion::new(policy.motion_threshold_mg, WOM_BLANKING_SAMPLES);
         if let Err(error) = imu.configure_wake_on_motion(config) {
             if plan.logging {
                 println!("[imu] wake-on-motion failed: {}", error);

@@ -6,7 +6,8 @@
 //! reads a snapshot and reacts to [`SettingsEvent`]s.
 //!
 //! Compile-time configuration (pins, addresses, safety limits) does not
-//! belong here. Neither does device state such as logs, alarms, or sync
+//! belong in the schema. Derived policies may apply those limits to user
+//! intent. Neither does device state such as logs, alarms, or sync
 //! checkpoints.
 
 #![cfg_attr(not(test), no_std)]
@@ -17,6 +18,7 @@ mod encoding;
 mod error;
 mod id;
 mod keys;
+mod policy;
 mod settings;
 mod store;
 #[cfg(test)]
@@ -25,6 +27,7 @@ mod value;
 
 pub use error::Error;
 pub use id::{SettingGroup, SettingId, SettingsEvent, SETTING_COUNT};
+pub use policy::BootPolicy;
 pub use settings::{
     ConnectivitySettings, DisplaySettings, PowerSettings, Settings, SoundSettings, SystemSettings,
 };

@@ -4,16 +4,20 @@
 //! between watch and desk, so there are no duplicate `watch_init`/`desk_init`
 //! bodies.
 
+use core::fmt::Debug;
+
 use embassy_time::Duration;
 use esp_hal::delay::Delay;
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::peripherals::{GPIO9, PSRAM};
 use esp_println::println;
+use hal::Display;
 
 use common::Mode;
 use drivers::board;
 use drivers::ft3168::Ft3168;
 use drivers::qmi8658::Qmi8658;
+use settings::Settings;
 
 use crate::runtime::Bus;
 
@@ -26,10 +30,7 @@ pub type Imu = Qmi8658<Bus, Delay>;
 /// SRAM heap size reserved for the runtime.
 pub const SRAM_HEAP_BYTES: usize = 96 * 1024;
 
-/// Awake time budget granted on each watch-mode wake.
-pub const AWAKE_BUDGET_MS: u32 = 7_000;
-
-/// How long to stay awake before sleeping in watch mode.
+/// How long to stay awake in desk mode after USB is removed.
 // TODO(phase-7): return to the 2 s watch budget once the wake cycle is tuned.
 pub const AWAKE_WINDOW: Duration = Duration::from_secs(7);
 
@@ -38,9 +39,6 @@ pub const VBUS_POLL_PERIOD: Duration = Duration::from_millis(500);
 
 /// Deep-sleep timer interval. Longer for wake-on-motion debugging.
 pub const SLEEP_TIMER_MS: u32 = 30_000;
-
-/// Wake-on-Motion threshold. Tune on hardware during wake verification.
-pub const WOM_THRESHOLD_MG: u8 = 80;
 
 /// Accelerometer samples ignored after entering Wake-on-Motion.
 pub const WOM_BLANKING_SAMPLES: u8 = 10;
@@ -70,6 +68,19 @@ impl Plan {
                 initialize_touch: true,
                 logging: true,
             },
+        }
+    }
+}
+
+/// Applies the active mode's brightness setting to the panel.
+pub fn apply_brightness<D: Display>(display: &mut D, settings: &Settings, mode: Mode, log: bool)
+where
+    D::Error: Debug,
+{
+    let level = (u16::from(settings.brightness(mode).value()) * 255 / 100) as u8;
+    if let Err(error) = display.set_brightness(level) {
+        if log {
+            println!("[lcd] brightness failed: {:?}", error);
         }
     }
 }

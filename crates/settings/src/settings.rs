@@ -20,11 +20,12 @@ pub struct DisplaySettings {
     pub units: Units,
     /// First day of the week.
     pub first_day: FirstDay,
-    /// Theme variant.
+    /// Theme variant. Applied live.
     pub theme: ThemeId,
-    /// Screen timeout in seconds.
+    /// Desk-only screen timeout in seconds. Watch deep sleep uses
+    /// [`PowerSettings::sleep_timeout_secs`] instead.
     pub screen_timeout_secs: u16,
-    /// Whether the screen stays on.
+    /// Reserved for an always-on display; not wired yet.
     pub always_on: bool,
 }
 
@@ -62,13 +63,15 @@ pub struct ConnectivitySettings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PowerSettings {
-    /// Whether motion may wake the watch.
+    /// Whether motion may wake the watch. Applied at the next sleep.
     pub wake_on_motion: bool,
-    /// Motion wake sensitivity.
+    /// Motion wake sensitivity, mapped to a clamped threshold at the next
+    /// sleep.
     pub motion_sensitivity: Percent,
-    /// Idle time before sleep, in seconds.
+    /// Watch idle time before sleep, in seconds. Clamped by the boot policy.
     pub sleep_timeout_secs: u16,
-    /// Whether aggressive power saving is enabled.
+    /// Reserved: watch is always power-saving and desk never is. Not read by
+    /// firmware.
     pub power_saving: bool,
 }
 

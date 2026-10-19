@@ -12,7 +12,7 @@ use esp_println::println;
 use hal::Display;
 use static_cell::StaticCell;
 
-use common::{Mode, Region};
+use common::{Mode, Region, RenderPolicy, ThemeId};
 use drivers::board;
 use ui::{draw_boot_label, flush, Damage, GraySurface, MonoSurface, Painter, Rgb565Source, Theme};
 
@@ -39,17 +39,14 @@ pub const fn label(mode: Mode) -> &'static str {
 }
 
 /// Paints the mode label and flushes it to the panel.
-pub fn draw<D: Display>(display: &mut D, mode: Mode, staging: &mut [u8])
+pub fn draw<D: Display>(display: &mut D, mode: Mode, theme_id: ThemeId, staging: &mut [u8])
 where
     D::Error: Debug,
 {
-    let theme = match mode {
-        Mode::Watch => Theme::WATCH,
-        Mode::Desk => Theme::DESK,
-    };
+    let theme = Theme::for_id(theme_id, RenderPolicy::for_mode(mode).pixel);
     match mode {
-        Mode::Watch => draw_mono(display, &theme, staging),
-        Mode::Desk => draw_gray(display, &theme, staging),
+        Mode::Watch => draw_mono(display, theme, staging),
+        Mode::Desk => draw_gray(display, theme, staging),
     }
 }
 
