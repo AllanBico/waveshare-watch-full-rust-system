@@ -82,6 +82,9 @@ pub const ES7210_I2C_ADDR: u8 = 0x40;
 /// Audio power-amplifier enable.
 pub const PA_CTRL: u8 = 46;
 
+/// Vibration-motor low-side switch.
+pub const MOTOR: u8 = 18;
+
 /// Boot button (also a deep-sleep wake source).
 pub const BOOT_BUTTON: u8 = 0;
 /// Power button (also a deep-sleep wake source).

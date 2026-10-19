@@ -14,9 +14,11 @@ use esp_println::println;
 use hal::Display;
 use power::PowerManager;
 
-use common::{Error, WakeOnMotion};
+use alarms::AlarmStore;
+use common::{Error, Timestamp, WakeOnMotion};
 use settings::{BootPolicy, Settings};
 
+use crate::alarm_boot::Backend;
 use crate::boot::{self, WOM_BLANKING_SAMPLES};
 use crate::retained;
 
@@ -36,6 +38,10 @@ pub struct SleepInputs<'a, D, P, R> {
     pub settings: &'a Settings,
     /// PWR button pin.
     pub pwr_button: &'a mut R,
+    /// Stored alarms, used to schedule the next RTC wake.
+    pub alarms: &'a mut AlarmStore<Backend>,
+    /// Wall-clock time at this sleep.
+    pub now: Timestamp,
     /// IMU interrupt pin.
     pub imu_int: GPIO21<'static>,
     /// Low-power peripheral token for the RTC.
@@ -82,7 +88,9 @@ where
         }
     }
 
-    let plan = match input.power.plan_sleep() {
+    let housekeeping_ms = input.power.sleep_timer_ms();
+    let timer_ms = input.alarms.next_wake_in_ms(input.now, housekeeping_ms);
+    let plan = match input.power.plan_sleep_in(timer_ms) {
         Ok(plan) => plan,
         Err(error) => {
             retained::record_error(error.to_common().code());

@@ -44,6 +44,8 @@ pub(crate) const SETTINGS_ID: u16 = 22;
 pub(crate) const DESK_BATTERY_ID: u16 = 23;
 /// Desk sync tile.
 pub(crate) const SYNC_ID: u16 = 24;
+/// Ringing alarm label.
+pub(crate) const ALARM_RING_ID: u16 = 25;
 
 /// Builds Home for the active mode.
 pub(crate) fn build<'a>(

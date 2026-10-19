@@ -4,7 +4,8 @@
 //! settings, then the PSRAM and peripheral hooks named by [`ModePlan`]. Watch
 //! and desk never duplicate that sequence; only the plan and the awake loop
 //! differ. The external RTC keeps wall-clock time. The pieces `main` calls live
-//! in [`runtime`], [`boot`], [`present`], and [`display`].
+//! in [`runtime`], [`boot`], [`awake`], [`present`], [`sleep_cycle`], and
+//! [`display`].
 
 #![no_std]
 #![no_main]
@@ -12,7 +13,6 @@
 extern crate alloc;
 
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
 use esp_hal::timer::timg::TimerGroup;
@@ -27,6 +27,8 @@ use embedded_hal_bus::i2c::RefCellDevice;
 use power::{PowerManager, WakeAction};
 use settings::BootPolicy;
 
+mod alarm_boot;
+mod awake;
 mod boot;
 mod display;
 mod log_boot;
@@ -38,7 +40,7 @@ mod runtime;
 mod session;
 mod sleep_cycle;
 
-use boot::{SLEEP_TIMER_MS, VBUS_POLL_PERIOD};
+use boot::SLEEP_TIMER_MS;
 
 use esp_alloc as _;
 use esp_backtrace as _;
@@ -114,17 +116,6 @@ async fn main(_spawner: Spawner) {
     } else {
         raw_wake
     };
-    let show_home = WakeAction::for_wake(mode, wake).presents_home();
-    if log {
-        match wake {
-            Some(reason) => println!(
-                "[pm] woke by {:?} (wom {:?}, btn {})",
-                reason, wom, button_pressed
-            ),
-            None => println!("[pm] cold boot"),
-        }
-    }
-
     if let Err(error) = power.set_mode(mode) {
         if log {
             println!("[pm] set_mode failed: {}", error.to_common());
@@ -148,6 +139,19 @@ async fn main(_spawner: Spawner) {
     let persisted = persist::init(peripherals.FLASH, mode, battery_mv, wake, now);
     let report = persisted.report;
     let settings = persisted.settings;
+    let mut alarms = persisted.alarms;
+    let alarm = persisted.alarm;
+    let wake = persisted.wake;
+    let show_home = WakeAction::for_wake(mode, wake).presents_home();
+    if log {
+        match wake {
+            Some(reason) => println!(
+                "[pm] woke by {:?} (wom {:?}, btn {})",
+                reason, wom, button_pressed
+            ),
+            None => println!("[pm] cold boot"),
+        }
+    }
     let policy = BootPolicy::from_settings(settings.settings());
 
     let mut psram = Some(peripherals.PSRAM);
@@ -224,64 +228,47 @@ async fn main(_spawner: Spawner) {
     }
 
     if show_home {
-        if let Some(reason) = wake {
-            if let Err(error) = power.request_awake(reason, policy.awake_budget_ms, 0) {
-                crate::retained::record_error(error.to_common().code());
-                if log {
-                    println!("[pm] awake failed: {}", error.to_common());
-                }
-            }
-        }
-
-        let mut shell = match session::boot(
+        let strength = settings.settings().sound.haptics;
+        let mut motor = if alarm.is_some() && strength.value() > 0 {
+            Some(drivers::haptics::Motor::new(peripherals.GPIO18))
+        } else {
+            None
+        };
+        let haptics = motor
+            .as_mut()
+            .map(|motor| session::Haptics { motor, strength });
+        if let Err(error) = awake::run(awake::Inputs {
             mode,
             now,
-            battery_percent,
+            battery: battery_percent,
             is_charging,
-            settings.settings().display.time_format,
-        ) {
-            Ok(shell) => shell,
-            Err(error) => {
-                crate::retained::record_error(common::Error::NotReady.code());
-                if log {
-                    println!("[shell] boot failed: {:?}", error);
-                }
-                halt().await
+            time_format: settings.settings().display.time_format,
+            wake,
+            alarm,
+            settings: settings.settings(),
+            display: &mut display,
+            power: &mut power,
+            psram: &mut psram,
+            log: plan.logging,
+            haptics,
+        })
+        .await
+        {
+            crate::retained::record_error(common::Error::NotReady.code());
+            if log {
+                println!("[awake] failed: {:?}", error);
             }
-        };
-        if let Some(panel) = display.as_mut() {
-            if let Err(error) = session::run(
-                panel,
-                &mut shell,
-                &mut power,
-                settings.settings(),
-                &mut psram,
-                plan.logging,
-            )
-            .await
-            {
-                crate::retained::record_error(common::Error::NotReady.code());
-                if log {
-                    println!("[session] failed: {:?}", error);
-                }
-                halt().await
+            if let Some(motor) = motor.as_mut() {
+                motor.set(false);
             }
-        } else if mode == Mode::Desk {
-            while power.is_vbus_present().unwrap_or(true) {
-                Timer::after(VBUS_POLL_PERIOD).await;
-            }
-            if let Err(error) = power.set_mode(Mode::Watch) {
-                crate::retained::record_error(error.to_common().code());
-                if log {
-                    println!("[pm] set_mode failed: {}", error.to_common());
-                }
-                halt().await
-            }
-        } else {
-            Timer::after(Duration::from_millis(u64::from(policy.awake_budget_ms))).await;
+            halt().await
+        }
+        if let Some(motor) = motor.as_mut() {
+            motor.set(false);
         }
     }
 
+    let sleep_now = runtime::read_timestamp(&mut clock);
     sleep_cycle::enter(sleep_cycle::SleepInputs {
         display: &mut display,
         touch: &mut touch,
@@ -290,6 +277,8 @@ async fn main(_spawner: Spawner) {
         power: &mut power,
         settings: settings.settings(),
         pwr_button: &mut pwr_button,
+        alarms: &mut alarms,
+        now: sleep_now,
         imu_int: peripherals.GPIO21,
         lpw: peripherals.LPWR,
         log,

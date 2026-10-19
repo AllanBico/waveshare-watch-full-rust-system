@@ -1,21 +1,20 @@
 //! Storage boot probe and trace selftest.
 //!
-//! Production boots probe the key-value store, load runtime settings, and run
-//! the retained log flush. The trace build also increments a persisted boot
-//! counter so the display viewer can prove storage persistence without serial.
+//! Production boots probe the key-value store, load runtime settings and
+//! alarms, and run the retained log flush. The trace build also increments a
+//! persisted boot counter so storage persistence can be proven without serial.
 
 use esp_hal::peripherals::FLASH;
 use esp_println::println;
 use static_cell::StaticCell;
 
+use alarms::AlarmStore;
 use common::{Mode, Timestamp, WakeReason};
 use drivers::flash::{FlashDevice, PartitionFlash};
 use settings::SettingsStore;
 use storage::{OpenOutcome, Provisioning, TicKvStorage, REGION_SIZE};
 
-use crate::log_boot;
-#[cfg(feature = "trace")]
-use crate::log_boot::STORAGE_WRITE_MIN_MV;
+use crate::log_boot::{self, STORAGE_WRITE_MIN_MV};
 
 /// Partition label reserved for TicKV key-value data.
 const KV_LABEL: &str = "kv";
@@ -28,13 +27,18 @@ static DEVICE: StaticCell<FlashDevice> = StaticCell::new();
 
 /// Concrete settings backend over the `kv` partition.
 pub type SettingsBackend = TicKvStorage<'static, PartitionFlash<'static>>;
-
-/// Storage and settings produced by the boot probe.
+/// Storage, settings, and alarms produced by the boot probe.
 pub struct Boot {
     /// Boot report for the viewer and serial log.
     pub report: Report,
     /// Loaded settings, or defaults when the store is unavailable.
     pub settings: SettingsStore<SettingsBackend>,
+    /// Loaded alarms, or an empty set when the store is unavailable.
+    pub alarms: AlarmStore<crate::alarm_boot::Backend>,
+    /// The alarm due this wake, if any.
+    pub alarm: Option<Timestamp>,
+    /// Effective wake reason, refined to `Alarm` when one is due.
+    pub wake: Option<WakeReason>,
 }
 
 /// Outcome shown by the viewer.
@@ -145,11 +149,22 @@ pub fn init(
             return Boot {
                 report: failed(mode, error.to_common(), "flash device"),
                 settings: SettingsStore::unavailable(),
+                alarms: AlarmStore::unavailable(),
+                alarm: None,
+                wake,
             };
         }
     };
 
     let (mut report, opened) = open_kv(device, mode, battery_mv);
+    let mut alarms =
+        crate::alarm_boot::seed_trace(crate::alarm_boot::open(device, mode), now, battery_mv, mode);
+    let alarm = alarms.due(now);
+    let wake = if alarm.is_some() {
+        Some(WakeReason::Alarm)
+    } else {
+        wake
+    };
     let logs = log_boot::run(device, mode, battery_mv, wake, now);
     report.log = logs.latest;
     report.battery_mv = battery_mv;
@@ -170,7 +185,21 @@ pub fn init(
         None => SettingsStore::unavailable(),
     };
 
-    Boot { report, settings }
+    if let Some(at) = alarm {
+        alarms.remove(at);
+        if battery_mv >= STORAGE_WRITE_MIN_MV && alarms.flush().is_err() {
+            crate::retained::record_error(common::Error::HardwareFailure.code());
+            report.error = Some(common::Error::HardwareFailure.code());
+        }
+    }
+
+    Boot {
+        report,
+        settings,
+        alarms,
+        alarm,
+        wake,
+    }
 }
 
 fn open_kv(

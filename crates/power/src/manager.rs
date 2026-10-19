@@ -92,9 +92,15 @@ impl<P: Power> PowerManager<P> {
     /// Applies the deep-sleep rail plan and returns the SoC sleep policy for
     /// the firmware to execute.
     pub fn plan_sleep(&mut self) -> Result<SleepPlan, PowerError<P::Error>> {
+        self.plan_sleep_in(self.sleep_timer_ms)
+    }
+
+    /// Sleeps with an explicit timer, used when an alarm is earlier than the
+    /// housekeeping interval.
+    pub fn plan_sleep_in(&mut self, timer_ms: u32) -> Result<SleepPlan, PowerError<P::Error>> {
         self.enter_sleep()?;
         Ok(SleepPlan {
-            timer_ms: self.sleep_timer_ms,
+            timer_ms,
             wake_on_button: true,
             rails: self.plan,
         })

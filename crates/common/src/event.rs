@@ -16,6 +16,8 @@ pub enum WakeReason {
     Motion,
     /// USB was connected.
     Usb,
+    /// A stored alarm is due.
+    Alarm,
     /// The cause could not be determined.
     Unknown,
 }
@@ -65,6 +67,7 @@ mod tests {
     #[test]
     fn wake_reasons_are_distinct() {
         assert_ne!(WakeReason::Timer, WakeReason::Motion);
+        assert_ne!(WakeReason::Alarm, WakeReason::Timer);
     }
 
     #[test]

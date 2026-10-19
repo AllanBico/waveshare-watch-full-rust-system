@@ -17,6 +17,11 @@ pub struct Registry {
 }
 
 impl Registry {
+    /// Marks the alarm Home should show as ringing.
+    pub fn set_alarm(&mut self, alarm: Option<Timestamp>) {
+        self.home.set_alarm(alarm);
+    }
+
     /// Creates the registry with a boot-time Home state.
     pub fn new(
         mode: Mode,

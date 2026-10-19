@@ -6,7 +6,7 @@
 
 use core::fmt::Debug;
 
-use embassy_time::{Instant, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use esp_hal::peripherals::PSRAM;
 use esp_println::println;
 use hal::{Display, Power};
@@ -14,6 +14,7 @@ use power::PowerManager;
 
 use common::{Event, LogEntry, Mode, Percent, Region, Timestamp};
 use drivers::board;
+use drivers::haptics::Motor;
 use settings::{BootPolicy, Settings, TimeFormat};
 use shell::{Shell, ShellError};
 
@@ -32,6 +33,42 @@ pub enum RunError {
     Render,
 }
 
+/// Haptics driven during an alarm wake.
+pub struct Haptics<'a> {
+    /// Motor switch.
+    pub motor: &'a mut Motor,
+    /// Configured strength in percent.
+    pub strength: Percent,
+}
+
+/// Everything one awake session needs.
+pub struct RunInput<'a, D, P> {
+    /// Panel.
+    pub display: &'a mut D,
+    /// Shell with the active app.
+    pub shell: &'a mut Shell<Registry>,
+    /// Power manager.
+    pub power: &'a mut PowerManager<P>,
+    /// Settings snapshot.
+    pub settings: &'a Settings,
+    /// PSRAM token, consumed on the first desk entry.
+    pub psram: &'a mut Option<PSRAM<'static>>,
+    /// Whether serial logging is enabled.
+    pub log: bool,
+    /// Alarm haptics, when an alarm is ringing.
+    pub haptics: Option<Haptics<'a>>,
+}
+
+/// Inputs for one watch awake loop.
+struct WatchInput<'a, 'h, P> {
+    power: &'a mut PowerManager<P>,
+    shell: &'a mut Shell<Registry>,
+    awake_ms: u32,
+    started: Instant,
+    log: bool,
+    haptics: Option<&'a mut Haptics<'h>>,
+}
+
 /// The reason the watch awake loop stopped.
 enum WatchExit {
     /// USB appeared while awake.
@@ -47,9 +84,12 @@ pub fn boot(
     battery: Percent,
     is_charging: bool,
     time_format: TimeFormat,
+    alarm: Option<Timestamp>,
 ) -> Result<Shell<Registry>, ShellError> {
+    let mut registry = Registry::new(mode, now, battery, is_charging, time_format);
+    registry.set_alarm(alarm);
     let mut shell = Shell::new(
-        Registry::new(mode, now, battery, is_charging, time_format),
+        registry,
         HOME_ID,
         mode,
         Region::full(board::LCD_WIDTH, board::LCD_HEIGHT),
@@ -65,17 +105,19 @@ pub fn boot(
 ///
 /// Watch↔desk changes happen only through this function, so the rail plan,
 /// shell mode, brightness, and retained mode-switch log stay in one place.
-pub async fn run<D: Display, P: Power>(
-    display: &mut D,
-    shell: &mut Shell<Registry>,
-    power: &mut PowerManager<P>,
-    settings: &Settings,
-    psram: &mut Option<PSRAM<'static>>,
-    log: bool,
-) -> Result<(), RunError>
+pub async fn run<D: Display, P: Power>(input: RunInput<'_, D, P>) -> Result<(), RunError>
 where
     D::Error: Debug,
 {
+    let RunInput {
+        display,
+        shell,
+        power,
+        settings,
+        psram,
+        log,
+        mut haptics,
+    } = input;
     let mut workspace = present::workspace();
     let base_now = shell.now();
     let started = Instant::now();
@@ -95,8 +137,22 @@ where
         match mode {
             Mode::Watch => {
                 let awake_ms = BootPolicy::from_settings(settings).awake_budget_ms;
-                match run_watch(power, shell, awake_ms, started, log).await {
-                    WatchExit::VbusInserted => switch(shell, power, psram, Mode::Desk, log, now())?,
+                let exit = {
+                    let watch = WatchInput {
+                        power: &mut *power,
+                        shell: &mut *shell,
+                        awake_ms,
+                        started,
+                        log,
+                        haptics: haptics.as_mut(),
+                    };
+                    run_watch(watch).await
+                };
+                match exit {
+                    WatchExit::VbusInserted => {
+                        haptics = None;
+                        switch(shell, power, psram, Mode::Desk, log, now())?
+                    }
                     WatchExit::BudgetExpired => return Ok(()),
                 }
             }
@@ -167,28 +223,52 @@ fn switch<P: Power>(
     Ok(())
 }
 
-async fn run_watch<P: Power>(
-    power: &mut PowerManager<P>,
-    shell: &mut Shell<Registry>,
-    awake_ms: u32,
-    started: Instant,
-    log: bool,
-) -> WatchExit {
+async fn run_watch<'a, 'h, P: Power>(input: WatchInput<'a, 'h, P>) -> WatchExit {
+    const ALARM_TICK_MS: u64 = 100;
+    const HAPTIC_WINDOW_MS: u64 = 1_000;
+
+    let WatchInput {
+        power,
+        shell,
+        awake_ms,
+        started,
+        log,
+        mut haptics,
+    } = input;
     let entered = Instant::now();
+    let period = if haptics.is_some() {
+        Duration::from_millis(ALARM_TICK_MS)
+    } else {
+        VBUS_POLL_PERIOD
+    };
     loop {
         if power.is_vbus_present().unwrap_or(false) {
+            stop_haptics(&mut haptics);
             return WatchExit::VbusInserted;
         }
-        if (Instant::now() - entered).as_millis() >= u64::from(awake_ms) {
+        let elapsed = (Instant::now() - entered).as_millis();
+        if elapsed >= u64::from(awake_ms) {
+            stop_haptics(&mut haptics);
             return WatchExit::BudgetExpired;
         }
-        Timer::after(VBUS_POLL_PERIOD).await;
+        if let Some(haptics) = haptics.as_deref_mut() {
+            let on = elapsed % HAPTIC_WINDOW_MS
+                < u64::from(haptics.strength.value()) * HAPTIC_WINDOW_MS / 100;
+            haptics.motor.set(on);
+        }
+        Timer::after(period).await;
         if let Err(error) = shell.tick((Instant::now() - started).as_millis()) {
             crate::retained::record_error(common::Error::NotReady.code());
             if log {
                 println!("[shell] tick failed: {:?}", error);
             }
         }
+    }
+}
+
+fn stop_haptics<'a, 'h>(haptics: &'a mut Option<&'a mut Haptics<'h>>) {
+    if let Some(haptics) = haptics.as_deref_mut() {
+        haptics.motor.set(false);
     }
 }
 

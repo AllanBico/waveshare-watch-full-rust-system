@@ -10,6 +10,7 @@ pub struct HomeState {
     last_minute: u64,
     battery: Percent,
     is_charging: bool,
+    alarm: Option<Timestamp>,
     time_format: TimeFormat,
     clock: [u8; 5],
     date: [u8; 10],
@@ -34,6 +35,7 @@ impl HomeState {
             last_minute: u64::MAX,
             battery,
             is_charging,
+            alarm: None,
             time_format,
             clock: [0; 5],
             date: [0; 10],
@@ -99,6 +101,20 @@ impl HomeState {
     /// Whether the battery is charging.
     pub const fn is_charging(&self) -> bool {
         self.is_charging
+    }
+
+    /// The alarm ringing this wake, if any.
+    pub const fn alarm(&self) -> Option<Timestamp> {
+        self.alarm
+    }
+
+    /// Updates the ringing alarm, returning whether it changed.
+    pub fn set_alarm(&mut self, alarm: Option<Timestamp>) -> bool {
+        if self.alarm == alarm {
+            return false;
+        }
+        self.alarm = alarm;
+        true
     }
 }
 

@@ -3,8 +3,8 @@
 use ui::{Align, IconId, LabelProps, Length, TextAlign, TextRole, Widget, WidgetKind};
 
 use super::{
-    HomeState, BATTERY_ID, BG_ID, BOTTOM_SPACER_ID, CLOCK_ID, CONTENT_ID, CROWN_ID, DATE_ID,
-    HEADER_ID, HEADER_SPACER_ID, ROOT_ID, TOP_SPACER_ID,
+    HomeState, ALARM_RING_ID, BATTERY_ID, BG_ID, BOTTOM_SPACER_ID, CLOCK_ID, CONTENT_ID, CROWN_ID,
+    DATE_ID, HEADER_ID, HEADER_SPACER_ID, ROOT_ID, TOP_SPACER_ID,
 };
 use crate::view::{
     background, column, content_padding, crown, fill_node, fit_node, leaf, row, spacer, BuildError,
@@ -37,6 +37,15 @@ pub(super) fn build<'a>(
         TextAlign::Center,
         None,
     );
+    let alarm = state.alarm().map(|_| {
+        label(
+            ALARM_RING_ID,
+            "ALARM",
+            TextRole::Title,
+            TextAlign::Center,
+            None,
+        )
+    });
     let date_node = fit_node(&date, theme, view.cache);
     let battery_node = fit_node(&battery, theme, view.cache);
     let clock_node = fill_node(
@@ -51,6 +60,9 @@ pub(super) fn build<'a>(
     view.push(date)?;
     view.push(battery)?;
     view.push(clock)?;
+    if let Some(alarm) = &alarm {
+        view.push(*alarm)?;
+    }
 
     let header_children = [
         date_node,
@@ -60,17 +72,24 @@ pub(super) fn build<'a>(
     let header = row(HEADER_ID, &header_children, theme.spacing.sm, Align::Center);
     let crown_children = [header];
     let crown_node = crown(CROWN_ID, &crown_children, theme);
-    let content_children = [
+    let alarm_children = alarm.as_ref().map(|alarm| {
+        let alarm_node = fit_node(alarm, theme, view.cache);
+        [
+            spacer(TOP_SPACER_ID, Length::Fill(1), Length::Fill(1)),
+            alarm_node,
+            clock_node,
+            spacer(BOTTOM_SPACER_ID, Length::Fill(1), Length::Fill(1)),
+        ]
+    });
+    let plain_children = [
         spacer(TOP_SPACER_ID, Length::Fill(1), Length::Fill(1)),
         clock_node,
         spacer(BOTTOM_SPACER_ID, Length::Fill(1), Length::Fill(1)),
     ];
-    let content = column(
-        CONTENT_ID,
-        &content_children,
-        theme.spacing.sm,
-        Align::Center,
-    )
+    let content = match &alarm_children {
+        Some(children) => column(CONTENT_ID, children, theme.spacing.sm, Align::Center),
+        None => column(CONTENT_ID, &plain_children, theme.spacing.sm, Align::Center),
+    }
     .with_padding(content_padding(theme));
     let body_children = [crown_node, content];
     let body = column(ROOT_ID, &body_children, 0, Align::Start);

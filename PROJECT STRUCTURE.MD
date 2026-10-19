@@ -16,6 +16,7 @@ wv2/
 │   ├── voice/              # wake word, audio capture, VPS client
 │   ├── sync/               # VPS sync protocol, checkpoints
 │   ├── logging/            # ring buffer, wake reason tracking
+│   ├── alarms/             # persistent one-shot alarms, next-wake math
 │   ├── settings/           # runtime settings schema, defaults, persistence
 │   └── common/             # shared types, errors, events
 ├── firmware/               # ONE crate, ONE binary; one boot chain with watch/desk hooks
@@ -38,6 +39,7 @@ wv2/
 | IMU | QMI8658 | I2C | accel + gyro + temp |
 | RTC | PCF85063A | I2C | BCD time/date |
 | Audio | ES8311 + PA amp | I2C + I2S | amp enable on GPIO46 |
+| Motor | vibration motor | GPIO18 + ALDO3 | low-side switch, off by default |
 | Tearing | TE signal | GPIO13 | VSync for flush |
 | Button | boot button | GPIO0 | also a wake source |
 

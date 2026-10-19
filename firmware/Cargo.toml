@@ -10,6 +10,7 @@ trace = []
 
 [dependencies]
 common = { path = "../crates/common" }
+alarms = { path = "../crates/alarms" }
 apps = { path = "../crates/apps" }
 shell = { path = "../crates/shell" }
 hal = { path = "../crates/hal" }

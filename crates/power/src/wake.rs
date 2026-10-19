@@ -52,6 +52,7 @@ mod tests {
             None,
             Some(WakeReason::Button),
             Some(WakeReason::Motion),
+            Some(WakeReason::Alarm),
             Some(WakeReason::Unknown),
         ] {
             assert!(WakeAction::for_wake(Mode::Watch, wake).presents_home());
@@ -66,6 +67,7 @@ mod tests {
             Some(WakeReason::Button),
             Some(WakeReason::Motion),
             Some(WakeReason::Usb),
+            Some(WakeReason::Alarm),
             Some(WakeReason::Unknown),
         ] {
             assert!(WakeAction::for_wake(Mode::Desk, wake).presents_home());

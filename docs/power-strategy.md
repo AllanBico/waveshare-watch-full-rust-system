@@ -17,8 +17,9 @@ esp-hal 1.0.0 marks GPIO0–21 as RTC pins (deep-sleep wake capable). Therefore:
 - Wake set: **motion + button + internal RTC timer**, plus the AXP VBUS-insert
   IRQ as a third Ext1 source if the Phase 6.5 hardware gate passes. Touch cannot
   wake the SoC.
-- Alarms are scheduled on the ESP32-S3 internal RTC timer (compute delta before
-  sleep); the external RTC is wall-clock persistence only.
+- Alarms are scheduled on the ESP32-S3 internal RTC timer: before sleep the
+  timer is `min(next alarm, housekeeping)`. The external RTC is wall-clock
+  persistence only.
 - Phase 6.5 gate result: `EXIO5`/`AXP_IRQ` is not mapped to an ESP GPIO in the
   repository, so the IRQ wake path is not implemented. The fallback is active:
   a plug while asleep is detected on the next motion, button, or timer wake,

@@ -62,6 +62,11 @@ impl Home {
         self.state.set_time_format(time_format)
     }
 
+    /// Sets or clears the ringing alarm.
+    pub fn set_alarm(&mut self, alarm: Option<Timestamp>) -> bool {
+        self.state.set_alarm(alarm)
+    }
+
     /// Builds, diffs, and paints the Home frame.
     pub fn render_frame(
         &mut self,

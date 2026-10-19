@@ -20,6 +20,7 @@ const WAKE_BUTTON: u8 = 1;
 const WAKE_MOTION: u8 = 2;
 const WAKE_USB: u8 = 3;
 const WAKE_UNKNOWN: u8 = 4;
+const WAKE_ALARM: u8 = 5;
 const MODE_WATCH: u8 = 0;
 const MODE_DESK: u8 = 1;
 
@@ -114,6 +115,7 @@ fn wake_to_byte(reason: WakeReason) -> Result<u8, LogError> {
         WakeReason::Button => Ok(WAKE_BUTTON),
         WakeReason::Motion => Ok(WAKE_MOTION),
         WakeReason::Usb => Ok(WAKE_USB),
+        WakeReason::Alarm => Ok(WAKE_ALARM),
         WakeReason::Unknown => Ok(WAKE_UNKNOWN),
     }
 }
@@ -124,6 +126,7 @@ fn byte_to_wake(value: u8) -> Result<WakeReason, LogError> {
         WAKE_BUTTON => Ok(WakeReason::Button),
         WAKE_MOTION => Ok(WakeReason::Motion),
         WAKE_USB => Ok(WakeReason::Usb),
+        WAKE_ALARM => Ok(WakeReason::Alarm),
         WAKE_UNKNOWN => Ok(WakeReason::Unknown),
         _ => Err(LogError::Corrupt),
     }
@@ -232,6 +235,14 @@ mod tests {
         round_trip(switch_entry(), 12);
         round_trip(battery_entry(), 12);
         round_trip(error_entry(), 12);
+    }
+
+    #[test]
+    fn alarm_wake_round_trips() {
+        round_trip(
+            LogEntry::new(Timestamp::from_secs(12), Event::Wake(WakeReason::Alarm)),
+            11,
+        );
     }
 
     #[test]

@@ -8,6 +8,7 @@ members = [
     "crates/ui",
     "crates/shell",
     "crates/apps",
+    "crates/alarms",
     "crates/voice",
     "crates/sync",
     "crates/logging",

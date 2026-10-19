@@ -49,6 +49,14 @@ fn watch_home_golden_frame_is_stable() {
 }
 
 #[test]
+fn watch_alarm_frame_is_stable() {
+    let mut home = home();
+    home.set_alarm(Some(at(7, 5)));
+    let (_, _, hash) = render(&mut home);
+    assert_eq!(hash, 0xc2e9_8240_92b7_10eb);
+}
+
+#[test]
 fn watch_home_stays_inside_the_lit_pixel_budget() {
     let (_, lit, _) = render(&mut home());
     let area = u32::from(WIDTH) * u32::from(HEIGHT);
