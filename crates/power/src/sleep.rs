@@ -9,8 +9,9 @@ use super::plan::RailPlan;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SleepPlan {
-    /// Wake from the internal RTC timer after this many milliseconds.
-    pub timer_ms: u32,
+    /// Wake from the internal RTC timer after this many milliseconds, when an
+    /// alarm is set.
+    pub timer_ms: Option<u32>,
     /// Enable the power-button GPIO as a wake source.
     pub wake_on_button: bool,
     /// Rails to leave enabled during sleep.

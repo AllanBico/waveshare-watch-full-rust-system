@@ -174,12 +174,21 @@ fn enable_order_covers_every_rail() {
 #[test]
 fn plan_sleep_returns_policy_and_cuts_rails() {
     let mut pm = manager();
-    let plan = pm.plan_sleep().unwrap();
-    assert_eq!(plan.timer_ms, 10_000);
+    let plan = pm.plan_sleep(Some(10_000)).unwrap();
+    assert_eq!(plan.timer_ms, Some(10_000));
     assert!(plan.wake_on_button);
     assert!(plan.rails.wants_on(Rail::Dcdc1));
     assert!(!plan.rails.wants_on(Rail::Aldo3));
     assert!(!plan.rails.wants_on(Rail::Aldo2));
+    assert_eq!(pm.state(), PowerState::DeepSleep);
+}
+
+#[test]
+fn plan_sleep_without_an_alarm_has_no_timer() {
+    let mut pm = manager();
+    let plan = pm.plan_sleep(None).unwrap();
+    assert_eq!(plan.timer_ms, None);
+    assert!(plan.wake_on_button);
     assert_eq!(pm.state(), PowerState::DeepSleep);
 }
 

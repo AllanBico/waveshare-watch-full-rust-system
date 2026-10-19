@@ -15,9 +15,9 @@ pub enum WakeAction {
 impl WakeAction {
     /// Classifies a wake for the active mode.
     ///
-    /// Watch timer wakes are housekeeping (battery sample, retained log, VBUS
-    /// fallback). Motion, button, cold boot, and unknown wakes are visible.
-    /// Desk always presents.
+    /// Watch timer wakes without a due alarm are housekeeping (battery sample,
+    /// retained log, VBUS fallback). Motion, button, cold boot, alarm, and
+    /// unknown wakes are visible. Desk always presents.
     pub const fn for_wake(mode: Mode, wake: Option<WakeReason>) -> Self {
         match mode {
             Mode::Desk => Self::Present,

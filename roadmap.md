@@ -474,7 +474,7 @@ allocation; golden frames.
 watch.
 
 ### 7.3 Wake Cycle
-- Wake on motion, button, timer, or alarm; verify and record the reason.
+- Wake on motion, button, or alarm; verify and record the reason.
 - Show Home when appropriate, honor the awake budget, run the pre-sleep
   checklist, and return to deep sleep.
 - Apply wake and sleep settings before each sleep.
@@ -484,7 +484,7 @@ budget expiry forces sleep; the motion threshold respects settings.
 
 ### 7.4 Alarms
 - Store alarms in TicKV.
-- Set the next RTC wake to `min(next alarm, housekeeping timer)` before sleep.
+- Set the next RTC wake to the next alarm, or omit the timer when none is set.
 - Vibrate on alarm using the haptics setting.
 - Handle missed alarms after a long sleep.
 

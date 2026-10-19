@@ -88,9 +88,8 @@ where
         }
     }
 
-    let housekeeping_ms = input.power.sleep_timer_ms();
-    let timer_ms = input.alarms.next_wake_in_ms(input.now, housekeeping_ms);
-    let plan = match input.power.plan_sleep_in(timer_ms) {
+    let timer_ms = input.alarms.next_wake_in_ms(input.now);
+    let plan = match input.power.plan_sleep(timer_ms) {
         Ok(plan) => plan,
         Err(error) => {
             retained::record_error(error.to_common().code());
@@ -101,11 +100,13 @@ where
         }
     };
     if input.log {
-        println!("[pm] sleeping {} ms", plan.timer_ms);
+        match plan.timer_ms {
+            Some(timer_ms) => println!("[pm] sleeping {} ms", timer_ms),
+            None => println!("[pm] sleeping until wake source"),
+        }
     }
 
     let mut rtc = Rtc::new(input.lpw);
-    let timer = TimerWakeupSource::new(core::time::Duration::from_millis(u64::from(plan.timer_ms)));
     // The PWR button needs the RTC pull-up: the external network alone did not
     // produce a reliable high when tested with the digital input.
     input.pwr_button.rtcio_pullup(true);
@@ -113,5 +114,12 @@ where
     let mut imu_int = input.imu_int;
     let mut wake_pins: [&mut dyn RtcPin; 2] = [input.pwr_button, &mut imu_int];
     let external = Ext1WakeupSource::new(&mut wake_pins, WakeupLevel::High);
-    rtc.sleep_deep(&[&timer, &external]);
+    match plan.timer_ms {
+        Some(timer_ms) => {
+            let timer =
+                TimerWakeupSource::new(core::time::Duration::from_millis(u64::from(timer_ms)));
+            rtc.sleep_deep(&[&timer, &external])
+        }
+        None => rtc.sleep_deep(&[&external]),
+    }
 }

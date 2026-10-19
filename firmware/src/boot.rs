@@ -31,9 +31,6 @@ pub type Imu = Qmi8658<Bus, Delay>;
 /// How often the awake loops poll VBUS.
 pub const VBUS_POLL_PERIOD: Duration = Duration::from_millis(500);
 
-/// Deep-sleep timer interval. Longer for wake-on-motion debugging.
-pub const SLEEP_TIMER_MS: u32 = 30_000;
-
 /// Accelerometer samples ignored after entering Wake-on-Motion.
 pub const WOM_BLANKING_SAMPLES: u8 = 10;
 

@@ -14,22 +14,21 @@ esp-hal 1.0.0 marks GPIO0–21 as RTC pins (deep-sleep wake capable). Therefore:
 | Touch | GPIO38 | **no** |
 | PCF85063A RTC INT | GPIO39 | **no** |
 
-- Wake set: **motion + button + internal RTC timer**, plus the AXP VBUS-insert
-  IRQ as a third Ext1 source if the Phase 6.5 hardware gate passes. Touch cannot
-  wake the SoC.
+- Wake set: **motion + button + internal RTC timer for alarms**, plus the AXP
+  VBUS-insert IRQ as a third Ext1 source if the Phase 6.5 hardware gate passes.
+  Touch cannot wake the SoC.
 - Alarms are scheduled on the ESP32-S3 internal RTC timer: before sleep the
-  timer is `min(next alarm, housekeeping)`. The external RTC is wall-clock
-  persistence only.
+  timer is set to the next alarm, or omitted when no alarm exists. The external
+  RTC is wall-clock persistence only.
 - Phase 6.5 gate result: `EXIO5`/`AXP_IRQ` is not mapped to an ESP GPIO in the
   repository, so the IRQ wake path is not implemented. The fallback is active:
-  a plug while asleep is detected on the next motion, button, or timer wake,
+  a plug while asleep is detected on the next motion, button, or alarm wake,
   which re-samples VBUS and boots into desk. While awake, the session polls VBUS
   and switches live. Add the IRQ to Ext1 once the schematic/expander path is
   confirmed; do not add periodic polling in watch mode as a substitute.
 
 ## Display strategy
-- Watch mode sleeps with the panel dark. Motion and button wakes show Home;
-  timer housekeeping wakes keep the panel dark and return to sleep.
+- Watch mode sleeps with the panel dark. Motion and button wakes show Home.
 - Panel main power is VCC3V3 (system), so it cannot be isolated by a rail. Turn
   it off with the CO5300 sleep command and by driving `DSI_PWR_EN` low.
 - The cuttable peripheral rail is **ALDO3** (motor + VL peripherals): cut it in

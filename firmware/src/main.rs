@@ -41,8 +41,6 @@ mod runtime;
 mod session;
 mod sleep_cycle;
 
-use boot::SLEEP_TIMER_MS;
-
 use esp_alloc as _;
 use esp_backtrace as _;
 
@@ -73,7 +71,6 @@ async fn main(_spawner: Spawner) {
     let chip_id = pmic.read_chip_id().ok();
 
     let mut power = PowerManager::new(pmic, Mode::Watch);
-    power.set_sleep_timer_ms(SLEEP_TIMER_MS);
     if let Err(error) = power.sync() {
         println!("[pm] rail sync failed: {}", error.to_common());
         halt().await

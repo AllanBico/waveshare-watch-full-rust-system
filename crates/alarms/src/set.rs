@@ -82,18 +82,14 @@ impl AlarmSet {
         self.iter().find(|at| *at > now)
     }
 
-    /// The RTC sleep interval: the next alarm delta or the housekeeping timer.
-    pub fn next_wake_in_ms(&self, now: Timestamp, housekeeping_ms: u32) -> u32 {
+    /// The RTC sleep interval before the next alarm, if one is set.
+    pub fn next_wake_in_ms(&self, now: Timestamp) -> Option<u32> {
         if self.due(now).is_some() {
-            return DUE_WAKE_MS;
+            return Some(DUE_WAKE_MS);
         }
-        let Some(next) = self.next_after(now) else {
-            return housekeeping_ms;
-        };
+        let next = self.next_after(now)?;
         let delta = next.as_millis().saturating_sub(now.as_millis());
-        u32::try_from(delta)
-            .unwrap_or(u32::MAX)
-            .min(housekeeping_ms)
+        Some(u32::try_from(delta).unwrap_or(u32::MAX))
     }
 
     fn contains(&self, at: Timestamp) -> bool {
@@ -151,12 +147,12 @@ mod tests {
     }
 
     #[test]
-    fn next_wake_uses_the_earlier_of_alarm_and_housekeeping() {
+    fn next_wake_follows_the_alarm_set() {
         let mut set = AlarmSet::new();
+        assert_eq!(set.next_wake_in_ms(at(0)), None);
         set.add(at(100));
-        assert_eq!(set.next_wake_in_ms(at(0), 30_000), 30_000);
-        assert_eq!(set.next_wake_in_ms(at(90), 30_000), 10_000);
-        assert_eq!(AlarmSet::new().next_wake_in_ms(at(90_000), 30_000), 30_000);
+        assert_eq!(set.next_wake_in_ms(at(0)), Some(100_000));
+        assert_eq!(set.next_wake_in_ms(at(90)), Some(10_000));
     }
 
     #[test]
@@ -170,6 +166,6 @@ mod tests {
     fn an_alarm_that_became_due_while_awake_wakes_immediately() {
         let mut set = AlarmSet::new();
         set.add(at(10));
-        assert_eq!(set.next_wake_in_ms(at(11), 30_000), DUE_WAKE_MS);
+        assert_eq!(set.next_wake_in_ms(at(11)), Some(DUE_WAKE_MS));
     }
 }

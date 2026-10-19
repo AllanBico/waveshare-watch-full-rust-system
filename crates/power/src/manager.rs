@@ -8,9 +8,6 @@ use super::error::PowerError;
 use super::plan::{PowerState, RailPlan, ENABLE_ORDER};
 use super::sleep::SleepPlan;
 
-/// Default deep-sleep timer interval.
-const DEFAULT_SLEEP_TIMER_MS: u32 = 10_000;
-
 /// Owns the PMIC handle, the runtime mode, the render policy, and the wake
 /// budget. Every wake and sleep transition goes through here.
 pub struct PowerManager<P> {
@@ -21,7 +18,6 @@ pub struct PowerManager<P> {
     last_wake: Option<WakeReason>,
     budget: Budget,
     plan: RailPlan,
-    sleep_timer_ms: u32,
 }
 
 impl<P: Power> PowerManager<P> {
@@ -36,7 +32,6 @@ impl<P: Power> PowerManager<P> {
             last_wake: None,
             budget: Budget::idle(),
             plan: RailPlan::none(),
-            sleep_timer_ms: DEFAULT_SLEEP_TIMER_MS,
         }
     }
 
@@ -90,14 +85,8 @@ impl<P: Power> PowerManager<P> {
     }
 
     /// Applies the deep-sleep rail plan and returns the SoC sleep policy for
-    /// the firmware to execute.
-    pub fn plan_sleep(&mut self) -> Result<SleepPlan, PowerError<P::Error>> {
-        self.plan_sleep_in(self.sleep_timer_ms)
-    }
-
-    /// Sleeps with an explicit timer, used when an alarm is earlier than the
-    /// housekeeping interval.
-    pub fn plan_sleep_in(&mut self, timer_ms: u32) -> Result<SleepPlan, PowerError<P::Error>> {
+    /// the firmware to execute. `timer_ms` is the next alarm, if one is set.
+    pub fn plan_sleep(&mut self, timer_ms: Option<u32>) -> Result<SleepPlan, PowerError<P::Error>> {
         self.enter_sleep()?;
         Ok(SleepPlan {
             timer_ms,
@@ -167,16 +156,6 @@ impl<P: Power> PowerManager<P> {
     /// The reason recorded for the most recent wake.
     pub const fn last_wake(&self) -> Option<WakeReason> {
         self.last_wake
-    }
-
-    /// The configured RTC-timer sleep interval.
-    pub const fn sleep_timer_ms(&self) -> u32 {
-        self.sleep_timer_ms
-    }
-
-    /// Sets the RTC-timer sleep interval.
-    pub fn set_sleep_timer_ms(&mut self, millis: u32) {
-        self.sleep_timer_ms = millis;
     }
 
     /// The rails the manager believes are enabled.

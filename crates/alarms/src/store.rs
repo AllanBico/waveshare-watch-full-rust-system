@@ -96,9 +96,9 @@ impl<B: Storage> AlarmStore<B> {
         self.set.due(now)
     }
 
-    /// The RTC sleep interval before the next alarm or housekeeping timer.
-    pub fn next_wake_in_ms(&self, now: Timestamp, housekeeping_ms: u32) -> u32 {
-        self.set.next_wake_in_ms(now, housekeeping_ms)
+    /// The RTC sleep interval before the next alarm, if one is set.
+    pub fn next_wake_in_ms(&self, now: Timestamp) -> Option<u32> {
+        self.set.next_wake_in_ms(now)
     }
 
     /// Writes pending changes, returning how many values were stored.
