@@ -95,13 +95,13 @@ where
         match mode {
             Mode::Watch => {
                 let awake_ms = BootPolicy::from_settings(settings).awake_budget_ms;
-                match run_watch(power, shell, awake_ms, started).await {
+                match run_watch(power, shell, awake_ms, started, log).await {
                     WatchExit::VbusInserted => switch(shell, power, psram, Mode::Desk, log, now())?,
                     WatchExit::BudgetExpired => return Ok(()),
                 }
             }
             Mode::Desk => {
-                run_desk(power, shell, started).await;
+                run_desk(power, shell, started, log).await;
                 switch(shell, power, psram, Mode::Watch, log, now())?
             }
         }
@@ -134,8 +134,10 @@ fn switch<P: Power>(
     log: bool,
     now: Timestamp,
 ) -> Result<(), RunError> {
-    // Bring up PSRAM before the desk presenter allocates its gray surface.
+    // Bring up the heap and PSRAM before the desk presenter allocates its gray
+    // surface. Watch never initializes either.
     if target == Mode::Desk {
+        boot::ensure_sram_heap();
         if let Some(psram) = psram.take() {
             let bytes = boot::init_psram(psram);
             if log {
@@ -170,6 +172,7 @@ async fn run_watch<P: Power>(
     shell: &mut Shell<Registry>,
     awake_ms: u32,
     started: Instant,
+    log: bool,
 ) -> WatchExit {
     let entered = Instant::now();
     loop {
@@ -181,7 +184,10 @@ async fn run_watch<P: Power>(
         }
         Timer::after(VBUS_POLL_PERIOD).await;
         if let Err(error) = shell.tick((Instant::now() - started).as_millis()) {
-            println!("[shell] tick failed: {:?}", error);
+            crate::retained::record_error(common::Error::NotReady.code());
+            if log {
+                println!("[shell] tick failed: {:?}", error);
+            }
         }
     }
 }
@@ -190,6 +196,7 @@ async fn run_desk<P: Power>(
     power: &mut PowerManager<P>,
     shell: &mut Shell<Registry>,
     started: Instant,
+    log: bool,
 ) {
     loop {
         Timer::after(VBUS_POLL_PERIOD).await;
@@ -197,7 +204,10 @@ async fn run_desk<P: Power>(
             return;
         }
         if let Err(error) = shell.tick((Instant::now() - started).as_millis()) {
-            println!("[shell] tick failed: {:?}", error);
+            crate::retained::record_error(common::Error::NotReady.code());
+            if log {
+                println!("[shell] tick failed: {:?}", error);
+            }
         }
     }
 }

@@ -1,10 +1,11 @@
-//! Per-mode boot capabilities.
+//! Per-mode boot helpers.
 //!
-//! `main` runs one boot chain. This module names the only steps that differ
-//! between watch and desk, so there are no duplicate `watch_init`/`desk_init`
-//! bodies.
+//! `main` runs one boot chain. This module owns the hardware bring-up steps
+//! that the shared chain calls, so there are no duplicate `watch_init`/
+//! `desk_init` bodies.
 
 use core::fmt::Debug;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_time::Duration;
 use esp_hal::delay::Delay;
@@ -21,6 +22,8 @@ use settings::Settings;
 
 use crate::runtime::Bus;
 
+esp_bootloader_esp_idf::esp_app_desc!();
+
 /// Touch driver type owned by the boot chain.
 pub type Touch = Ft3168<Bus, Output<'static>, Delay>;
 
@@ -30,6 +33,19 @@ pub type Imu = Qmi8658<Bus, Delay>;
 /// SRAM heap size reserved for the runtime.
 pub const SRAM_HEAP_BYTES: usize = 96 * 1024;
 
+static HEAP_READY: AtomicBool = AtomicBool::new(false);
+
+/// Initializes the internal-SRAM heap on the first desk entry.
+///
+/// Watch boot never calls this; a live switch to desk does. Repeated desk
+/// entries reuse the existing heap region.
+pub fn ensure_sram_heap() {
+    if HEAP_READY.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    esp_alloc::heap_allocator!(size: SRAM_HEAP_BYTES);
+}
+
 /// How often the awake loops poll VBUS.
 pub const VBUS_POLL_PERIOD: Duration = Duration::from_millis(500);
 
@@ -38,35 +54,6 @@ pub const SLEEP_TIMER_MS: u32 = 30_000;
 
 /// Accelerometer samples ignored after entering Wake-on-Motion.
 pub const WOM_BLANKING_SAMPLES: u8 = 10;
-
-/// The boot steps that differ between modes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Plan {
-    /// Desk initializes PSRAM; watch never touches it.
-    pub initialize_psram: bool,
-    /// Desk initializes touch; watch leaves it alone.
-    pub initialize_touch: bool,
-    /// Desk logs over serial; watch stays quiet.
-    pub logging: bool,
-}
-
-impl Plan {
-    /// Builds the capability plan for `mode`.
-    pub const fn for_mode(mode: Mode) -> Self {
-        match mode {
-            Mode::Watch => Self {
-                initialize_psram: false,
-                initialize_touch: false,
-                logging: false,
-            },
-            Mode::Desk => Self {
-                initialize_psram: true,
-                initialize_touch: true,
-                logging: true,
-            },
-        }
-    }
-}
 
 /// Applies the active mode's brightness setting to the panel.
 pub fn apply_brightness<D: Display>(display: &mut D, settings: &Settings, mode: Mode, log: bool)

@@ -12,6 +12,7 @@ use esp_hal::rtc_cntl::wakeup_cause;
 use esp_hal::system::SleepSource;
 use esp_hal::time::Rate;
 use esp_println::println;
+use static_cell::StaticCell;
 
 use common::{DateTime, Mode, Timestamp, WakeReason};
 use drivers::board;
@@ -30,7 +31,10 @@ pub const BUTTON_SAMPLE_PERIOD: Duration = Duration::from_millis(5);
 /// I2C bus device handle shared by all on-board peripherals.
 pub type Bus = RefCellDevice<'static, I2c<'static, esp_hal::Blocking>>;
 
-/// Opens and leaks the shared I2C bus so device handles can be `'static`.
+static BUS: StaticCell<RefCell<I2c<'static, esp_hal::Blocking>>> = StaticCell::new();
+
+/// Opens the shared I2C bus in static storage so device handles can be
+/// `'static` without a heap allocation on the wake path.
 pub async fn open_bus(
     i2c: esp_hal::peripherals::I2C0<'static>,
     sda: esp_hal::peripherals::GPIO15<'static>,
@@ -38,9 +42,7 @@ pub async fn open_bus(
 ) -> &'static RefCell<I2c<'static, esp_hal::Blocking>> {
     let config = I2cConfig::default().with_frequency(Rate::from_khz(board::I2C_FREQ_HZ / 1000));
     match I2c::new(i2c, config) {
-        Ok(bus) => alloc::boxed::Box::leak(alloc::boxed::Box::new(RefCell::new(
-            bus.with_sda(sda).with_scl(scl),
-        ))),
+        Ok(bus) => BUS.init(RefCell::new(bus.with_sda(sda).with_scl(scl))),
         Err(error) => {
             println!("[pm] i2c init failed: {:?}", error);
             halt().await
@@ -49,18 +51,28 @@ pub async fn open_bus(
 }
 
 /// Reads the RTC time; seeds a default if the oscillator had stopped.
-pub fn report_time(clock: &mut Pcf85063a<Bus>) {
+///
+/// Serial output is desk-only; watch keeps the retained counters instead.
+pub fn report_time(clock: &mut Pcf85063a<Bus>, log: bool) {
     let default = DateTime::new(2000, 1, 1, 0, 0, 0);
     if let Err(error) = clock.init() {
-        println!("[rtc] init failed: {}", error);
+        if log {
+            println!("[rtc] init failed: {}", error);
+        }
         return;
     }
     match clock.read_datetime() {
-        Ok(dt) => print_datetime("time", &dt),
+        Ok(dt) => {
+            if log {
+                print_datetime("time", &dt);
+            }
+        }
         Err(_) => {
             if clock.set_datetime(&default).is_ok() {
-                print_datetime("time set", &default);
-            } else {
+                if log {
+                    print_datetime("time set", &default);
+                }
+            } else if log {
                 println!("[rtc] set failed");
             }
         }
@@ -99,18 +111,20 @@ pub fn wake_reason() -> Option<WakeReason> {
 
 /// Idles forever after a fatal bring-up error.
 pub async fn halt() -> ! {
-    println!("[boot] halted");
     loop {
         Timer::after(Duration::from_secs(1)).await;
     }
 }
 
 /// Prints the silicon facts read at runtime, plus the selected mode and PSRAM.
-pub fn report_boot(mode: Mode, psram_bytes: usize) {
+pub fn report_boot(mode: Mode, psram_bytes: usize, log: bool) {
+    if !log {
+        return;
+    }
     let revision = Efuse::chip_revision();
     let mac = Efuse::mac_address();
 
-    println!("=== wv2 firmware (Phase 6.2 boot chain) ===");
+    println!("=== wv2 firmware (Phase 7.2 boot chain) ===");
     println!(
         "chip:  {} rev v{}.{}",
         esp_hal::chip!(),

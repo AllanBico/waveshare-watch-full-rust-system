@@ -142,6 +142,14 @@ mod tests {
     }
 
     #[test]
+    fn watch_excludes_desk_only_rails() {
+        let plan = PowerState::ActiveWatch.rail_plan();
+        assert!(!plan.wants_on(Rail::Dcdc2));
+        assert!(!plan.wants_on(Rail::Bldo2));
+        assert!(!plan.wants_on(Rail::Cpusldo));
+    }
+
+    #[test]
     fn desk_enables_every_rail() {
         let plan = PowerState::Desk.rail_plan();
         for rail in ENABLE_ORDER {

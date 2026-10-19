@@ -120,11 +120,6 @@ impl Display {
             )
             .map_err(BringUpError::Display)
     }
-
-    /// Puts the panel into sleep, before `power` cuts the enable rail.
-    pub fn sleep(&mut self) -> Result<(), BringUpError> {
-        self.panel.display_off().map_err(BringUpError::Display)
-    }
 }
 
 impl hal::Display for Display {

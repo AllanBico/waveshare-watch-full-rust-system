@@ -24,11 +24,12 @@ Use this checklist before starting Phase 7. A failed row blocks the phase.
   - `boot::Plan` for PSRAM, touch, and logging capabilities.
   - `session::run` for the awake watch/desk state machine.
   - `present::render` for mono versus gray presentation.
+  - `sleep_cycle::enter` for the pre-sleep checklist and deep-sleep call.
   - Storage provisioning policy in `persist` and `log_boot`.
 - No duplicated `watch_init` or `desk_init` bodies.
-- Watch boot does not initialize PSRAM, touch, audio, radios, voice, or sync.
+- Watch boot does not initialize the heap, PSRAM, touch, audio, radios, voice, or sync.
 - The retired preview is absent from the current tree and the firmware binary.
-- Temporary bring-up serial logging in watch mode is allowed until Phase 7.
+- Watch boot writes no serial output; bring-up counters live in the retained ring.
 
 ## Boot matrix
 
@@ -79,7 +80,6 @@ Settings that are intentionally not wired in this phase: `power_saving`,
 
 ## Known temporary items
 
-- Watch-mode serial logging remains until Phase 7.
 - Both modes boot at 80 MHz; the desk may raise clocks in Phase 8.
 - Desk audio is not initialized; it returns in Phase 8.
 - The sleep timer is 30 s for wake debugging.
