@@ -1,13 +1,14 @@
-//! Desk Home: a grayscale clock with a desktop mode badge.
+//! Desk Home: a grayscale clock with live system stats.
 
 use ui::{
-    Align, IconId, IconProps, IconSize, Kind, LabelProps, Length, Node, TextAlign, TextRole,
-    Widget, WidgetKind,
+    Align, KeyValueRowProps, Kind, LabelProps, Length, Node, TextAlign, TextRole, Widget,
+    WidgetKind,
 };
 
 use super::{
-    HomeState, BATTERY_ID, BG_ID, CLOCK_ID, CONTENT_ID, CROWN_ID, DATE_ID, DESKTOP_ICON_ID,
-    DESKTOP_ID, DESKTOP_LABEL_ID, HEADER_ID, HEADER_SPACER_ID, ROOT_ID,
+    HomeState, BATTERY_ID, BG_ID, CLOCK_ID, CONTENT_ID, CROWN_ID, DATE_ID, HEADER_ID,
+    HEADER_SPACER_ID, ROOT_ID, STATS_CPU_ID, STATS_ID, STATS_PSRAM_ID, STATS_RAM_ID,
+    STATS_SPEED_ID,
 };
 use crate::view::{
     background, column, content_padding, crown, fill_node, fit_node, leaf, row, spacer, BuildError,
@@ -34,9 +35,9 @@ pub(super) fn build<'a>(
         None,
     );
     let battery_icon = if state.is_charging() {
-        IconId::Usb
+        ui::IconId::Usb
     } else {
-        IconId::BatteryHigh
+        ui::IconId::BatteryHigh
     };
     let battery = label(
         BATTERY_ID,
@@ -45,20 +46,10 @@ pub(super) fn build<'a>(
         TextAlign::End,
         Some(battery_icon),
     );
-    let badge_icon = Widget::new(
-        DESKTOP_ICON_ID,
-        WidgetKind::Icon(IconProps {
-            icon: IconId::Desktop,
-            size: IconSize::Xl,
-        }),
-    );
-    let badge_label = label(
-        DESKTOP_LABEL_ID,
-        "Desktop",
-        TextRole::Label,
-        TextAlign::Center,
-        None,
-    );
+    let cpu = key_value(STATS_CPU_ID, "CPU", state.cpu());
+    let ram = key_value(STATS_RAM_ID, "RAM", state.ram());
+    let psram = key_value(STATS_PSRAM_ID, "PSRAM", state.psram());
+    let speed = key_value(STATS_SPEED_ID, "SPD", state.speed());
 
     let content_width = view
         .viewport
@@ -67,10 +58,12 @@ pub(super) fn build<'a>(
     let clock_node = fill_node(&clock, theme, view.cache, content_width);
     let date_node = fit_node(&date, theme, view.cache);
     let battery_node = fit_node(&battery, theme, view.cache);
-    let badge_icon_node = fit_node(&badge_icon, theme, view.cache);
-    let badge_label_node = fill_node(&badge_label, theme, view.cache, content_width);
+    let cpu_node = fill_node(&cpu, theme, view.cache, content_width);
+    let ram_node = fill_node(&ram, theme, view.cache, content_width);
+    let psram_node = fill_node(&psram, theme, view.cache, content_width);
+    let speed_node = fill_node(&speed, theme, view.cache, content_width);
     view.push(background(BG_ID))?;
-    for widget in [clock, date, battery, badge_icon, badge_label] {
+    for widget in [clock, date, battery, cpu, ram, psram, speed] {
         view.push(widget)?;
     }
 
@@ -82,22 +75,22 @@ pub(super) fn build<'a>(
     let header = row(HEADER_ID, &header_children, theme.spacing.sm, Align::Center);
     let crown_children = [header];
     let crown_node = crown(CROWN_ID, &crown_children, theme);
-    let badge_children = [badge_icon_node, badge_label_node];
-    let badge = Node::container(
-        DESKTOP_ID,
+    let stats_children = [cpu_node, ram_node, psram_node, speed_node];
+    let stats = Node::container(
+        STATS_ID,
         Length::Fill(1),
         Length::Fit,
         Kind::Column {
             spacing: theme.spacing.xs,
-            cross_align: Align::Center,
+            cross_align: Align::Start,
         },
-        &badge_children,
+        &stats_children,
     );
     let content_children = [
         spacer(12, Length::Fill(1), Length::Fill(1)),
         clock_node,
         spacer(13, Length::Fill(1), Length::Fixed(theme.spacing.md)),
-        badge,
+        stats,
         spacer(14, Length::Fill(1), Length::Fill(1)),
     ];
     let content = column(
@@ -114,12 +107,16 @@ pub(super) fn build<'a>(
     view.layout(&root)
 }
 
+fn key_value<'a>(id: u16, key: &'a str, value: &'a str) -> Widget<'a> {
+    Widget::new(id, WidgetKind::KeyValueRow(KeyValueRowProps { key, value }))
+}
+
 fn label<'a>(
     id: u16,
     text: &'a str,
     role: TextRole,
     align: TextAlign,
-    icon: Option<IconId>,
+    icon: Option<ui::IconId>,
 ) -> Widget<'a> {
     Widget::new(
         id,

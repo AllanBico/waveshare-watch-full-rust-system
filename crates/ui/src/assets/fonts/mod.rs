@@ -4,6 +4,7 @@ mod font_ui_regular_28;
 mod font_ui_regular_48;
 mod font_ui_medium_24;
 mod font_ui_medium_36;
+mod font_numeric_medium_24;
 mod font_numeric_medium_72;
 use crate::text::FontAsset;
 
@@ -13,5 +14,6 @@ pub static FONT_ASSETS: &[FontAsset] = &[
     font_ui_regular_48::ASSET,
     font_ui_medium_24::ASSET,
     font_ui_medium_36::ASSET,
+    font_numeric_medium_24::ASSET,
     font_numeric_medium_72::ASSET,
 ];

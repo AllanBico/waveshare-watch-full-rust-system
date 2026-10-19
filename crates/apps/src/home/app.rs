@@ -1,6 +1,6 @@
 //! The real Home app: lifecycle, state updates, and the frame it paints.
 
-use common::{Mode, Percent, Region, Timestamp};
+use common::{Mode, Percent, Region, SystemStats, Timestamp};
 use settings::{DateFormat, TimeFormat};
 use shell::{App, AppContext, AppError};
 use ui::{
@@ -89,6 +89,11 @@ impl Home {
         self.state.set_alarm(alarm)
     }
 
+    /// Updates the desk system stats.
+    pub fn set_stats(&mut self, stats: SystemStats) -> bool {
+        self.state.set_stats(stats)
+    }
+
     /// Builds, diffs, and paints the Home frame.
     pub fn render_frame(
         &mut self,
@@ -140,6 +145,7 @@ impl Home {
         self.set_mode(context.mode());
         let status = context.status();
         self.update(context.now(), status.battery(), status.is_charging());
+        self.state.set_stats(status.system_stats());
     }
 
     fn set_mode(&mut self, mode: Mode) {

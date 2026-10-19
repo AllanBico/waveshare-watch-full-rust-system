@@ -29,13 +29,18 @@ pub(crate) fn measure(
     available: u16,
 ) -> Size {
     let inset = theme.spacing.sm.saturating_mul(2);
+    let line = theme
+        .type_scale
+        .caption
+        .line_height_px
+        .max(theme.type_scale.numeric_small.line_height_px);
     Size::new(
         if available == UNBOUNDED {
             UNBOUNDED_WIDTH
         } else {
             available
         },
-        theme.type_scale.body.line_height_px.saturating_add(inset),
+        line.saturating_add(inset),
     )
 }
 
@@ -52,14 +57,14 @@ pub(crate) fn paint(painter: &mut Painter<'_>, widget: &Widget<'_>, rect: Region
             .saturating_sub(theme.spacing.sm.saturating_mul(2)),
         rect.height,
     );
-    let value = measure_uncached(props.value, &theme.type_scale.body, region.width);
+    let value = measure_uncached(props.value, &theme.type_scale.numeric_small, region.width);
     let value_x = region.right().saturating_sub(value.width);
     paint_key(painter, props.key, region, value_x, theme);
     paint_value(painter, props.value, region, theme, colors.content);
 }
 
 fn paint_key(painter: &mut Painter<'_>, key: &str, region: Region, value_x: u16, theme: &Theme) {
-    let style = theme.type_scale.body;
+    let style = theme.type_scale.caption;
     let metrics = measure_uncached(key, &style, region.width);
     draw_text(
         painter,
@@ -82,7 +87,7 @@ fn paint_value(
     theme: &Theme,
     color: crate::luma::Luma,
 ) {
-    let style = theme.type_scale.body;
+    let style = theme.type_scale.numeric_small;
     let metrics = measure_uncached(value, &style, region.width);
     let value_x = region.right().saturating_sub(metrics.width);
     draw_text(

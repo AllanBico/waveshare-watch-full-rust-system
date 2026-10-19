@@ -182,7 +182,7 @@ pub(super) const SAMPLE_KINDS: [WidgetKind<'static>; 30] = [
     WidgetKind::Spinner(SpinnerProps { phase: 2 }),
     WidgetKind::KeyValueRow(KeyValueRowProps {
         key: "Steps",
-        value: "8,420",
+        value: "8420",
     }),
     WidgetKind::PageIndicator(PageIndicatorProps {
         count: 5,

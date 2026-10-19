@@ -79,6 +79,8 @@ pub struct Typography {
     pub label: TextStyle,
     /// Tabular numerals.
     pub numeric: TextStyle,
+    /// Small tabular numerals.
+    pub numeric_small: TextStyle,
 }
 
 impl Typography {
@@ -118,6 +120,12 @@ impl Typography {
             font: FontId::Numeric,
             size_px: 72,
             line_height_px: 84,
+            weight: Weight::Medium,
+        },
+        numeric_small: TextStyle {
+            font: FontId::Numeric,
+            size_px: 24,
+            line_height_px: 30,
             weight: Weight::Medium,
         },
     };

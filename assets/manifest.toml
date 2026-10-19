@@ -20,7 +20,7 @@ charset = "ui"
 id = "numeric"
 weight = "medium"
 path = "fonts/jetbrains_mono/JetBrainsMono-Medium.ttf"
-sizes = [72]
+sizes = [24, 72]
 charset = "numeric"
 
 [icons]
@@ -201,7 +201,3 @@ file = "icons/phosphor/usb.svg"
 [[icons.item]]
 id = "power"
 file = "icons/phosphor/power.svg"
-
-[[icons.item]]
-id = "desktop"
-file = "icons/phosphor/desktop.svg"

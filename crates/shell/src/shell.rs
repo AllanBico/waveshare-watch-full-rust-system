@@ -3,7 +3,7 @@
 mod layers;
 mod navigation;
 
-use common::{Mode, Percent, Region, RenderPolicy, Timestamp, TouchReport};
+use common::{Mode, Percent, Region, RenderPolicy, SystemStats, Timestamp, TouchReport};
 use ui::{Damage, Surface, Theme};
 
 use super::{
@@ -155,6 +155,15 @@ impl<R: AppRegistry> Shell<R> {
     /// Updates the status battery values.
     pub fn set_battery(&mut self, percent: Percent, is_charging: bool) {
         self.status.set_battery(percent, is_charging);
+    }
+
+    /// Updates the system stats, returning whether the sample changed.
+    pub fn set_system_stats(&mut self, stats: SystemStats) -> bool {
+        if self.status.system_stats() == stats {
+            return false;
+        }
+        self.status.set_system_stats(stats);
+        true
     }
 
     /// Invalidates the active app so its next frame is a full redraw.

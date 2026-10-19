@@ -33,6 +33,8 @@ const TOUCH_POLL_PERIOD: Duration = Duration::from_millis(20);
 const VBUS_CHECK_PERIOD: Duration = Duration::from_millis(500);
 /// Periodic repaint while awake, so the clock still advances without touch.
 const IDLE_REPAINT_PERIOD: Duration = Duration::from_millis(1_000);
+/// How often desk samples CPU, RAM, and clock stats.
+const STATS_PERIOD: Duration = Duration::from_millis(1_000);
 
 /// A fatal session failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -137,6 +139,9 @@ pub fn boot(
     );
     shell.set_time(now);
     shell.set_battery(battery, is_charging);
+    if mode == Mode::Desk {
+        let _ = shell.set_system_stats(crate::metrics::snapshot());
+    }
     shell.start()?;
     shell.tick(0)?;
     Ok(shell)
@@ -476,6 +481,8 @@ where
     } = input;
     let mut next_vbus = Instant::now() + VBUS_POLL_PERIOD;
     let mut next_repaint = Instant::now() + IDLE_REPAINT_PERIOD;
+    let mut next_stats = Instant::now() + STATS_PERIOD;
+    let mut sampler = crate::metrics::Sampler::new();
 
     loop {
         let loop_now = Instant::now();
@@ -492,6 +499,11 @@ where
         shell.set_time(Timestamp::from_millis(
             base_now.as_millis().saturating_add(uptime),
         ));
+        let mut stats_changed = false;
+        if Instant::now() >= next_stats {
+            next_stats = Instant::now() + STATS_PERIOD;
+            stats_changed = shell.set_system_stats(sampler.sample());
+        }
         let report = read_touch(touch);
         let was_settings = shell.active_app() == Some(SETTINGS_APP_ID);
         let outcome = shell.handle_touch(&report, uptime).unwrap_or_else(|error| {
@@ -523,7 +535,7 @@ where
             outcome,
             GestureOutcome::Tap { .. } | GestureOutcome::Swipe(_)
         );
-        if completed || changed || Instant::now() >= next_repaint {
+        if completed || changed || stats_changed || Instant::now() >= next_repaint {
             next_repaint = Instant::now() + IDLE_REPAINT_PERIOD;
             boot::apply_brightness(display, settings.settings(), Mode::Desk, log);
             if let Err(error) = present(display, shell, settings.settings(), workspace, log) {

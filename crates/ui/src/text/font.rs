@@ -101,6 +101,7 @@ mod tests {
             scale.caption,
             scale.label,
             scale.numeric,
+            scale.numeric_small,
         ] {
             assert!(
                 font_asset(style.font, style.weight, style.size_px).is_some(),

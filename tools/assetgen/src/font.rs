@@ -162,7 +162,7 @@ fn charset(name: &str) -> Result<Vec<char>> {
             chars.extend(['\u{00B0}', '\u{2026}', '\u{2013}', '\u{2014}', '\u{2022}']);
             Ok(chars)
         }
-        "numeric" => Ok("0123456789:.-+ APM".chars().collect()),
+        "numeric" => Ok("0123456789:.-+ %/KBMHz".chars().collect()),
         other => bail!("unknown charset {other}"),
     }
 }

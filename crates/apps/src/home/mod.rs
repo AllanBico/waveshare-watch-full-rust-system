@@ -34,12 +34,16 @@ pub(crate) const BOTTOM_SPACER_ID: u16 = 9;
 pub(crate) const CROWN_ID: u16 = 10;
 /// Content container below the crown.
 pub(crate) const CONTENT_ID: u16 = 11;
-/// Desk badge icon.
-pub(crate) const DESKTOP_ICON_ID: u16 = 20;
-/// Desk badge label.
-pub(crate) const DESKTOP_LABEL_ID: u16 = 21;
-/// Desk badge container.
-pub(crate) const DESKTOP_ID: u16 = 22;
+/// Desk stats container.
+pub(crate) const STATS_ID: u16 = 22;
+/// Desk CPU row.
+pub(crate) const STATS_CPU_ID: u16 = 30;
+/// Desk RAM row.
+pub(crate) const STATS_RAM_ID: u16 = 31;
+/// Desk PSRAM row.
+pub(crate) const STATS_PSRAM_ID: u16 = 32;
+/// Desk CPU speed row.
+pub(crate) const STATS_SPEED_ID: u16 = 33;
 /// Ringing alarm label.
 pub(crate) const ALARM_RING_ID: u16 = 25;
 

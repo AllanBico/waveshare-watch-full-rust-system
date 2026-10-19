@@ -2,8 +2,9 @@
 //!
 //! Owns the types every other crate depends on: [`Mode`], [`Error`],
 //! [`Event`], [`Timestamp`], [`LogEntry`], the [`Millivolts`]/[`Percent`]
-//! units, the [`RenderPolicy`], the [`ModePlan`], the [`Region`]/[`Rgb565`]
-//! pixel types, and the motion samples. Depends on nothing.
+//! units, the [`RenderPolicy`], the [`ModePlan`], the [`SystemStats`], the
+//! [`Region`]/[`Rgb565`] pixel types, and the motion samples. Depends on
+//! nothing.
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
@@ -19,6 +20,7 @@ mod mode;
 mod mode_plan;
 mod motion;
 mod render_policy;
+mod system;
 mod theme;
 mod time;
 mod touch;
@@ -35,6 +37,7 @@ pub use mode::Mode;
 pub use mode_plan::ModePlan;
 pub use motion::{Acceleration, AngularRate, MotionSample, WakeOnMotion};
 pub use render_policy::{PixelMode, RenderPolicy};
+pub use system::SystemStats;
 pub use theme::ThemeId;
 pub use time::Timestamp;
 pub use touch::{TouchPoint, TouchReport, MAX_TOUCH_POINTS};

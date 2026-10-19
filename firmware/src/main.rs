@@ -33,6 +33,7 @@ mod boot;
 mod display;
 mod log_boot;
 mod log_view;
+mod metrics;
 mod persist;
 mod present;
 mod registry;
@@ -46,12 +47,13 @@ use esp_backtrace as _;
 
 use runtime::{debounce_power_button, halt, open_bus, report_boot, report_time, wake_reason};
 
-#[esp_rtos::main]
-async fn main(_spawner: Spawner) {
+#[embassy_executor::task]
+async fn firmware(_spawner: Spawner) {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::_80MHz));
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
+    metrics::enable();
 
     let raw_wake = wake_reason();
     let (mut pwr_button, button_pressed) =
@@ -281,4 +283,16 @@ async fn main(_spawner: Spawner) {
         log,
     })
     .await
+}
+
+#[esp_hal::main]
+fn main() -> ! {
+    let mut executor = esp_rtos::embassy::Executor::new();
+    // SAFETY: the executor is a local in the entry point and never returns, so
+    // the `'static` reference is valid for the whole program lifetime.
+    let executor = unsafe { &mut *(&mut executor as *mut esp_rtos::embassy::Executor) };
+    executor.run_with_callbacks(
+        |spawner| spawner.must_spawn(firmware(spawner)),
+        metrics::LoadCallbacks,
+    )
 }

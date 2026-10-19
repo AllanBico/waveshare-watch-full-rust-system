@@ -27,6 +27,7 @@ stats, voice, sync, and AI are intentionally deferred.
 | Quick settings | Swipe down from the top edge | Blank sheet; tap closes it | pending |
 | Settings | Open Settings from the drawer | Time/date/brightness/sleep rows show `Live` or `Next sleep`; Theme appears only in desk | pending |
 | Theme | Tap Theme | One full redraw; high-contrast desk theme applies immediately | pending |
+| Desk stats | Leave desk idle for two seconds | CPU, RAM, PSRAM, and 80 MHz update once per second; no full redraw | pending |
 | Logs | Open Logs from the drawer | Category list opens; a category shows entries with paging | pending |
 | Brightness | Change brightness in Settings | Panel brightness changes immediately | pending |
 | Persistence | Change theme and brightness, reboot on USB | Both settings are restored | pending |

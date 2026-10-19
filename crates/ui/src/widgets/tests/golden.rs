@@ -38,7 +38,7 @@ fn component_goldens_are_stable() {
         (0xeb34_389e_6ce0_c1dc, 0x697c_87bc_fcf7_47c5),
         (0x4838_2319_2431_6fc1, 0xf0d9_3f0d_6753_3480),
         (0x3cbc_5fef_b223_6496, 0x3363_f4c7_99a4_42f7),
-        (0x89c8_14b9_bd76_361d, 0xcb39_0398_5d97_3062),
+        (0x537e_4e90_fd6d_573f, 0xbcc8_e3ab_4185_3d10),
         (0xc374_69e8_6033_98f2, 0x1150_8a10_2347_2a46),
     ];
     for (index, kind) in SAMPLE_KINDS.into_iter().enumerate() {

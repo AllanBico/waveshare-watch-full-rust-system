@@ -1,7 +1,7 @@
 //! Watch and desk Home golden frame, idle damage, and pixel-budget tests.
 
 use apps::Home;
-use common::{DateTime, Mode, Percent, Region, Timestamp};
+use common::{DateTime, Mode, Percent, Region, SystemStats, Timestamp};
 use settings::TimeFormat;
 use ui::{Damage, GraySurface, MonoSurface, Surface, Theme};
 
@@ -24,14 +24,27 @@ fn home() -> Home {
     )
 }
 
+fn stats(cpu: u8) -> SystemStats {
+    SystemStats {
+        cpu_percent: Percent::new(cpu),
+        cpu_mhz: 80,
+        ram_used_kb: 143,
+        ram_total_kb: 320,
+        psram_used_kb: 1024,
+        psram_total_kb: 8192,
+    }
+}
+
 fn desk_home() -> Home {
-    Home::new(
+    let mut home = Home::new(
         Mode::Desk,
         at(7, 5),
         Percent::new(80),
         false,
         TimeFormat::Hour24,
-    )
+    );
+    home.set_stats(stats(7));
+    home
 }
 
 fn render(home: &mut Home) -> (Damage, u32, u64) {
@@ -82,7 +95,7 @@ fn watch_home_golden_frame_is_stable() {
 fn desk_home_golden_frame_is_stable() {
     let (damage, lit, hash) = render_desk(&mut desk_home());
     assert!(damage.is_full());
-    assert_eq!((hash, lit), (0xdc06_b6ed_1fca_8ac5, 6590));
+    assert_eq!((hash, lit), (0x17aa_d416_ff8f_6aad, 10248));
 }
 
 #[test]
@@ -92,6 +105,17 @@ fn desk_idle_home_reports_no_damage() {
     let (damage, lit, _) = render_desk(&mut home);
     assert!(damage.is_empty());
     assert_eq!(lit, 0);
+}
+
+#[test]
+fn desk_stats_repaint_only_the_changed_frame() {
+    let mut home = desk_home();
+    render_desk(&mut home);
+    assert!(home.set_stats(stats(42)));
+    let (damage, lit, _) = render_desk(&mut home);
+    assert!(!damage.is_empty());
+    assert!(!damage.is_full());
+    assert!(lit > 0);
 }
 
 #[test]

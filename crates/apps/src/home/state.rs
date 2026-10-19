@@ -1,9 +1,9 @@
 //! Home complication values, formatted once per change.
 
-use common::{Percent, Timestamp};
+use common::{Percent, SystemStats, Timestamp};
 use settings::{DateFormat, TimeFormat};
 
-use crate::format::{clock_text, date_text, percent_text};
+use crate::format::{clock_text, date_text, kb_text, percent_text, speed_text};
 
 /// The data Home displays in both modes.
 pub struct HomeState {
@@ -13,12 +13,20 @@ pub struct HomeState {
     alarm: Option<Timestamp>,
     time_format: TimeFormat,
     date_format: DateFormat,
+    stats: SystemStats,
     clock: [u8; 5],
     date: [u8; 10],
     battery_text: [u8; 4],
     battery_len: usize,
+    cpu_buf: [u8; 4],
+    cpu_len: usize,
+    ram_buf: [u8; 28],
+    ram_len: usize,
+    psram_buf: [u8; 28],
+    psram_len: usize,
+    speed_buf: [u8; 8],
+    speed_len: usize,
 }
-
 impl HomeState {
     /// Creates Home state with a 24-hour clock.
     pub fn new(now: Timestamp, battery: Percent, is_charging: bool) -> Self {
@@ -50,12 +58,22 @@ impl HomeState {
             alarm: None,
             time_format,
             date_format,
+            stats: SystemStats::empty(),
             clock: [0; 5],
             date: [0; 10],
             battery_text: [0; 4],
             battery_len: 0,
+            cpu_buf: [0; 4],
+            cpu_len: 0,
+            ram_buf: [0; 28],
+            ram_len: 0,
+            psram_buf: [0; 28],
+            psram_len: 0,
+            speed_buf: [0; 8],
+            speed_len: 0,
         };
         state.update(now, battery, is_charging);
+        state.write_stats();
         state
     }
 
@@ -80,6 +98,35 @@ impl HomeState {
             changed = true;
         }
         changed
+    }
+
+    /// Updates the desk system stats, returning whether the sample changed.
+    pub fn set_stats(&mut self, stats: SystemStats) -> bool {
+        if stats == self.stats {
+            return false;
+        }
+        self.stats = stats;
+        self.write_stats();
+        true
+    }
+
+    fn write_stats(&mut self) {
+        let cpu = percent_text(self.stats.cpu_percent, &mut self.cpu_buf);
+        self.cpu_len = cpu.len();
+        let ram = kb_text(
+            self.stats.ram_used_kb,
+            self.stats.ram_total_kb,
+            &mut self.ram_buf,
+        );
+        self.ram_len = ram.len();
+        let psram = kb_text(
+            self.stats.psram_used_kb,
+            self.stats.psram_total_kb,
+            &mut self.psram_buf,
+        );
+        self.psram_len = psram.len();
+        let speed = speed_text(self.stats.cpu_mhz, &mut self.speed_buf);
+        self.speed_len = speed.len();
     }
 
     /// Updates the clock format, returning whether the text changed.
@@ -123,6 +170,26 @@ impl HomeState {
     /// The battery percentage text.
     pub fn battery(&self) -> &str {
         text(&self.battery_text[..self.battery_len])
+    }
+
+    /// The CPU load text.
+    pub fn cpu(&self) -> &str {
+        text(&self.cpu_buf[..self.cpu_len])
+    }
+
+    /// The internal SRAM text.
+    pub fn ram(&self) -> &str {
+        text(&self.ram_buf[..self.ram_len])
+    }
+
+    /// The PSRAM text.
+    pub fn psram(&self) -> &str {
+        text(&self.psram_buf[..self.psram_len])
+    }
+
+    /// The CPU clock text.
+    pub fn speed(&self) -> &str {
+        text(&self.speed_buf[..self.speed_len])
     }
 
     /// Whether the battery is charging.
@@ -176,6 +243,31 @@ mod tests {
         assert_eq!(home.battery(), "79%");
         assert!(home.update(timestamp(7, 5), Percent::new(79), true));
         assert!(home.is_charging());
+    }
+
+    #[test]
+    fn stats_are_formatted_once_per_change() {
+        let mut home = HomeState::new(timestamp(7, 5), Percent::new(80), false);
+        let stats = SystemStats {
+            cpu_percent: Percent::new(7),
+            cpu_mhz: 80,
+            ram_used_kb: 143,
+            ram_total_kb: 320,
+            psram_used_kb: 8192,
+            psram_total_kb: 8192,
+        };
+        assert_eq!(home.cpu(), "00%");
+        assert!(home.set_stats(stats));
+        assert_eq!(home.cpu(), "07%");
+        assert_eq!(home.ram(), "143 / 320 KB");
+        assert_eq!(home.psram(), "8192 / 8192 KB");
+        assert_eq!(home.speed(), "80 MHz");
+        assert!(!home.set_stats(stats));
+        assert!(home.set_stats(SystemStats {
+            cpu_percent: Percent::new(8),
+            ..stats
+        }));
+        assert_eq!(home.cpu(), "08%");
     }
 }
 

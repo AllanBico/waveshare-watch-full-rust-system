@@ -27,6 +27,8 @@ pub enum TextRole {
     Label,
     /// Tabular numerals.
     Numeric,
+    /// Small tabular numerals.
+    NumericSmall,
 }
 
 impl TextRole {
@@ -39,6 +41,7 @@ impl TextRole {
             Self::Caption => theme.type_scale.caption,
             Self::Label => theme.type_scale.label,
             Self::Numeric => theme.type_scale.numeric,
+            Self::NumericSmall => theme.type_scale.numeric_small,
         }
     }
 }
