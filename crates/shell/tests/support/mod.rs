@@ -17,6 +17,7 @@ pub enum Event {
     Exit(AppId),
     Tick(AppId),
     Action(AppId, u16),
+    Invalidate(AppId),
 }
 
 pub type Log = Rc<RefCell<Vec<Event>>>;
@@ -85,6 +86,10 @@ impl App for LoggedApp {
 
     fn tick(&mut self, _context: &mut AppContext<'_>) {
         self.record(Event::Tick(self.id));
+    }
+
+    fn invalidate(&mut self) {
+        self.record(Event::Invalidate(self.id));
     }
 
     fn action(&mut self, action: Action, context: &mut AppContext<'_>) -> Result<(), AppError> {

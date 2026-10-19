@@ -157,11 +157,13 @@ impl<R: AppRegistry> Shell<R> {
         self.status.set_battery(percent, is_charging);
     }
 
-    /// Switches runtime mode and re-enters the active app.
+    /// Switches runtime mode, closes the active route, and enters Home.
     pub fn set_mode(&mut self, mode: Mode) -> Result<(), ShellError> {
         if self.mode == mode {
             return Ok(());
         }
+        let previous = self.mode;
+        let home = self.routes.home();
         let active = self.active_app();
         if self.is_started {
             if let Some(id) = active {
@@ -169,16 +171,26 @@ impl<R: AppRegistry> Shell<R> {
             }
         }
         self.layers.clear_all();
+        self.input.cancel();
         self.toast_deadline = None;
         self.transition = None;
         self.actions.clear();
         self.mode = mode;
         self.policy = RenderPolicy::for_mode(mode);
+        self.rendered_layer = false;
+        self.rendered_app = None;
         if self.is_started {
-            if let Some(id) = active {
-                self.call_enter(id)?;
+            if let Err(error) = self.call_enter(home) {
+                self.mode = previous;
+                self.policy = RenderPolicy::for_mode(previous);
+                if let Some(id) = active {
+                    let _ = self.call_enter(id);
+                }
+                return Err(error);
             }
+            let _ = self.call_app(home, |app, _| app.invalidate());
         }
+        self.routes.clear_to_home();
         Ok(())
     }
 

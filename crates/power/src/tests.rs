@@ -217,6 +217,28 @@ fn set_mode_applies_policy_and_rails() {
 }
 
 #[test]
+fn ten_mode_switches_keep_the_rail_plan_and_policy_in_sync() {
+    let mut pm = manager();
+    pm.sync().unwrap();
+
+    for _ in 0..10 {
+        pm.set_mode(Mode::Desk).unwrap();
+        assert_eq!(pm.state(), PowerState::Desk);
+        assert_eq!(pm.policy().pixel, common::PixelMode::Gray8);
+        assert!(pm.plan().wants_on(Rail::Dcdc2));
+        assert!(pm.plan().wants_on(Rail::Bldo2));
+        assert!(pm.plan().wants_on(Rail::Cpusldo));
+
+        pm.set_mode(Mode::Watch).unwrap();
+        assert_eq!(pm.state(), PowerState::ActiveWatch);
+        assert_eq!(pm.policy().pixel, common::PixelMode::Mono1);
+        assert!(!pm.plan().wants_on(Rail::Dcdc2));
+        assert!(!pm.plan().wants_on(Rail::Bldo2));
+        assert!(!pm.plan().wants_on(Rail::Cpusldo));
+    }
+}
+
+#[test]
 fn sync_reads_actual_state_and_sleep_cuts_extras() {
     let mut pm = PowerManager::new(FakePower::new(), Mode::Watch);
     // The PMIC powers up with DCDC2 on; the manager must not assume it is off.

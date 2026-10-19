@@ -95,6 +95,21 @@ struct WatchInput<'a, 'h, D, P> {
     haptics: Option<&'a mut Haptics<'h>>,
 }
 
+/// Inputs for one desk awake loop.
+struct DeskInput<'a, D, P> {
+    power: &'a mut PowerManager<P>,
+    shell: &'a mut Shell<Registry>,
+    settings: &'a mut SettingsStore<SettingsBackend>,
+    battery_mv: u16,
+    device: Option<&'static FlashDevice>,
+    display: &'a mut D,
+    touch: &'a mut Option<boot::Touch>,
+    workspace: &'a mut present::Workspace,
+    base_now: Timestamp,
+    started: Instant,
+    log: bool,
+}
+
 /// The reason the watch awake loop stopped.
 enum WatchExit {
     /// USB appeared while awake.
@@ -193,7 +208,20 @@ where
                 }
             }
             Mode::Desk => {
-                run_desk(power, shell, started, log).await;
+                run_desk(DeskInput {
+                    power: &mut *power,
+                    shell: &mut *shell,
+                    settings: &mut *settings,
+                    battery_mv,
+                    device,
+                    display: &mut *display,
+                    touch: &mut *touch,
+                    workspace: &mut workspace,
+                    base_now,
+                    started,
+                    log,
+                })
+                .await;
                 commit_settings(settings, battery_mv, log);
                 switch(shell, power, psram, Mode::Watch, log, now())?
             }
@@ -244,10 +272,21 @@ fn switch<P: Power>(
         println!("[pm] set_mode failed: {}", error.to_common());
         RunError::Power
     })?;
-    shell.set_mode(target).map_err(|error| {
-        println!("[shell] mode switch failed: {:?}", error);
-        RunError::Shell
-    })?;
+    if let Err(error) = shell.set_mode(target) {
+        // The shell rolls back to the previous mode on a failed Home entry, so
+        // put the rails back to match it rather than leaving desk rails on.
+        let restore = shell.mode();
+        if let Err(power_error) = power.set_mode(restore) {
+            if log {
+                println!("[pm] rollback failed: {}", power_error.to_common());
+            }
+            return Err(RunError::Power);
+        }
+        if log {
+            println!("[shell] mode switch failed: {:?}", error);
+        }
+        return Err(RunError::Shell);
+    }
 
     // Retained RAM only; watch mode never writes flash here.
     crate::retained::with_ring(|ring| {
@@ -411,21 +450,77 @@ fn stop_haptics<'a, 'h>(haptics: &'a mut Option<&'a mut Haptics<'h>>) {
     }
 }
 
-async fn run_desk<P: Power>(
-    power: &mut PowerManager<P>,
-    shell: &mut Shell<Registry>,
-    started: Instant,
-    log: bool,
-) {
+async fn run_desk<D: Display, P: Power>(input: DeskInput<'_, D, P>)
+where
+    D::Error: Debug,
+{
+    let DeskInput {
+        power,
+        shell,
+        settings,
+        battery_mv,
+        device,
+        display,
+        touch,
+        workspace,
+        base_now,
+        started,
+        log,
+    } = input;
+    let mut next_vbus = Instant::now() + VBUS_POLL_PERIOD;
+    let mut next_repaint = Instant::now() + IDLE_REPAINT_PERIOD;
+
     loop {
-        Timer::after(VBUS_POLL_PERIOD).await;
-        if !power.is_vbus_present().unwrap_or(true) {
-            return;
+        let loop_now = Instant::now();
+        if loop_now >= next_vbus {
+            next_vbus = loop_now + VBUS_POLL_PERIOD;
+            if !power.is_vbus_present().unwrap_or(true) {
+                return;
+            }
         }
-        if let Err(error) = shell.tick((Instant::now() - started).as_millis()) {
+
+        Timer::after(TOUCH_POLL_PERIOD).await;
+
+        let uptime = (Instant::now() - started).as_millis();
+        shell.set_time(Timestamp::from_millis(
+            base_now.as_millis().saturating_add(uptime),
+        ));
+        let report = read_touch(touch);
+        let was_settings = shell.active_app() == Some(SETTINGS_APP_ID);
+        let outcome = shell.handle_touch(&report, uptime).unwrap_or_else(|error| {
+            crate::retained::record_error(common::Error::NotReady.code());
+            if log {
+                println!("[shell] touch failed: {:?}", error);
+            }
+            GestureOutcome::None
+        });
+        if let Err(error) = shell.tick(uptime) {
             crate::retained::record_error(common::Error::NotReady.code());
             if log {
                 println!("[shell] tick failed: {:?}", error);
+            }
+        }
+        let changed = sync_settings(shell, settings, log);
+        let is_settings = shell.active_app() == Some(SETTINGS_APP_ID);
+        if was_settings && !is_settings {
+            commit_settings(settings, battery_mv, log);
+        }
+        if let Some(category) = shell.registry_mut().logs_mut().take_load_request() {
+            log_view::load(category, device, shell.registry_mut().logs_mut(), log);
+        }
+
+        let completed = matches!(
+            outcome,
+            GestureOutcome::Tap { .. } | GestureOutcome::Swipe(_)
+        );
+        if completed || changed || Instant::now() >= next_repaint {
+            next_repaint = Instant::now() + IDLE_REPAINT_PERIOD;
+            boot::apply_brightness(display, settings.settings(), Mode::Desk, log);
+            if let Err(error) = present(display, shell, settings.settings(), workspace, log) {
+                crate::retained::record_error(common::Error::NotReady.code());
+                if log {
+                    println!("[ui] desk present failed: {:?}", error);
+                }
             }
         }
     }

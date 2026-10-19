@@ -199,7 +199,7 @@ fn lifecycle_reaches_only_the_active_app() {
 }
 
 #[test]
-fn mode_switch_reenters_the_active_app_and_clears_overlays() {
+fn mode_switch_closes_the_active_app_and_goes_home() {
     let log = Log::default();
     let mut shell = new_shell(log.clone());
     shell.start().unwrap();
@@ -208,7 +208,10 @@ fn mode_switch_reenters_the_active_app_and_clears_overlays() {
 
     shell.set_mode(Mode::Desk).unwrap();
     assert_eq!(shell.mode(), Mode::Desk);
+    assert_eq!(shell.active_app(), Some(HOME));
+    assert_eq!(shell.routes().depth(), 1);
     assert!(shell.layers().is_empty());
+    assert_eq!(shell.policy(), common::RenderPolicy::for_mode(Mode::Desk));
     assert_eq!(
         log.borrow().as_slice(),
         &[
@@ -216,9 +219,41 @@ fn mode_switch_reenters_the_active_app_and_clears_overlays() {
             Event::Exit(HOME),
             Event::Enter(OTHER),
             Event::Exit(OTHER),
-            Event::Enter(OTHER),
+            Event::Enter(HOME),
+            Event::Invalidate(HOME),
         ]
     );
+}
+
+#[test]
+fn ten_mode_switches_reset_to_home_and_force_a_full_redraw() {
+    let log = Log::default();
+    let mut shell = new_shell(log.clone());
+    shell.start().unwrap();
+
+    for cycle in 0..10 {
+        shell.dispatch(Action::OpenApp(OTHER)).unwrap();
+        shell.dispatch(Action::OpenAppDrawer).unwrap();
+        shell.dispatch(Action::OpenDialog(1)).unwrap();
+        let target = if cycle % 2 == 0 {
+            Mode::Desk
+        } else {
+            Mode::Watch
+        };
+
+        let before = log.borrow().len();
+        shell.set_mode(target).unwrap();
+        let events = log.borrow();
+        let switch = &events[before..];
+        assert_eq!(shell.mode(), target);
+        assert_eq!(shell.active_app(), Some(HOME));
+        assert_eq!(shell.routes().depth(), 1);
+        assert!(shell.layers().is_empty());
+        assert_eq!(shell.policy(), common::RenderPolicy::for_mode(target));
+        assert!(switch.contains(&Event::Exit(OTHER)));
+        assert!(switch.contains(&Event::Enter(HOME)));
+        assert!(switch.contains(&Event::Invalidate(HOME)));
+    }
 }
 
 #[test]

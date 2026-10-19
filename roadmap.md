@@ -529,13 +529,17 @@ no power saving.
 gracefully to watch; no watch power policy is active in desk.
 
 ### 8.2 Switch Hardening
-- Exercise watch and desk switching repeatedly with real state, not blank Home.
-- Verify flush and finish ordering, state preservation, rail audit, and
-  render-policy changes.
+- Run a real desk loop with time updates, touch handling, settings sync, and
+  damage-only presentation; desk has no awake budget.
+- On every switch, close the active app, clear overlays, and enter Home in the
+  new mode. Persistent settings, alarms, and logs survive; transient navigation
+  does not.
+- Verify flush and finish ordering, rail audit, and render-policy changes.
+  Force one full redraw on the mode switch only.
 - No leaks or duplicate init across cycles.
 
-**Test:** 10 plug/unplug cycles with no crashes, state intact, rails correct, and
-no full flush except on mode or theme switch.
+**Test:** 10 plug/unplug cycles with no crashes, persistent state intact, rails
+correct, and no full flush except on mode or theme switch.
 
 ### 8.3 Full UI Port
 - Port the shipping screens from preview inspiration: settings, app drawer,
