@@ -1,38 +1,33 @@
 //! Firmware-owned app registry.
 //!
-//! Phase 6.3 has exactly one app in both modes: a no-op debug Home. The
-//! firmware presenter draws its mode label, because the shell and `App` trait
-//! intentionally do not own rendering yet. The real app set starts in 7.1.
-// TODO(phase-7.1): replace with the real Home app and the app view seam.
+//! Phase 7.1 registers exactly one real app in both modes: Home. The watch app
+//! set stays minimal; the desk registry diverges in Phase 8.3.
 
+use apps::Home;
+use common::{Mode, Percent, Timestamp};
+use settings::TimeFormat;
 use shell::{App, AppId, AppRegistry};
 
 /// The pinned Home route for both modes.
 pub const HOME_ID: AppId = AppId::new(1);
 
-/// A lifecycle placeholder for Home.
-///
-/// It has no state and no render method. The firmware paints the mode label
-/// from shell state until the real Home exists.
-pub struct DebugHome;
-
-impl App for DebugHome {}
-
 /// A fixed registry with one app in both modes.
 pub struct Registry {
-    home: DebugHome,
+    home: Home,
 }
 
 impl Registry {
-    /// Creates the Phase 6.3 registry.
-    pub const fn new() -> Self {
-        Self { home: DebugHome }
-    }
-}
-
-impl Default for Registry {
-    fn default() -> Self {
-        Self::new()
+    /// Creates the registry with a boot-time Home state.
+    pub fn new(
+        mode: Mode,
+        now: Timestamp,
+        battery: Percent,
+        is_charging: bool,
+        time_format: TimeFormat,
+    ) -> Self {
+        Self {
+            home: Home::new(mode, now, battery, is_charging, time_format),
+        }
     }
 }
 

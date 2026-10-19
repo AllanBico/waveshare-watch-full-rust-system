@@ -1,8 +1,8 @@
 //! Shell session and awake mode state machine.
 //!
 //! Owns shell boot, presentation, live VBUS switching, and the per-mode awake
-//! loop. Rendering is still the firmware presenter; the app view seam arrives
-//! in 7.1.
+//! loop. The active app paints through the shell; the firmware only owns the
+//! surface and the flush.
 
 use core::fmt::Debug;
 
@@ -14,11 +14,11 @@ use power::PowerManager;
 
 use common::{Event, LogEntry, Mode, Percent, Region, Timestamp};
 use drivers::board;
-use settings::{BootPolicy, Settings};
+use settings::{BootPolicy, Settings, TimeFormat};
 use shell::{Shell, ShellError};
 
 use crate::boot::{self, VBUS_POLL_PERIOD};
-use crate::bringup;
+use crate::present;
 use crate::registry::{Registry, HOME_ID};
 
 /// A fatal session failure.
@@ -28,6 +28,8 @@ pub enum RunError {
     Power,
     /// The shell rejected a mode change.
     Shell,
+    /// The active app could not render or flush.
+    Render,
 }
 
 /// The reason the watch awake loop stopped.
@@ -44,9 +46,10 @@ pub fn boot(
     now: Timestamp,
     battery: Percent,
     is_charging: bool,
+    time_format: TimeFormat,
 ) -> Result<Shell<Registry>, ShellError> {
     let mut shell = Shell::new(
-        Registry::new(),
+        Registry::new(mode, now, battery, is_charging, time_format),
         HOME_ID,
         mode,
         Region::full(board::LCD_WIDTH, board::LCD_HEIGHT),
@@ -73,7 +76,7 @@ pub async fn run<D: Display, P: Power>(
 where
     D::Error: Debug,
 {
-    let mut workspace = bringup::workspace();
+    let mut workspace = present::workspace();
     let base_now = shell.now();
     let started = Instant::now();
     let now = || {
@@ -88,7 +91,7 @@ where
         shell.set_time(now());
         let mode = shell.mode();
         boot::apply_brightness(display, settings, mode, log);
-        present(display, shell, settings, &mut workspace);
+        present(display, shell, settings, &mut workspace, log)?;
         match mode {
             Mode::Watch => {
                 let awake_ms = BootPolicy::from_settings(settings).awake_budget_ms;
@@ -107,13 +110,20 @@ where
 
 fn present<D: Display>(
     display: &mut D,
-    shell: &Shell<Registry>,
+    shell: &mut Shell<Registry>,
     settings: &Settings,
-    workspace: &mut bringup::Workspace,
-) where
+    workspace: &mut present::Workspace,
+    log: bool,
+) -> Result<(), RunError>
+where
     D::Error: Debug,
 {
-    bringup::draw(display, shell.mode(), settings.display.theme, workspace);
+    present::render(display, shell, settings.display.theme, workspace).map_err(|error| {
+        if log {
+            println!("[ui] render failed: {:?}", error);
+        }
+        RunError::Render
+    })
 }
 
 fn switch<P: Power>(

@@ -4,7 +4,7 @@
 //! settings, then the PSRAM and peripheral hooks named by [`boot::Plan`]. Watch
 //! and desk never duplicate that sequence; only the plan and the awake loop
 //! differ. The external RTC keeps wall-clock time. The pieces `main` calls live
-//! in [`runtime`], [`boot`], [`bringup`], and [`display`].
+//! in [`runtime`], [`boot`], [`present`], and [`display`].
 
 #![no_std]
 #![no_main]
@@ -31,10 +31,10 @@ use power::PowerManager;
 use settings::BootPolicy;
 
 mod boot;
-mod bringup;
 mod display;
 mod log_boot;
 mod persist;
+mod present;
 mod registry;
 mod retained;
 mod runtime;
@@ -218,7 +218,13 @@ async fn main(_spawner: Spawner) {
         }
     }
 
-    let mut shell = match session::boot(mode, now, battery_percent, is_charging) {
+    let mut shell = match session::boot(
+        mode,
+        now,
+        battery_percent,
+        is_charging,
+        settings.settings().display.time_format,
+    ) {
         Ok(shell) => shell,
         Err(error) => {
             println!("[shell] boot failed: {:?}", error);

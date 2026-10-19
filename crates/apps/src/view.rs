@@ -96,11 +96,6 @@ pub(crate) fn fit_node(widget: &Widget<'_>, theme: &Theme, cache: &mut TextCache
     )
 }
 
-/// A leaf node for a widget with an explicit height.
-pub(crate) fn sized_node(id: NodeId, width: Length, height: u16) -> Node<'static> {
-    Node::container(id, width, Length::Fixed(height), Kind::Leaf, &[])
-}
-
 /// A full-width leaf node for a widget.
 pub(crate) fn fill_node(
     widget: &Widget<'_>,
@@ -205,25 +200,6 @@ pub(crate) fn leaf<'a>(id: NodeId, width: Length, height: Length) -> Node<'a> {
     Node::container(id, width, height, Kind::Leaf, &[])
 }
 
-/// A fit-size column node over caller-owned children.
-pub(crate) fn column_fit<'a>(
-    id: NodeId,
-    children: &'a [Node<'a>],
-    spacing: u16,
-    align: Align,
-) -> Node<'a> {
-    Node::container(
-        id,
-        Length::Fit,
-        Length::Fit,
-        Kind::Column {
-            spacing,
-            cross_align: align,
-        },
-        children,
-    )
-}
-
 /// A uniform grid node over caller-owned children.
 pub(crate) fn grid<'a>(
     id: NodeId,
@@ -243,25 +219,4 @@ pub(crate) fn grid<'a>(
         },
         children,
     )
-}
-
-/// Maximum entries after merging a base screen and an overlay.
-pub(crate) const MERGED_CAPACITY: usize = ENTRY_CAPACITY * 2;
-
-/// An empty merged entry array.
-pub(crate) const fn merged_entries() -> [LayoutEntry; MERGED_CAPACITY] {
-    [EMPTY_ENTRY; MERGED_CAPACITY]
-}
-
-/// Copies a base layout and an overlay layout into one paint-ordered array.
-pub(crate) fn merge(
-    base: &[LayoutEntry],
-    overlay: &[LayoutEntry],
-    out: &mut [LayoutEntry],
-) -> usize {
-    let first = base.len().min(out.len());
-    out[..first].copy_from_slice(&base[..first]);
-    let second = overlay.len().min(out.len().saturating_sub(first));
-    out[first..first + second].copy_from_slice(&overlay[..second]);
-    first + second
 }

@@ -4,6 +4,7 @@ mod layers;
 mod navigation;
 
 use common::{Mode, Percent, Region, RenderPolicy, Timestamp, TouchReport};
+use ui::{Damage, Surface, Theme};
 
 use super::{
     Action, ActionQueue, App, AppContext, AppId, AppRegistry, GestureConfig, GestureOutcome,
@@ -234,6 +235,17 @@ impl<R: AppRegistry> Shell<R> {
             }
         }
         self.drain_actions()
+    }
+
+    /// Renders the active app and returns the damage to flush.
+    pub fn render_active(
+        &mut self,
+        theme: &Theme,
+        surface: &mut dyn Surface,
+    ) -> Result<Damage, ShellError> {
+        let id = self.active_app().ok_or(ShellError::NoActiveApp)?;
+        let damage = self.call_app(id, |app, context| app.render(context, theme, surface))??;
+        Ok(damage)
     }
 
     /// Dispatches one action and drains actions queued by apps.

@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+use ui::{Damage, Surface, Theme};
+
 use super::{Action, AppContext, AppError};
 
 /// A stable identifier for one app implementation.
@@ -52,6 +54,20 @@ pub trait App {
     fn action(&mut self, action: Action, context: &mut AppContext<'_>) -> Result<(), AppError> {
         let _ = (action, context);
         Ok(())
+    }
+
+    /// Builds, diffs, and paints one frame, returning the damage to flush.
+    ///
+    /// Apps own their transient render state. The shell supplies the current
+    /// context, the compiled-in theme, and the surface the firmware owns.
+    fn render(
+        &mut self,
+        context: &AppContext<'_>,
+        theme: &Theme,
+        surface: &mut dyn Surface,
+    ) -> Result<Damage, AppError> {
+        let _ = (context, theme, surface);
+        Ok(Damage::new())
     }
 }
 

@@ -23,7 +23,7 @@ Use this checklist before starting Phase 7. A failed row blocks the phase.
 - Allowed mode seams only:
   - `boot::Plan` for PSRAM, touch, and logging capabilities.
   - `session::run` for the awake watch/desk state machine.
-  - `bringup::draw` for mono versus gray presentation.
+  - `present::render` for mono versus gray presentation.
   - Storage provisioning policy in `persist` and `log_boot`.
 - No duplicated `watch_init` or `desk_init` bodies.
 - Watch boot does not initialize PSRAM, touch, audio, radios, voice, or sync.
@@ -34,8 +34,8 @@ Use this checklist before starting Phase 7. A failed row blocks the phase.
 
 | Case | Steps | Expected | Result |
 |---|---|---|---|
-| Watch cold boot | Flash, unplug USB, reset on battery | Serial: `cpu: 80 MHz`, `mode: Watch`, `psram: disabled`; panel shows `WATCH`; sleeps after the awake budget | pending |
-| Desk cold boot | Flash, keep USB connected, reset | Serial: `mode: Desk`, `psram: 8388608 bytes`, `[boot] policy ...`; panel shows `DESK`; stays awake | pending |
+| Watch cold boot | Flash, unplug USB, reset on battery | Serial: `cpu: 80 MHz`, `mode: Watch`, `psram: disabled`; panel shows Home; sleeps after the awake budget | pending |
+| Desk cold boot | Flash, keep USB connected, reset | Serial: `mode: Desk`, `psram: 8388608 bytes`, `[boot] policy ...`; panel shows Home; stays awake | pending |
 | Boot error visibility | Remove the panel or force a display init failure | Serial reports `[lcd] ...`; boot does not silently hang | pending |
 
 ## Live switch matrix
@@ -44,11 +44,11 @@ Run each switch while the device is awake.
 
 | Case | Steps | Expected | Result |
 |---|---|---|---|
-| Watch → desk | During the watch awake window, plug USB | Serial: `[pm] switched Watch -> Desk` and `[boot] psram ...`; panel changes to `DESK`; stays awake | pending |
-| Desk → watch | While in desk, unplug USB | Serial: `[pm] switched Desk -> Watch`; panel changes to `WATCH`; sleeps after the awake budget | pending |
-| Ten cycles | Plug/unplug ten times, staying within the awake window | No crash, no reset, label follows mode, state preserved | pending |
+| Watch → desk | During the watch awake window, plug USB | Serial: `[pm] switched Watch -> Desk` and `[boot] psram ...`; panel switches to the gray Home; stays awake | pending |
+| Desk → watch | While in desk, unplug USB | Serial: `[pm] switched Desk -> Watch`; panel switches to the mono Home; sleeps after the awake budget | pending |
+| Ten cycles | Plug/unplug ten times, staying within the awake window | No crash, no reset, Home follows the mode, state preserved | pending |
 | Retained switch log | After the cycles, reconnect USB and reboot | Log sequence advances; retained ring flushed on the desk boot | pending |
-| PSRAM survives | Watch → desk → watch → desk | Desk label still renders after repeated switches | pending |
+| PSRAM survives | Watch → desk → watch → desk | Desk Home still renders after repeated switches | pending |
 
 ## Sleep and wake matrix
 
@@ -57,7 +57,7 @@ Run each switch while the device is awake.
 | Timer wake | Let the device sleep, wait for the timer | Serial wake reason Timer; mode matches VBUS | pending |
 | Button wake | Press PWR while asleep | Serial wake reason Button; mode matches VBUS | pending |
 | Motion wake | Move the device while asleep | Serial wake reason Motion; mode matches VBUS | pending |
-| USB while asleep (fallback) | Sleep on battery, plug USB, then move/press or wait for the timer | Device boots with `mode: Desk` and shows `DESK` | pending |
+| USB while asleep (fallback) | Sleep on battery, plug USB, then move/press or wait for the timer | Device boots with `mode: Desk` and shows Home | pending |
 | Awake budget | Leave watch awake without input or USB | Device returns to deep sleep after the policy budget | pending |
 
 The AXP IRQ path is not implemented because `EXIO5`/`AXP_IRQ` is not mapped to

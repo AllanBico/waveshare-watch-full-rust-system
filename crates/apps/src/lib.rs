@@ -7,10 +7,7 @@
 #![forbid(unsafe_code)]
 
 mod format;
-// Home and view are retained for the Phase 6.3 shell boot, not wired yet.
-#[allow(dead_code)]
 pub mod home;
-#[allow(dead_code)]
 mod view;
 
-pub use home::HomeState;
+pub use home::{Home, HomeState, RenderError};

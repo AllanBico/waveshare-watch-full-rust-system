@@ -1,9 +1,11 @@
-//! The pinned Home screen for watch and desk modes.
+//! The pinned Home app for watch and desk modes.
 
+mod app;
 mod desk;
 mod state;
 mod watch;
 
+pub use app::{Home, RenderError};
 pub use state::HomeState;
 
 use common::Mode;

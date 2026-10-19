@@ -11,7 +11,6 @@
 extern crate alloc;
 
 mod assets;
-mod bringup;
 mod icon;
 mod layout;
 mod luma;
@@ -27,7 +26,6 @@ mod theme;
 mod widgets;
 
 pub use assets::{IconId, IconMask, IconSet, ICON_COUNT, ICON_SETS};
-pub use bringup::draw_boot_label;
 pub use icon::draw_icon;
 pub use layout::{
     layout, Align, Axis, Constraints, Content, Insets, Kind, LayoutEntry, LayoutError, LayoutRect,
