@@ -161,6 +161,7 @@ pub(super) const SAMPLE_KINDS: [WidgetKind<'static>; 30] = [
         subtitle: "Paired",
         icon: Some(IconId::Bluetooth),
         trailing: SettingsTrailing::Toggle(true),
+        compact: false,
     }),
     WidgetKind::SegmentedControl(SegmentedControlProps {
         labels: &["Day", "Week", "Month"],

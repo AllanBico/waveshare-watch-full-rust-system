@@ -1,19 +1,15 @@
-//! The persisted settings screen.
-//!
-//! Watch settings expose only the values the firmware actually applies. The
-//! app keeps a snapshot, applies edits locally for immediate feedback, and
-//! queues one intent per change for the firmware-owned store.
+//! Settings app state, frame building, and lifecycle.
 
-use common::{Mode, Percent, Region};
+use common::{Mode, Region};
 use settings::{BootPolicy, SettingId, SettingValue, Settings};
 use shell::{App, AppContext, AppError};
 use ui::{
-    collect_hits, paint_damage_shaped, paint_widgets, Damage, HitRegistry, IconId, LabelProps,
-    Length, RedrawReason, Scene, SceneArena, SceneError, SceneNode, SettingsRowProps,
-    SettingsTrailing, Surface, TextAlign, TextCache, TextRole, Theme, Widget, WidgetArena,
-    WidgetKind,
+    collect_hits, paint_damage_shaped, paint_widgets, Damage, HitRegistry, LabelProps, Length,
+    RedrawReason, Scene, SceneArena, SceneError, SceneNode, Surface, TextAlign, TextCache,
+    TextRole, Theme, Widget, WidgetArena, WidgetKind,
 };
 
+use super::rows::{next_value, rows, seconds_text};
 use crate::view::{background, column, content_padding, crown, fill_node, BuildError, Builder};
 
 const RENDER_FAILED_CODE: u16 = 1;
@@ -24,18 +20,6 @@ const TITLE_ID: u16 = 802;
 const CROWN_ID: u16 = 806;
 const CONTENT_ID: u16 = 807;
 const BODY_ID: u16 = 810;
-const ROW_BASE: u16 = 820;
-
-/// Time format row.
-pub const TIME_FORMAT_ID: u16 = ROW_BASE;
-/// Date format row.
-pub const DATE_FORMAT_ID: u16 = ROW_BASE + 1;
-/// Brightness row.
-pub const BRIGHTNESS_ID: u16 = ROW_BASE + 2;
-/// Sleep timeout row.
-pub const SLEEP_TIMEOUT_ID: u16 = ROW_BASE + 3;
-
-const SLEEP_STEPS: [u16; 6] = [5, 10, 15, 30, 60, 120];
 
 /// A Settings frame failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -285,126 +269,17 @@ fn title<'a>() -> Widget<'a> {
     )
 }
 
-fn rows<'a>(settings: &Settings, brightness: &'a str, sleep: &'a str) -> [Widget<'a>; 4] {
-    [
-        row(
-            TIME_FORMAT_ID,
-            "Time format",
-            "Clock",
-            IconId::Clock,
-            SettingsTrailing::Value(settings.display.time_format.label()),
-        ),
-        row(
-            DATE_FORMAT_ID,
-            "Date format",
-            "Calendar",
-            IconId::List,
-            SettingsTrailing::Value(settings.display.date_format.label()),
-        ),
-        row(
-            BRIGHTNESS_ID,
-            "Brightness",
-            "Display",
-            IconId::Sun,
-            SettingsTrailing::Value(brightness),
-        ),
-        row(
-            SLEEP_TIMEOUT_ID,
-            "Sleep timeout",
-            "Power",
-            IconId::Power,
-            SettingsTrailing::Value(sleep),
-        ),
-    ]
-}
-
-fn row<'a>(
-    id: u16,
-    label: &'a str,
-    subtitle: &'a str,
-    icon: IconId,
-    trailing: SettingsTrailing<'a>,
-) -> Widget<'a> {
-    Widget::new(
-        id,
-        WidgetKind::SettingsRow(SettingsRowProps {
-            title: label,
-            subtitle,
-            icon: Some(icon),
-            trailing,
-        }),
-    )
-}
-
-fn next_value(id: u16, settings: &Settings, mode: Mode) -> Option<(SettingId, SettingValue)> {
-    let change = match id {
-        TIME_FORMAT_ID => (
-            SettingId::DisplayTimeFormat,
-            SettingValue::TimeFormat(settings.display.time_format.next()),
-        ),
-        DATE_FORMAT_ID => (
-            SettingId::DisplayDateFormat,
-            SettingValue::DateFormat(settings.display.date_format.next()),
-        ),
-        BRIGHTNESS_ID => (
-            SettingId::brightness(mode),
-            SettingValue::Percent(next_percent(settings.brightness(mode))),
-        ),
-        SLEEP_TIMEOUT_ID => {
-            let cap = settings.power.awake_cap_secs;
-            let current = settings.power.sleep_timeout_secs.min(cap);
-            (
-                SettingId::PowerSleepTimeout,
-                SettingValue::Seconds(next_sleep(current, cap)),
-            )
-        }
-        _ => return None,
-    };
-    Some(change)
-}
-
-fn next_percent(value: Percent) -> Percent {
-    Percent::new(((value.value() / 10) + 1) % 11 * 10)
-}
-
-fn next_sleep(current: u16, cap: u16) -> u16 {
-    SLEEP_STEPS
-        .iter()
-        .copied()
-        .find(|step| *step > current && *step <= cap)
-        .unwrap_or(SLEEP_STEPS[0])
-}
-
-fn seconds_text(seconds: u16, out: &mut [u8; 8]) -> &str {
-    let mut digits = [0u8; 5];
-    let mut len = 0usize;
-    let mut value = seconds;
-    if value == 0 {
-        digits[0] = b'0';
-        len = 1;
-    } else {
-        while value > 0 && len < digits.len() {
-            digits[len] = b'0' + (value % 10) as u8;
-            value /= 10;
-            len += 1;
-        }
-    }
-    for index in 0..len {
-        out[index] = digits[len - 1 - index];
-    }
-    out[len] = b's';
-    text(out, len + 1)
-}
-
 fn text(bytes: &[u8], len: usize) -> &str {
     core::str::from_utf8(&bytes[..len.min(bytes.len())]).unwrap_or("")
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::rows::{BRIGHTNESS_ID, DATE_FORMAT_ID, SLEEP_TIMEOUT_ID, TIME_FORMAT_ID};
     use super::*;
-    use common::Mode;
+    use common::{Percent, Region};
     use settings::{DateFormat, TimeFormat};
+    use ui::{MonoSurface, Theme};
 
     #[test]
     fn time_and_date_toggle_live() {
@@ -450,12 +325,7 @@ mod tests {
     }
 
     #[test]
-    fn sleep_timeout_advances_through_steps() {
-        assert_eq!(next_sleep(30, 120), 60);
-        assert_eq!(next_sleep(3_600, 120), 5);
-        assert_eq!(next_sleep(7, 120), 10);
-        assert_eq!(next_sleep(60, 60), 5);
-
+    fn sleep_timeout_is_queued() {
         let mut app = SettingsApp::new(Mode::Watch, Settings::new());
         assert!(app.activate(SLEEP_TIMEOUT_ID));
         assert_eq!(
@@ -463,20 +333,6 @@ mod tests {
             Some((SettingId::PowerSleepTimeout, SettingValue::Seconds(60)))
         );
     }
-
-    #[test]
-    fn seconds_text_is_short_and_bounded() {
-        let mut buffer = [0u8; 8];
-        assert_eq!(seconds_text(5, &mut buffer), "5s");
-        assert_eq!(seconds_text(3_600, &mut buffer), "3600s");
-    }
-}
-
-#[cfg(test)]
-mod render_tests {
-    use super::*;
-    use common::Region;
-    use ui::{MonoSurface, Theme};
 
     #[test]
     fn settings_renders_and_registers_rows() {

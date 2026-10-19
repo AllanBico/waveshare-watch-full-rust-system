@@ -41,6 +41,8 @@ pub struct SettingsRowProps<'a> {
     pub icon: Option<IconId>,
     /// Trailing control or value.
     pub trailing: SettingsTrailing<'a>,
+    /// Uses the smaller label style for dense lists.
+    pub compact: bool,
 }
 
 /// Measures a settings row.
@@ -50,7 +52,12 @@ pub(crate) fn measure(
     cache: &mut TextCache,
     available: u16,
 ) -> Size {
-    let title = measure_text(props.title, &theme.type_scale.body, 0, cache);
+    let style = if props.compact {
+        &theme.type_scale.label
+    } else {
+        &theme.type_scale.body
+    };
+    let title = measure_text(props.title, style, 0, cache);
     let subtitle = measure_text(props.subtitle, &theme.type_scale.caption, 0, cache);
     let text_height = title.height.saturating_add(if props.subtitle.is_empty() {
         0
@@ -106,7 +113,12 @@ fn paint_text(
     theme: &Theme,
     color: crate::luma::Luma,
 ) {
-    let title = measure_uncached(props.title, &theme.type_scale.body, region.width);
+    let style = if props.compact {
+        &theme.type_scale.label
+    } else {
+        &theme.type_scale.body
+    };
+    let title = measure_uncached(props.title, style, region.width);
     let subtitle = measure_uncached(props.subtitle, &theme.type_scale.caption, region.width);
     let gap = if props.subtitle.is_empty() {
         0
@@ -121,7 +133,7 @@ fn paint_text(
     draw_text(
         painter,
         props.title,
-        &theme.type_scale.body,
+        style,
         (region.x, top),
         region.width,
         TextAlign::Start,
