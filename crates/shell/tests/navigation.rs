@@ -291,3 +291,25 @@ fn app_action_storm_is_bounded() {
     shell.dispatch(Action::OpenApp(OTHER)).unwrap();
     assert_eq!(shell.dispatch(Action::App(1)), Err(ShellError::ActionStorm));
 }
+
+#[test]
+fn content_swipes_dismiss_open_overlays() {
+    let mut shell = new_shell(Log::default());
+    shell.start().unwrap();
+
+    shell.dispatch(Action::OpenAppDrawer).unwrap();
+    let start = TouchReport::new(&[TouchPoint::new(1, 200, 250)]);
+    let moved = TouchReport::new(&[TouchPoint::new(1, 200, 380)]);
+    shell.handle_touch(&start, 0).unwrap();
+    shell.handle_touch(&moved, 50).unwrap();
+    shell.handle_touch(&TouchReport::empty(), 100).unwrap();
+    assert!(!shell.layers().is_open(LayerKind::AppDrawer));
+
+    shell.dispatch(Action::OpenQuickSettings).unwrap();
+    let start = TouchReport::new(&[TouchPoint::new(1, 200, 300)]);
+    let moved = TouchReport::new(&[TouchPoint::new(1, 200, 150)]);
+    shell.handle_touch(&start, 0).unwrap();
+    shell.handle_touch(&moved, 50).unwrap();
+    shell.handle_touch(&TouchReport::empty(), 100).unwrap();
+    assert!(!shell.layers().is_open(LayerKind::QuickSettings));
+}

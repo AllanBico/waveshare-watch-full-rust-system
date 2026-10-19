@@ -6,7 +6,7 @@ use crate::value::ValueKind;
 use crate::Settings;
 
 /// Number of persisted settings.
-pub const SETTING_COUNT: usize = 24;
+pub const SETTING_COUNT: usize = 25;
 
 /// The settings group a key belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +97,8 @@ pub enum SettingId {
     SystemTimezoneOffset = 22,
     /// Device name.
     SystemDeviceName = 23,
+    /// Hard ceiling for one watch awake window.
+    PowerAwakeCap = 24,
 }
 
 impl SettingId {
@@ -126,6 +128,7 @@ impl SettingId {
         Self::PowerPowerSaving,
         Self::SystemTimezoneOffset,
         Self::SystemDeviceName,
+        Self::PowerAwakeCap,
     ];
 
     /// Stable dense index.
@@ -162,6 +165,7 @@ impl SettingId {
             Self::PowerWakeOnMotion
             | Self::PowerMotionSensitivity
             | Self::PowerSleepTimeout
+            | Self::PowerAwakeCap
             | Self::PowerPowerSaving => SettingGroup::Power,
             Self::SystemTimezoneOffset | Self::SystemDeviceName => SettingGroup::System,
         }
@@ -204,6 +208,7 @@ impl SettingId {
             Self::PowerWakeOnMotion | Self::PowerPowerSaving => ValueKind::Bool,
             Self::PowerMotionSensitivity => ValueKind::Percent,
             Self::PowerSleepTimeout => ValueKind::Seconds,
+            Self::PowerAwakeCap => ValueKind::Seconds,
             Self::SystemTimezoneOffset => ValueKind::OffsetMinutes,
             Self::SystemDeviceName => ValueKind::DeviceName,
         }
@@ -259,6 +264,7 @@ impl SettingId {
             Self::PowerWakeOnMotion => "wake_on_motion",
             Self::PowerMotionSensitivity => "motion_sensitivity",
             Self::PowerSleepTimeout => "sleep_timeout",
+            Self::PowerAwakeCap => "awake_cap",
             Self::PowerPowerSaving => "power_saving",
             Self::SystemTimezoneOffset => "timezone_offset",
             Self::SystemDeviceName => "device_name",

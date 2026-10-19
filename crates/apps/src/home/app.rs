@@ -1,7 +1,7 @@
 //! The real Home app: lifecycle, state updates, and the frame it paints.
 
 use common::{Mode, Percent, Region, Timestamp};
-use settings::TimeFormat;
+use settings::{DateFormat, TimeFormat};
 use shell::{App, AppContext, AppError};
 use ui::{
     paint_damage_shaped, paint_widgets, Damage, RedrawReason, Scene, SceneArena, SceneError,
@@ -47,6 +47,23 @@ impl Home {
         }
     }
 
+    /// Creates Home with settings-derived clock and date formats.
+    pub fn new_with_formats(
+        mode: Mode,
+        now: Timestamp,
+        battery: Percent,
+        is_charging: bool,
+        time_format: TimeFormat,
+        date_format: DateFormat,
+    ) -> Self {
+        Self {
+            mode,
+            state: HomeState::new_with_formats(now, battery, is_charging, time_format, date_format),
+            cache: TextCache::new(),
+            scene: Scene::new(),
+        }
+    }
+
     /// The active mode.
     pub const fn mode(&self) -> Mode {
         self.mode
@@ -60,6 +77,11 @@ impl Home {
     /// Updates the clock format.
     pub fn set_time_format(&mut self, time_format: TimeFormat) -> bool {
         self.state.set_time_format(time_format)
+    }
+
+    /// Updates the date order.
+    pub fn set_date_format(&mut self, date_format: DateFormat) -> bool {
+        self.state.set_date_format(date_format)
     }
 
     /// Sets or clears the ringing alarm.
@@ -137,6 +159,10 @@ impl App for Home {
 
     fn tick(&mut self, context: &mut AppContext<'_>) {
         self.sync_context(context);
+    }
+
+    fn invalidate(&mut self) {
+        self.scene.request_full(RedrawReason::Overlay);
     }
 
     fn render(

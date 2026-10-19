@@ -138,7 +138,7 @@ async fn main(_spawner: Spawner) {
         .unwrap_or(false);
     let persisted = persist::init(peripherals.FLASH, mode, battery_mv, wake, now);
     let report = persisted.report;
-    let settings = persisted.settings;
+    let mut settings = persisted.settings;
     let mut alarms = persisted.alarms;
     let alarm = persisted.alarm;
     let wake = persisted.wake;
@@ -242,11 +242,12 @@ async fn main(_spawner: Spawner) {
             now,
             battery: battery_percent,
             is_charging,
-            time_format: settings.settings().display.time_format,
             wake,
             alarm,
-            settings: settings.settings(),
+            settings: &mut settings,
+            battery_mv,
             display: &mut display,
+            touch: &mut touch,
             power: &mut power,
             psram: &mut psram,
             log: plan.logging,

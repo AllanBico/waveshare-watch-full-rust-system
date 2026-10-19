@@ -28,6 +28,8 @@ pub enum RedrawReason {
     ModeSwitch,
     /// A compiled-in theme change.
     ThemeSwitch,
+    /// An overlay was dismissed and the base screen must be restored.
+    Overlay,
 }
 
 /// A scene failure.

@@ -12,7 +12,7 @@ use crate::Mode;
 pub struct ModePlan {
     /// Desk initializes PSRAM; watch never touches it.
     pub initialize_psram: bool,
-    /// Desk initializes touch; watch leaves it alone.
+    /// Both modes initialize touch; watch uses it for Home gestures.
     pub initialize_touch: bool,
     /// Desk logs over serial; watch stays quiet.
     pub logging: bool,
@@ -24,7 +24,7 @@ impl ModePlan {
         match mode {
             Mode::Watch => Self {
                 initialize_psram: false,
-                initialize_touch: false,
+                initialize_touch: true,
                 logging: false,
             },
             Mode::Desk => Self {
@@ -44,7 +44,7 @@ mod tests {
     fn watch_boot_stays_minimal_and_quiet() {
         let plan = ModePlan::for_mode(Mode::Watch);
         assert!(!plan.initialize_psram);
-        assert!(!plan.initialize_touch);
+        assert!(plan.initialize_touch);
         assert!(!plan.logging);
     }
 

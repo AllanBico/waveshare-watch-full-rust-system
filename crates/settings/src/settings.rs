@@ -68,8 +68,12 @@ pub struct PowerSettings {
     /// Motion wake sensitivity, mapped to a clamped threshold at the next
     /// sleep.
     pub motion_sensitivity: Percent,
-    /// Watch idle time before sleep, in seconds. Clamped by the boot policy.
+    /// Watch idle time before sleep, in seconds. Each touch restarts this
+    /// countdown; the boot policy clamps it to the wake cap.
     pub sleep_timeout_secs: u16,
+    /// Hard ceiling for one watch awake window, in seconds. Continuous touch
+    /// activity cannot keep the watch awake beyond this cap.
+    pub awake_cap_secs: u16,
     /// Reserved: watch is always power-saving and desk never is. Not read by
     /// firmware.
     pub power_saving: bool,
@@ -133,6 +137,7 @@ impl Settings {
                 wake_on_motion: true,
                 motion_sensitivity: Percent::new(50),
                 sleep_timeout_secs: 30,
+                awake_cap_secs: 120,
                 power_saving: false,
             },
             system: SystemSettings {

@@ -9,10 +9,11 @@ use hal::{Display, Power};
 use power::PowerManager;
 
 use common::{Mode, Percent, Timestamp, WakeReason};
-use settings::{BootPolicy, Settings, TimeFormat};
+use settings::{BootPolicy, SettingsStore};
 use shell::Shell;
 
-use crate::boot::VBUS_POLL_PERIOD;
+use crate::boot::{self, VBUS_POLL_PERIOD};
+use crate::persist::SettingsBackend;
 use crate::registry::Registry;
 use crate::session;
 
@@ -35,16 +36,18 @@ pub struct Inputs<'a, D, P> {
     pub battery: Percent,
     /// Charging state.
     pub is_charging: bool,
-    /// Clock format.
-    pub time_format: TimeFormat,
     /// Wake reason.
     pub wake: Option<WakeReason>,
     /// Due alarm, when one is ringing.
     pub alarm: Option<Timestamp>,
-    /// Settings snapshot.
-    pub settings: &'a Settings,
+    /// Settings store owned by the boot chain.
+    pub settings: &'a mut SettingsStore<SettingsBackend>,
+    /// Battery millivolts at boot, used to gate flash writes.
+    pub battery_mv: u16,
     /// Panel, when initialized.
     pub display: &'a mut Option<D>,
+    /// Touch controller, when initialized.
+    pub touch: &'a mut Option<boot::Touch>,
     /// Power manager.
     pub power: &'a mut PowerManager<P>,
     /// PSRAM token.
@@ -60,7 +63,7 @@ pub async fn run<D: Display, P: Power>(input: Inputs<'_, D, P>) -> Result<(), Er
 where
     D::Error: Debug,
 {
-    let policy = BootPolicy::from_settings(input.settings);
+    let policy = BootPolicy::from_settings(input.settings.settings());
     if let Some(reason) = input.wake {
         if let Err(error) = input.power.request_awake(reason, policy.awake_budget_ms, 0) {
             crate::retained::record_error(error.to_common().code());
@@ -75,7 +78,7 @@ where
         input.now,
         input.battery,
         input.is_charging,
-        input.time_format,
+        input.settings.settings(),
         input.alarm,
     )
     .map_err(|error| {
@@ -92,6 +95,8 @@ where
             shell: &mut shell,
             power: input.power,
             settings: input.settings,
+            battery_mv: input.battery_mv,
+            touch: input.touch,
             psram: input.psram,
             log: input.log,
             haptics: input.haptics,
@@ -110,7 +115,7 @@ where
         }
         Ok(())
     } else {
-        Timer::after(Duration::from_millis(u64::from(policy.awake_budget_ms))).await;
+        Timer::after(Duration::from_millis(u64::from(policy.idle_timeout_ms))).await;
         Ok(())
     }
 }

@@ -56,6 +56,15 @@ pub trait App {
         Ok(())
     }
 
+    /// Handles a tap at screen coordinates.
+    fn tap(&mut self, x: u16, y: u16, context: &mut AppContext<'_>) -> Result<(), AppError> {
+        let _ = (x, y, context);
+        Ok(())
+    }
+
+    /// Marks the app's next frame as a full redraw.
+    fn invalidate(&mut self) {}
+
     /// Builds, diffs, and paints one frame, returning the damage to flush.
     ///
     /// Apps own their transient render state. The shell supplies the current
@@ -79,4 +88,14 @@ pub trait App {
 pub trait AppRegistry {
     /// Runs `f` with the app registered under `id`, if any.
     fn with_app<R>(&mut self, id: AppId, f: impl FnOnce(&mut dyn App) -> R) -> Option<R>;
+
+    /// Runs `f` with the overlay registered for `kind`, if any.
+    fn with_layer<R>(
+        &mut self,
+        kind: crate::LayerKind,
+        f: impl FnOnce(&mut dyn App) -> R,
+    ) -> Option<R> {
+        let _ = (kind, f);
+        None
+    }
 }

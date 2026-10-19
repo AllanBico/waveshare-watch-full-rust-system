@@ -12,15 +12,25 @@ use esp_println::println;
 use hal::{Display, Power};
 use power::PowerManager;
 
-use common::{Event, LogEntry, Mode, Percent, Region, Timestamp};
+use apps::SETTINGS_APP_ID;
+use common::{Event, LogEntry, Mode, Percent, Region, Timestamp, TouchReport};
 use drivers::board;
 use drivers::haptics::Motor;
-use settings::{BootPolicy, Settings, TimeFormat};
-use shell::{Shell, ShellError};
+use settings::{BootPolicy, Settings, SettingsStore};
+use shell::{GestureOutcome, Shell, ShellError};
 
 use crate::boot::{self, VBUS_POLL_PERIOD};
+use crate::log_boot::STORAGE_WRITE_MIN_MV;
+use crate::persist::SettingsBackend;
 use crate::present;
 use crate::registry::{Registry, HOME_ID};
+
+/// Touch polling period while the watch is awake.
+const TOUCH_POLL_PERIOD: Duration = Duration::from_millis(20);
+/// How often the watch checks VBUS during an awake window.
+const VBUS_CHECK_PERIOD: Duration = Duration::from_millis(500);
+/// Periodic repaint while awake, so the clock still advances without touch.
+const IDLE_REPAINT_PERIOD: Duration = Duration::from_millis(1_000);
 
 /// A fatal session failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,8 +59,12 @@ pub struct RunInput<'a, D, P> {
     pub shell: &'a mut Shell<Registry>,
     /// Power manager.
     pub power: &'a mut PowerManager<P>,
-    /// Settings snapshot.
-    pub settings: &'a Settings,
+    /// Settings store.
+    pub settings: &'a mut SettingsStore<SettingsBackend>,
+    /// Battery millivolts sampled at boot.
+    pub battery_mv: u16,
+    /// Touch controller, when initialized.
+    pub touch: &'a mut Option<boot::Touch>,
     /// PSRAM token, consumed on the first desk entry.
     pub psram: &'a mut Option<PSRAM<'static>>,
     /// Whether serial logging is enabled.
@@ -60,10 +74,17 @@ pub struct RunInput<'a, D, P> {
 }
 
 /// Inputs for one watch awake loop.
-struct WatchInput<'a, 'h, P> {
+struct WatchInput<'a, 'h, D, P> {
     power: &'a mut PowerManager<P>,
     shell: &'a mut Shell<Registry>,
+    settings: &'a mut SettingsStore<SettingsBackend>,
+    battery_mv: u16,
+    display: &'a mut D,
+    touch: &'a mut Option<boot::Touch>,
+    workspace: &'a mut present::Workspace,
+    idle_ms: u32,
     awake_ms: u32,
+    base_now: Timestamp,
     started: Instant,
     log: bool,
     haptics: Option<&'a mut Haptics<'h>>,
@@ -83,10 +104,10 @@ pub fn boot(
     now: Timestamp,
     battery: Percent,
     is_charging: bool,
-    time_format: TimeFormat,
+    settings: &Settings,
     alarm: Option<Timestamp>,
 ) -> Result<Shell<Registry>, ShellError> {
-    let mut registry = Registry::new(mode, now, battery, is_charging, time_format);
+    let mut registry = Registry::new(mode, now, battery, is_charging, settings);
     registry.set_alarm(alarm);
     let mut shell = Shell::new(
         registry,
@@ -114,6 +135,8 @@ where
         shell,
         power,
         settings,
+        battery_mv,
+        touch,
         psram,
         log,
         mut haptics,
@@ -132,22 +155,28 @@ where
     loop {
         shell.set_time(now());
         let mode = shell.mode();
-        boot::apply_brightness(display, settings, mode, log);
-        present(display, shell, settings, &mut workspace, log)?;
+        boot::apply_brightness(display, settings.settings(), mode, log);
+        present(display, shell, settings.settings(), &mut workspace, log)?;
         match mode {
             Mode::Watch => {
-                let awake_ms = BootPolicy::from_settings(settings).awake_budget_ms;
-                let exit = {
-                    let watch = WatchInput {
-                        power: &mut *power,
-                        shell: &mut *shell,
-                        awake_ms,
-                        started,
-                        log,
-                        haptics: haptics.as_mut(),
-                    };
-                    run_watch(watch).await
-                };
+                let policy = BootPolicy::from_settings(settings.settings());
+                let exit = run_watch(WatchInput {
+                    power: &mut *power,
+                    shell: &mut *shell,
+                    settings: &mut *settings,
+                    battery_mv,
+                    display: &mut *display,
+                    touch: &mut *touch,
+                    workspace: &mut workspace,
+                    idle_ms: policy.idle_timeout_ms,
+                    awake_ms: policy.awake_budget_ms,
+                    base_now,
+                    started,
+                    log,
+                    haptics: haptics.as_mut(),
+                })
+                .await;
+                commit_settings(settings, battery_mv, log);
                 match exit {
                     WatchExit::VbusInserted => {
                         haptics = None;
@@ -158,6 +187,7 @@ where
             }
             Mode::Desk => {
                 run_desk(power, shell, started, log).await;
+                commit_settings(settings, battery_mv, log);
                 switch(shell, power, psram, Mode::Watch, log, now())?
             }
         }
@@ -223,44 +253,143 @@ fn switch<P: Power>(
     Ok(())
 }
 
-async fn run_watch<'a, 'h, P: Power>(input: WatchInput<'a, 'h, P>) -> WatchExit {
-    const ALARM_TICK_MS: u64 = 100;
+async fn run_watch<'a, 'h, D: Display, P: Power>(input: WatchInput<'a, 'h, D, P>) -> WatchExit
+where
+    D::Error: Debug,
+{
     const HAPTIC_WINDOW_MS: u64 = 1_000;
 
     let WatchInput {
         power,
         shell,
+        settings,
+        battery_mv,
+        display,
+        touch,
+        workspace,
+        idle_ms,
         awake_ms,
+        base_now,
         started,
         log,
         mut haptics,
     } = input;
     let entered = Instant::now();
-    let period = if haptics.is_some() {
-        Duration::from_millis(ALARM_TICK_MS)
-    } else {
-        VBUS_POLL_PERIOD
-    };
+    let mut last_activity_ms = 0u64;
+    let mut next_vbus = Instant::now() + VBUS_CHECK_PERIOD;
+    let mut next_repaint = Instant::now() + IDLE_REPAINT_PERIOD;
+
     loop {
-        if power.is_vbus_present().unwrap_or(false) {
-            stop_haptics(&mut haptics);
-            return WatchExit::VbusInserted;
-        }
-        let elapsed = (Instant::now() - entered).as_millis();
+        let loop_now = Instant::now();
+        let elapsed = (loop_now - entered).as_millis();
         if elapsed >= u64::from(awake_ms) {
             stop_haptics(&mut haptics);
             return WatchExit::BudgetExpired;
+        }
+        if elapsed.saturating_sub(last_activity_ms) >= u64::from(idle_ms) {
+            stop_haptics(&mut haptics);
+            return WatchExit::BudgetExpired;
+        }
+        if loop_now >= next_vbus {
+            next_vbus = loop_now + VBUS_CHECK_PERIOD;
+            if power.is_vbus_present().unwrap_or(false) {
+                stop_haptics(&mut haptics);
+                return WatchExit::VbusInserted;
+            }
         }
         if let Some(haptics) = haptics.as_deref_mut() {
             let on = elapsed % HAPTIC_WINDOW_MS
                 < u64::from(haptics.strength.value()) * HAPTIC_WINDOW_MS / 100;
             haptics.motor.set(on);
         }
-        Timer::after(period).await;
-        if let Err(error) = shell.tick((Instant::now() - started).as_millis()) {
+
+        Timer::after(TOUCH_POLL_PERIOD).await;
+
+        let uptime = (Instant::now() - started).as_millis();
+        shell.set_time(Timestamp::from_millis(
+            base_now.as_millis().saturating_add(uptime),
+        ));
+        let report = read_touch(touch);
+        if !report.is_empty() {
+            last_activity_ms = (Instant::now() - entered).as_millis();
+        }
+        let was_settings = shell.active_app() == Some(SETTINGS_APP_ID);
+        let outcome = shell.handle_touch(&report, uptime).unwrap_or_else(|error| {
+            crate::retained::record_error(common::Error::NotReady.code());
+            if log {
+                println!("[shell] touch failed: {:?}", error);
+            }
+            GestureOutcome::None
+        });
+        if let Err(error) = shell.tick(uptime) {
             crate::retained::record_error(common::Error::NotReady.code());
             if log {
                 println!("[shell] tick failed: {:?}", error);
+            }
+        }
+        let changed = sync_settings(shell, settings, log);
+        let is_settings = shell.active_app() == Some(SETTINGS_APP_ID);
+        if was_settings && !is_settings {
+            commit_settings(settings, battery_mv, log);
+        }
+
+        let completed = matches!(
+            outcome,
+            GestureOutcome::Tap { .. } | GestureOutcome::Swipe(_)
+        );
+        if completed || changed || Instant::now() >= next_repaint {
+            next_repaint = Instant::now() + IDLE_REPAINT_PERIOD;
+            boot::apply_brightness(display, settings.settings(), Mode::Watch, log);
+            if let Err(error) = present(display, shell, settings.settings(), workspace, log) {
+                crate::retained::record_error(common::Error::NotReady.code());
+                if log {
+                    println!("[ui] watch present failed: {:?}", error);
+                }
+            }
+        }
+    }
+}
+
+fn read_touch(touch: &mut Option<boot::Touch>) -> TouchReport {
+    match touch.as_mut() {
+        Some(touch) => touch.read().unwrap_or(TouchReport::empty()),
+        None => TouchReport::empty(),
+    }
+}
+
+fn sync_settings(
+    shell: &mut Shell<Registry>,
+    store: &mut SettingsStore<SettingsBackend>,
+    log: bool,
+) -> bool {
+    let mut changed = false;
+    while let Some((id, value)) = shell.registry_mut().pop_setting_intent() {
+        match store.set(id, value) {
+            Ok(_) => changed = true,
+            Err(error) => {
+                if log {
+                    println!("[set] rejected {}: {}", id.label(), error);
+                }
+            }
+        }
+    }
+    if changed {
+        let mode = shell.mode();
+        shell.registry_mut().apply_settings(mode, store.settings());
+    }
+    changed
+}
+
+fn commit_settings(store: &mut SettingsStore<SettingsBackend>, battery_mv: u16, log: bool) {
+    if battery_mv < STORAGE_WRITE_MIN_MV || !store.is_dirty() {
+        return;
+    }
+    match store.flush() {
+        Ok(count) if log && count > 0 => println!("[set] wrote {} keys", count),
+        Ok(_) => {}
+        Err(error) => {
+            if log {
+                println!("[set] flush failed: {}", error);
             }
         }
     }

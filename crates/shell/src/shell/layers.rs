@@ -10,6 +10,7 @@ use crate::AppRegistry;
 impl<R: AppRegistry> Shell<R> {
     pub(super) fn open_layer(&mut self, kind: LayerKind, id: u16) {
         self.layers.open(Layer::new(kind, id));
+        let _ = self.call_layer(kind, |app, _| app.invalidate());
         self.start_transition(kind, true);
     }
 

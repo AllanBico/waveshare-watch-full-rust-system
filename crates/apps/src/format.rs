@@ -1,7 +1,7 @@
 //! Fixed-buffer text formatting for the Home complications.
 
 use common::{DateTime, Percent, Timestamp};
-use settings::TimeFormat;
+use settings::{DateFormat, TimeFormat};
 
 const WEEKDAYS: [&str; 7] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const MONTHS: [&str; 12] = [
@@ -28,16 +28,25 @@ pub(crate) fn clock_text(now: Timestamp, format: TimeFormat, out: &mut [u8; 5]) 
     text(out)
 }
 
-/// Formats `DDD DD MMM` into `out`.
-pub(crate) fn date_text(now: Timestamp, out: &mut [u8; 10]) -> &str {
+/// Formats `DDD DD MMM` or `DDD MMM DD` into `out`.
+pub(crate) fn date_text(now: Timestamp, format: DateFormat, out: &mut [u8; 10]) -> &str {
     let date = DateTime::from_timestamp(now);
     let weekday = WEEKDAYS[usize::from(date.weekday()).min(WEEKDAYS.len() - 1)].as_bytes();
     let month = MONTHS[usize::from(date.month.clamp(1, 12) - 1)].as_bytes();
     out[..3].copy_from_slice(weekday);
     out[3] = b' ';
-    put_two(date.day, out, 4);
-    out[6] = b' ';
-    out[7..10].copy_from_slice(month);
+    match format {
+        DateFormat::DayMonth => {
+            put_two(date.day, out, 4);
+            out[6] = b' ';
+            out[7..10].copy_from_slice(month);
+        }
+        DateFormat::MonthDay => {
+            out[4..7].copy_from_slice(month);
+            out[7] = b' ';
+            put_two(date.day, out, 8);
+        }
+    }
     text(out)
 }
 
@@ -102,7 +111,14 @@ mod tests {
     #[test]
     fn date_uses_short_names() {
         let mut buffer = [0; 10];
-        assert_eq!(date_text(at(2026, 10, 18, 0, 0), &mut buffer), "SUN 18 OCT");
+        assert_eq!(
+            date_text(at(2026, 10, 18, 0, 0), DateFormat::DayMonth, &mut buffer),
+            "SUN 18 OCT"
+        );
+        assert_eq!(
+            date_text(at(2026, 10, 18, 0, 0), DateFormat::MonthDay, &mut buffer),
+            "SUN OCT 18"
+        );
     }
 
     #[test]

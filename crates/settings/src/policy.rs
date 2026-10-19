@@ -7,10 +7,12 @@ use common::Percent;
 
 use crate::Settings;
 
-/// Hard floor for the watch awake budget.
-const MIN_WATCH_AWAKE_MS: u32 = 1_000;
-/// Hard ceiling for the watch awake budget.
-const MAX_WATCH_AWAKE_MS: u32 = 7_000;
+/// Hard floor for the watch idle timeout.
+const MIN_WATCH_IDLE_MS: u32 = 5_000;
+/// Hard ceiling for the watch hard awake cap.
+const MAX_WATCH_AWAKE_MS: u32 = 3_600_000;
+/// Hard floor for the watch hard awake cap.
+const MIN_WATCH_AWAKE_MS: u32 = 10_000;
 /// Lowest Wake-on-Motion threshold in mg, the most sensitive setting.
 const MIN_MOTION_THRESHOLD_MG: u8 = 32;
 /// Highest Wake-on-Motion threshold in mg, the least sensitive setting.
@@ -26,7 +28,9 @@ pub struct BootPolicy {
     pub wake_on_motion: bool,
     /// Clamped Wake-on-Motion threshold.
     pub motion_threshold_mg: u8,
-    /// Clamped watch awake budget.
+    /// Idle time after the last touch before the watch sleeps.
+    pub idle_timeout_ms: u32,
+    /// Hard ceiling for one awake window, even while touched.
     pub awake_budget_ms: u32,
     /// Haptic strength for alarms.
     pub haptics: Percent,
@@ -38,11 +42,17 @@ impl BootPolicy {
         let sensitivity = settings.power.motion_sensitivity.value().min(100);
         let range = u32::from(MAX_MOTION_THRESHOLD_MG - MIN_MOTION_THRESHOLD_MG);
         let threshold = u32::from(MAX_MOTION_THRESHOLD_MG) - u32::from(sensitivity) * range / 100;
-        let awake_ms = u32::from(settings.power.sleep_timeout_secs).saturating_mul(1_000);
+        let awake_ms = u32::from(settings.power.awake_cap_secs)
+            .saturating_mul(1_000)
+            .clamp(MIN_WATCH_AWAKE_MS, MAX_WATCH_AWAKE_MS);
+        let idle_ms = u32::from(settings.power.sleep_timeout_secs)
+            .saturating_mul(1_000)
+            .clamp(MIN_WATCH_IDLE_MS, awake_ms);
         Self {
             wake_on_motion: settings.power.wake_on_motion,
             motion_threshold_mg: threshold as u8,
-            awake_budget_ms: awake_ms.clamp(MIN_WATCH_AWAKE_MS, MAX_WATCH_AWAKE_MS),
+            idle_timeout_ms: idle_ms,
+            awake_budget_ms: awake_ms,
             haptics: settings.sound.haptics,
         }
     }
@@ -57,7 +67,8 @@ mod tests {
         let policy = BootPolicy::from_settings(&Settings::new());
         assert!(policy.wake_on_motion);
         assert_eq!(policy.motion_threshold_mg, 80);
-        assert_eq!(policy.awake_budget_ms, MAX_WATCH_AWAKE_MS);
+        assert_eq!(policy.idle_timeout_ms, 30_000);
+        assert_eq!(policy.awake_budget_ms, 120_000);
         assert_eq!(policy.haptics.value(), 60);
     }
 
@@ -77,18 +88,29 @@ mod tests {
     }
 
     #[test]
-    fn awake_budget_is_clamped() {
+    fn idle_and_cap_are_clamped() {
         let mut settings = Settings::new();
         settings.power.sleep_timeout_secs = 0;
-        assert_eq!(
-            BootPolicy::from_settings(&settings).awake_budget_ms,
-            MIN_WATCH_AWAKE_MS
-        );
+        settings.power.awake_cap_secs = 0;
+        let policy = BootPolicy::from_settings(&settings);
+        assert_eq!(policy.idle_timeout_ms, MIN_WATCH_IDLE_MS);
+        assert_eq!(policy.awake_budget_ms, MIN_WATCH_AWAKE_MS);
+
         settings.power.sleep_timeout_secs = u16::MAX;
-        assert_eq!(
-            BootPolicy::from_settings(&settings).awake_budget_ms,
-            MAX_WATCH_AWAKE_MS
-        );
+        settings.power.awake_cap_secs = u16::MAX;
+        let policy = BootPolicy::from_settings(&settings);
+        assert_eq!(policy.awake_budget_ms, MAX_WATCH_AWAKE_MS);
+        assert_eq!(policy.idle_timeout_ms, MAX_WATCH_AWAKE_MS);
+    }
+
+    #[test]
+    fn idle_timeout_never_exceeds_the_cap() {
+        let mut settings = Settings::new();
+        settings.power.sleep_timeout_secs = 3_600;
+        settings.power.awake_cap_secs = 60;
+        let policy = BootPolicy::from_settings(&settings);
+        assert_eq!(policy.awake_budget_ms, 60_000);
+        assert_eq!(policy.idle_timeout_ms, 60_000);
     }
 
     #[test]

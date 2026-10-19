@@ -1,7 +1,7 @@
 //! Home complication values, formatted once per change.
 
 use common::{Percent, Timestamp};
-use settings::TimeFormat;
+use settings::{DateFormat, TimeFormat};
 
 use crate::format::{clock_text, date_text, percent_text};
 
@@ -12,6 +12,7 @@ pub struct HomeState {
     is_charging: bool,
     alarm: Option<Timestamp>,
     time_format: TimeFormat,
+    date_format: DateFormat,
     clock: [u8; 5],
     date: [u8; 10],
     battery_text: [u8; 4],
@@ -31,12 +32,24 @@ impl HomeState {
         is_charging: bool,
         time_format: TimeFormat,
     ) -> Self {
+        Self::new_with_formats(now, battery, is_charging, time_format, DateFormat::DayMonth)
+    }
+
+    /// Creates Home state with explicit clock and date formats.
+    pub fn new_with_formats(
+        now: Timestamp,
+        battery: Percent,
+        is_charging: bool,
+        time_format: TimeFormat,
+        date_format: DateFormat,
+    ) -> Self {
         let mut state = Self {
             last_minute: u64::MAX,
             battery,
             is_charging,
             alarm: None,
             time_format,
+            date_format,
             clock: [0; 5],
             date: [0; 10],
             battery_text: [0; 4],
@@ -52,7 +65,7 @@ impl HomeState {
         let minute = now.as_secs() / 60;
         if minute != self.last_minute {
             clock_text(now, self.time_format, &mut self.clock);
-            date_text(now, &mut self.date);
+            date_text(now, self.date_format, &mut self.date);
             self.last_minute = minute;
             changed = true;
         }
@@ -79,6 +92,20 @@ impl HomeState {
             Timestamp::from_secs(self.last_minute.saturating_mul(60)),
             self.time_format,
             &mut self.clock,
+        );
+        true
+    }
+
+    /// Updates the date order, returning whether the text changed.
+    pub fn set_date_format(&mut self, date_format: DateFormat) -> bool {
+        if date_format == self.date_format {
+            return false;
+        }
+        self.date_format = date_format;
+        date_text(
+            Timestamp::from_secs(self.last_minute.saturating_mul(60)),
+            self.date_format,
+            &mut self.date,
         );
         true
     }
@@ -149,5 +176,28 @@ mod tests {
         assert_eq!(home.battery(), "79%");
         assert!(home.update(timestamp(7, 5), Percent::new(79), true));
         assert!(home.is_charging());
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+    use common::DateTime;
+    use settings::DateFormat;
+
+    #[test]
+    fn date_order_updates_live() {
+        let now = DateTime::new(2026, 10, 18, 7, 5, 0).to_timestamp().unwrap();
+        let mut state = HomeState::new_with_formats(
+            now,
+            Percent::new(80),
+            false,
+            TimeFormat::Hour24,
+            DateFormat::DayMonth,
+        );
+        assert_eq!(state.date(), "SUN 18 OCT");
+        assert!(state.set_date_format(DateFormat::MonthDay));
+        assert_eq!(state.date(), "SUN OCT 18");
+        assert!(!state.set_date_format(DateFormat::MonthDay));
     }
 }

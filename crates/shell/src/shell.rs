@@ -35,6 +35,8 @@ pub struct Shell<R> {
     toast_deadline: Option<u64>,
     transition: Option<LayerTransition>,
     is_started: bool,
+    rendered_layer: bool,
+    rendered_app: Option<AppId>,
 }
 
 impl<R: AppRegistry> Shell<R> {
@@ -55,6 +57,8 @@ impl<R: AppRegistry> Shell<R> {
             toast_deadline: None,
             transition: None,
             is_started: false,
+            rendered_layer: false,
+            rendered_app: None,
         }
     }
 
@@ -218,10 +222,31 @@ impl<R: AppRegistry> Shell<R> {
         let outcome = self
             .input
             .handle(report, now_ms, self.viewport.width, self.viewport.height);
-        if let GestureOutcome::Swipe(swipe) = outcome {
-            self.apply_swipe(swipe)?;
+        match outcome {
+            GestureOutcome::Swipe(swipe) => self.apply_swipe(swipe)?,
+            GestureOutcome::Tap { x, y } => self.tap_at(x, y)?,
+            _ => {}
         }
         Ok(outcome)
+    }
+
+    /// Routes a tap to the active overlay or app and drains queued actions.
+    pub fn tap(&mut self, x: u16, y: u16) -> Result<(), ShellError> {
+        self.tap_at(x, y)
+    }
+
+    fn tap_at(&mut self, x: u16, y: u16) -> Result<(), ShellError> {
+        if self.layers.is_modal() {
+            return Ok(());
+        }
+        let kind = self.input_layer();
+        if kind == LayerKind::App {
+            let id = self.active_app().ok_or(ShellError::NoActiveApp)?;
+            self.call_app(id, |app, context| app.tap(x, y, context))??;
+        } else {
+            self.call_layer(kind, |app, context| app.tap(x, y, context))??;
+        }
+        self.drain_actions()
     }
 
     /// Advances the shell and the active app.
@@ -229,21 +254,40 @@ impl<R: AppRegistry> Shell<R> {
         self.uptime_ms = now_ms;
         self.expire_toast(now_ms);
         self.advance_transition(now_ms);
-        if self.is_started && !self.is_app_input_blocked() {
-            if let Some(id) = self.active_app() {
-                self.call_app(id, |app, context| app.tick(context))?;
+        if self.is_started {
+            match self.input_layer() {
+                LayerKind::App => {
+                    if !self.is_app_input_blocked() {
+                        if let Some(id) = self.active_app() {
+                            self.call_app(id, |app, context| app.tick(context))?;
+                        }
+                    }
+                }
+                kind => {
+                    let _ = self.call_layer(kind, |app, context| app.tick(context));
+                }
             }
         }
         self.drain_actions()
     }
 
-    /// Renders the active app and returns the damage to flush.
+    /// Renders the active layer, or the active app, and returns the damage.
     pub fn render_active(
         &mut self,
         theme: &Theme,
         surface: &mut dyn Surface,
     ) -> Result<Damage, ShellError> {
+        let layer = self.input_layer();
+        if layer != LayerKind::App {
+            self.rendered_layer = true;
+            return Ok(self.call_layer(layer, |app, context| app.render(context, theme, surface))??);
+        }
         let id = self.active_app().ok_or(ShellError::NoActiveApp)?;
+        if self.rendered_layer || self.rendered_app != Some(id) {
+            let _ = self.call_app(id, |app, _| app.invalidate());
+        }
+        self.rendered_layer = false;
+        self.rendered_app = Some(id);
         let damage = self.call_app(id, |app, context| app.render(context, theme, surface))??;
         Ok(damage)
     }
@@ -303,5 +347,37 @@ impl<R: AppRegistry> Shell<R> {
         registry
             .with_app(id, |app| f(app, &mut context))
             .ok_or(ShellError::UnknownApp(id))
+    }
+
+    fn call_layer<R2>(
+        &mut self,
+        kind: LayerKind,
+        f: impl FnOnce(&mut dyn App, &mut AppContext<'_>) -> R2,
+    ) -> Result<R2, ShellError> {
+        let app = self.active_app().unwrap_or_else(|| self.routes.home());
+        let Self {
+            registry,
+            mode,
+            policy,
+            now,
+            uptime_ms,
+            viewport,
+            status,
+            actions,
+            ..
+        } = self;
+        let mut context = AppContext::new(ContextInput {
+            mode: *mode,
+            policy: *policy,
+            now: *now,
+            uptime_ms: *uptime_ms,
+            viewport: *viewport,
+            app,
+            status,
+            actions,
+        });
+        registry
+            .with_layer(kind, |app| f(app, &mut context))
+            .ok_or(ShellError::UnknownApp(app))
     }
 }

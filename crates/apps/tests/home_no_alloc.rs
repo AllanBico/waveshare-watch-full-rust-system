@@ -6,9 +6,9 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use apps::Home;
+use apps::{Home, SettingsApp};
 use common::{DateTime, Mode, Percent, Region, Timestamp};
-use settings::TimeFormat;
+use settings::{Settings, TimeFormat};
 use ui::{MonoSurface, Theme};
 
 struct CountingAllocator;
@@ -50,12 +50,16 @@ fn the_watch_home_render_path_allocates_nothing() {
     let mut surface = MonoSurface::new(WIDTH, HEIGHT, &mut data).unwrap();
     let viewport = Region::full(WIDTH, HEIGHT);
     let mut next = Timestamp::from_secs(now.as_secs());
+    let mut settings_app = SettingsApp::new(Mode::Watch, Settings::new());
 
     let before = ALLOCATIONS.load(Ordering::Relaxed);
     for _ in 0..4 {
         next = Timestamp::from_secs(next.as_secs().saturating_add(60));
         home.update(next, Percent::new(80), false);
         home.render_frame(&mut surface, &Theme::WATCH, viewport)
+            .unwrap();
+        settings_app
+            .render_frame(&mut surface, &Theme::WATCH, viewport)
             .unwrap();
     }
     let after = ALLOCATIONS.load(Ordering::Relaxed);

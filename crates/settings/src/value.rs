@@ -58,6 +58,22 @@ pub enum DateFormat {
 }
 
 impl DateFormat {
+    /// Toggles between the two orders.
+    pub const fn next(self) -> Self {
+        match self {
+            Self::DayMonth => Self::MonthDay,
+            Self::MonthDay => Self::DayMonth,
+        }
+    }
+
+    /// Short UI label.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::DayMonth => "Day month",
+            Self::MonthDay => "Month day",
+        }
+    }
+
     pub(crate) const fn from_index(index: u8) -> Option<Self> {
         match index {
             0 => Some(Self::DayMonth),

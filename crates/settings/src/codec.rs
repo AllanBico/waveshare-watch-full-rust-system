@@ -7,6 +7,8 @@ const MIN_SCREEN_TIMEOUT_SECS: u16 = 5;
 const MAX_SCREEN_TIMEOUT_SECS: u16 = 300;
 const MIN_SLEEP_TIMEOUT_SECS: u16 = 5;
 const MAX_SLEEP_TIMEOUT_SECS: u16 = 3_600;
+const MIN_AWAKE_CAP_SECS: u16 = 10;
+const MAX_AWAKE_CAP_SECS: u16 = 3_600;
 const MIN_AUTO_SYNC_SECS: u16 = 30;
 const MAX_AUTO_SYNC_SECS: u16 = 65_535;
 const MAX_TIMEZONE_OFFSET_MINUTES: i16 = 840;
@@ -61,6 +63,7 @@ impl SettingId {
                 SettingValue::Percent(settings.power.motion_sensitivity)
             }
             Self::PowerSleepTimeout => SettingValue::Seconds(settings.power.sleep_timeout_secs),
+            Self::PowerAwakeCap => SettingValue::Seconds(settings.power.awake_cap_secs),
             Self::PowerPowerSaving => SettingValue::Bool(settings.power.power_saving),
             Self::SystemTimezoneOffset => {
                 SettingValue::OffsetMinutes(settings.system.timezone_offset_minutes)
@@ -124,6 +127,10 @@ impl SettingId {
             (Self::PowerSleepTimeout, SettingValue::Seconds(value)) => {
                 settings.power.sleep_timeout_secs =
                     clamp_seconds(value, MIN_SLEEP_TIMEOUT_SECS, MAX_SLEEP_TIMEOUT_SECS)?
+            }
+            (Self::PowerAwakeCap, SettingValue::Seconds(value)) => {
+                settings.power.awake_cap_secs =
+                    clamp_seconds(value, MIN_AWAKE_CAP_SECS, MAX_AWAKE_CAP_SECS)?
             }
             (Self::PowerPowerSaving, SettingValue::Bool(value)) => {
                 settings.power.power_saving = value

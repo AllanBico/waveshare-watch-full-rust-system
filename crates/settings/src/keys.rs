@@ -27,6 +27,7 @@ impl SettingId {
             Self::PowerWakeOnMotion => b"settings/v1/power.wake_on_motion",
             Self::PowerMotionSensitivity => b"settings/v1/power.motion_sensitivity",
             Self::PowerSleepTimeout => b"settings/v1/power.sleep_timeout",
+            Self::PowerAwakeCap => b"settings/v1/power.awake_cap",
             Self::PowerPowerSaving => b"settings/v1/power.power_saving",
             Self::SystemTimezoneOffset => b"settings/v1/system.timezone_offset",
             Self::SystemDeviceName => b"settings/v1/system.device_name",

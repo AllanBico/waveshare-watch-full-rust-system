@@ -63,10 +63,20 @@ impl<R: AppRegistry> Shell<R> {
             (SwipeOrigin::BottomEdge, SwipeDirection::Down) => {
                 self.dispatch(Action::CloseAppDrawer)
             }
+            (SwipeOrigin::Content, SwipeDirection::Down)
+                if self.layers.is_open(LayerKind::AppDrawer) =>
+            {
+                self.dispatch(Action::CloseAppDrawer)
+            }
             (SwipeOrigin::TopEdge, SwipeDirection::Down) => {
                 self.dispatch(Action::OpenQuickSettings)
             }
             (SwipeOrigin::TopEdge, SwipeDirection::Up) => self.dispatch(Action::CloseQuickSettings),
+            (SwipeOrigin::Content, SwipeDirection::Up)
+                if self.layers.is_open(LayerKind::QuickSettings) =>
+            {
+                self.dispatch(Action::CloseQuickSettings)
+            }
             (SwipeOrigin::LeftEdge, SwipeDirection::Right) => self.dispatch(Action::Back),
             _ => Ok(()),
         }
