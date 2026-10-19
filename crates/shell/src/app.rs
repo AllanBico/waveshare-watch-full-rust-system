@@ -4,7 +4,7 @@ use core::fmt;
 
 use ui::{Damage, Surface, Theme};
 
-use super::{Action, AppContext, AppError};
+use super::{Action, AppContext, AppError, Swipe};
 
 /// A stable identifier for one app implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -60,6 +60,18 @@ pub trait App {
     fn tap(&mut self, x: u16, y: u16, context: &mut AppContext<'_>) -> Result<(), AppError> {
         let _ = (x, y, context);
         Ok(())
+    }
+
+    /// Handles a content swipe, returning whether the app consumed it.
+    fn swipe(&mut self, swipe: Swipe, context: &mut AppContext<'_>) -> Result<bool, AppError> {
+        let _ = (swipe, context);
+        Ok(false)
+    }
+
+    /// Intercepts Back, returning whether the app handled it.
+    fn back(&mut self, context: &mut AppContext<'_>) -> Result<bool, AppError> {
+        let _ = context;
+        Ok(false)
     }
 
     /// Marks the app's next frame as a full redraw.

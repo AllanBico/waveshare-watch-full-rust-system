@@ -39,6 +39,8 @@ pub struct Boot {
     pub alarm: Option<Timestamp>,
     /// Effective wake reason, refined to `Alarm` when one is due.
     pub wake: Option<WakeReason>,
+    /// Flash device, when bring-up succeeded.
+    pub device: Option<&'static FlashDevice>,
 }
 
 /// Outcome shown by the viewer.
@@ -152,6 +154,7 @@ pub fn init(
                 alarms: AlarmStore::unavailable(),
                 alarm: None,
                 wake,
+                device: None,
             };
         }
     };
@@ -198,6 +201,7 @@ pub fn init(
         alarms,
         alarm,
         wake,
+        device: Some(device),
     }
 }
 

@@ -88,12 +88,16 @@ impl<'a> Ring<'a> {
             return Ok(None);
         }
         let slot = (self.head() + CAPACITY - usize::from(self.count())) % CAPACITY;
-        let base = HEADER_BYTES + slot * SLOT_BYTES;
-        let length = usize::from(self.bytes[base]);
-        if length == 0 || length > SLOT_DATA {
-            return Err(LogError::Corrupt);
+        self.read_slot(slot).map(Some)
+    }
+
+    /// Returns a record counting from the newest, where `0` is the latest.
+    pub fn get_newest(&self, index: usize) -> Result<Option<LogEntry>, LogError> {
+        if index >= self.len() {
+            return Ok(None);
         }
-        decode_log(&self.bytes[base + 1..base + 1 + length]).map(Some)
+        let slot = (self.head() + CAPACITY - 1 - index) % CAPACITY;
+        self.read_slot(slot).map(Some)
     }
 
     /// Removes the oldest record, if any.
@@ -108,6 +112,15 @@ impl<'a> Ring<'a> {
         self.set_head(0);
         self.set_count(0);
         self.set_dropped(0);
+    }
+
+    fn read_slot(&self, slot: usize) -> Result<LogEntry, LogError> {
+        let base = HEADER_BYTES + slot * SLOT_BYTES;
+        let length = usize::from(self.bytes[base]);
+        if length == 0 || length > SLOT_DATA {
+            return Err(LogError::Corrupt);
+        }
+        decode_log(&self.bytes[base + 1..base + 1 + length])
     }
 
     fn reset(&mut self) {
@@ -233,5 +246,37 @@ mod tests {
         ring.push(&entry(1)).unwrap();
         ring.bytes[HEADER_BYTES] = SLOT_DATA as u8 + 1;
         assert!(matches!(ring.peek(), Err(LogError::Corrupt)));
+    }
+}
+
+#[cfg(test)]
+mod newest_tests {
+    use super::*;
+    use common::{Event, Timestamp, WakeReason};
+
+    #[test]
+    fn newest_index_reads_backwards() {
+        let mut bytes = [0u8; RETAINED_BYTES];
+        let mut ring = Ring::new(&mut bytes);
+        for second in 0..3u64 {
+            ring.push(&LogEntry::new(
+                Timestamp::from_secs(second),
+                Event::Wake(WakeReason::Timer),
+            ))
+            .unwrap();
+        }
+        assert_eq!(
+            ring.get_newest(0)
+                .unwrap()
+                .map(|entry| entry.timestamp.as_secs()),
+            Some(2)
+        );
+        assert_eq!(
+            ring.get_newest(2)
+                .unwrap()
+                .map(|entry| entry.timestamp.as_secs()),
+            Some(0)
+        );
+        assert_eq!(ring.get_newest(3).unwrap(), None);
     }
 }

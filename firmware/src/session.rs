@@ -15,12 +15,14 @@ use power::PowerManager;
 use apps::SETTINGS_APP_ID;
 use common::{Event, LogEntry, Mode, Percent, Region, Timestamp, TouchReport};
 use drivers::board;
+use drivers::flash::FlashDevice;
 use drivers::haptics::Motor;
 use settings::{BootPolicy, Settings, SettingsStore};
 use shell::{GestureOutcome, Shell, ShellError};
 
 use crate::boot::{self, VBUS_POLL_PERIOD};
 use crate::log_boot::STORAGE_WRITE_MIN_MV;
+use crate::log_view;
 use crate::persist::SettingsBackend;
 use crate::present;
 use crate::registry::{Registry, HOME_ID};
@@ -63,6 +65,8 @@ pub struct RunInput<'a, D, P> {
     pub settings: &'a mut SettingsStore<SettingsBackend>,
     /// Battery millivolts sampled at boot.
     pub battery_mv: u16,
+    /// Flash device, when bring-up succeeded.
+    pub device: Option<&'static FlashDevice>,
     /// Touch controller, when initialized.
     pub touch: &'a mut Option<boot::Touch>,
     /// PSRAM token, consumed on the first desk entry.
@@ -79,6 +83,7 @@ struct WatchInput<'a, 'h, D, P> {
     shell: &'a mut Shell<Registry>,
     settings: &'a mut SettingsStore<SettingsBackend>,
     battery_mv: u16,
+    device: Option<&'static FlashDevice>,
     display: &'a mut D,
     touch: &'a mut Option<boot::Touch>,
     workspace: &'a mut present::Workspace,
@@ -136,6 +141,7 @@ where
         power,
         settings,
         battery_mv,
+        device,
         touch,
         psram,
         log,
@@ -165,6 +171,7 @@ where
                     shell: &mut *shell,
                     settings: &mut *settings,
                     battery_mv,
+                    device,
                     display: &mut *display,
                     touch: &mut *touch,
                     workspace: &mut workspace,
@@ -220,10 +227,9 @@ fn switch<P: Power>(
     log: bool,
     now: Timestamp,
 ) -> Result<(), RunError> {
-    // Bring up the heap and PSRAM before the desk presenter allocates its gray
-    // surface. Watch never initializes either.
+    // Bring up PSRAM before the desk presenter allocates its gray surface.
+    // Watch never initializes it.
     if target == Mode::Desk {
-        boot::ensure_sram_heap();
         if let Some(psram) = psram.take() {
             let bytes = boot::init_psram(psram);
             if log {
@@ -264,6 +270,7 @@ where
         shell,
         settings,
         battery_mv,
+        device,
         display,
         touch,
         workspace,
@@ -331,6 +338,9 @@ where
         let is_settings = shell.active_app() == Some(SETTINGS_APP_ID);
         if was_settings && !is_settings {
             commit_settings(settings, battery_mv, log);
+        }
+        if let Some(category) = shell.registry_mut().logs_mut().take_load_request() {
+            log_view::load(category, device, shell.registry_mut().logs_mut(), log);
         }
 
         let completed = matches!(

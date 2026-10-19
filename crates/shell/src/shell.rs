@@ -223,7 +223,21 @@ impl<R: AppRegistry> Shell<R> {
             .input
             .handle(report, now_ms, self.viewport.width, self.viewport.height);
         match outcome {
-            GestureOutcome::Swipe(swipe) => self.apply_swipe(swipe)?,
+            GestureOutcome::Swipe(swipe) => {
+                let handled = if swipe.origin == crate::SwipeOrigin::Content
+                    && self.input_layer() == LayerKind::App
+                {
+                    let id = self.active_app().ok_or(ShellError::NoActiveApp)?;
+                    self.call_app(id, |app, context| app.swipe(swipe, context))??
+                } else {
+                    false
+                };
+                if handled {
+                    self.drain_actions()?;
+                } else {
+                    self.apply_swipe(swipe)?;
+                }
+            }
             GestureOutcome::Tap { x, y } => self.tap_at(x, y)?,
             _ => {}
         }

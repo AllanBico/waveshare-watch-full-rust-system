@@ -8,6 +8,7 @@
 
 mod format;
 pub mod home;
+mod logs;
 mod overlays;
 mod settings_app;
 mod view;
@@ -15,8 +16,11 @@ mod view;
 use shell::AppId;
 
 pub use home::{Home, HomeState, RenderError};
+pub use logs::{LogCategory, LogsApp};
 pub use overlays::{Drawer, QuickSettings};
 pub use settings_app::SettingsApp;
 
 /// Stable app id for Settings.
 pub const SETTINGS_APP_ID: AppId = AppId::new(2);
+/// Stable app id for Logs.
+pub const LOGS_APP_ID: AppId = AppId::new(3);

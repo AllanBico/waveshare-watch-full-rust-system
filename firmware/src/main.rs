@@ -32,6 +32,7 @@ mod awake;
 mod boot;
 mod display;
 mod log_boot;
+mod log_view;
 mod persist;
 mod present;
 mod registry;
@@ -85,10 +86,6 @@ async fn main(_spawner: Spawner) {
     let mode = if vbus { Mode::Desk } else { Mode::Watch };
     let plan = ModePlan::for_mode(mode);
     let log = plan.logging;
-    // Watch never initializes the heap. Desk opts in once VBUS is confirmed.
-    if mode == Mode::Desk {
-        boot::ensure_sram_heap();
-    }
     if log {
         match chip_id {
             Some(id) => println!("[pm] AXP2101 id 0x{:02X}", id),
@@ -139,6 +136,7 @@ async fn main(_spawner: Spawner) {
     let persisted = persist::init(peripherals.FLASH, mode, battery_mv, wake, now);
     let report = persisted.report;
     let mut settings = persisted.settings;
+    let device = persisted.device;
     let mut alarms = persisted.alarms;
     let alarm = persisted.alarm;
     let wake = persisted.wake;
@@ -245,6 +243,7 @@ async fn main(_spawner: Spawner) {
             wake,
             alarm,
             settings: &mut settings,
+            device,
             battery_mv,
             display: &mut display,
             touch: &mut touch,

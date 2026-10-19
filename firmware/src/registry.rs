@@ -4,7 +4,7 @@
 //! the blank quick-settings overlay. The watch app set stays minimal; the desk
 //! registry diverges in Phase 8.3.
 
-use apps::{Drawer, Home, QuickSettings, SettingsApp, SETTINGS_APP_ID};
+use apps::{Drawer, Home, LogsApp, QuickSettings, SettingsApp, LOGS_APP_ID, SETTINGS_APP_ID};
 use common::{Mode, Percent, Timestamp};
 use settings::{SettingId, SettingValue, Settings};
 use shell::{App, AppId, AppRegistry, LayerKind};
@@ -16,6 +16,7 @@ pub const HOME_ID: AppId = AppId::new(1);
 pub struct Registry {
     home: Home,
     settings: SettingsApp,
+    logs: LogsApp,
     drawer: Drawer,
     quick: QuickSettings,
 }
@@ -44,7 +45,8 @@ impl Registry {
                 settings.display.date_format,
             ),
             settings: SettingsApp::new(mode, *settings),
-            drawer: Drawer::new(1),
+            logs: LogsApp::new(),
+            drawer: Drawer::new(2),
             quick: QuickSettings::new(),
         }
     }
@@ -61,6 +63,11 @@ impl Registry {
     pub fn pop_setting_intent(&mut self) -> Option<(SettingId, SettingValue)> {
         self.settings.pop_intent()
     }
+
+    /// The log viewer, for loading a fresh snapshot.
+    pub fn logs_mut(&mut self) -> &mut LogsApp {
+        &mut self.logs
+    }
 }
 
 impl AppRegistry for Registry {
@@ -68,6 +75,7 @@ impl AppRegistry for Registry {
         match id {
             HOME_ID => Some(f(&mut self.home)),
             SETTINGS_APP_ID => Some(f(&mut self.settings)),
+            LOGS_APP_ID => Some(f(&mut self.logs)),
             _ => None,
         }
     }

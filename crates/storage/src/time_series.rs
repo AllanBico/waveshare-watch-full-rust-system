@@ -109,6 +109,115 @@ impl<'a, F: NorFlash + ReadStorage> TimeSeries<'a, F> {
         Ok(last)
     }
 
+    /// Streams entries from newest to oldest.
+    ///
+    /// The callback returns `false` to stop early. Gaps are skipped. This is
+    /// the bounded read path used by the log viewer, which only needs the most
+    /// recent records per category.
+    pub fn read_logs_descending<C>(&mut self, mut on_entry: C) -> Result<u64, Error>
+    where
+        C: FnMut(LogEntry) -> bool,
+    {
+        let latest = self.latest()?;
+        if latest == 0 {
+            return Ok(0);
+        }
+        let oldest = self.oldest()?;
+        if oldest > latest {
+            return Ok(0);
+        }
+
+        let mut visited = 0u64;
+        let mut sequence = latest;
+        loop {
+            let key = sequence_key(sequence);
+            let mut value = [0u8; MAX_ENCODED_LOG_LEN];
+            match self.store.get(&key, &mut value) {
+                Ok(length) => {
+                    let entry = decode_log(&value[..length]).map_err(map_log)?;
+                    visited = visited.saturating_add(1);
+                    if !on_entry(entry) {
+                        break;
+                    }
+                }
+                Err(Error::NotFound) => {}
+                Err(Error::BufferTooSmall(_)) => return Err(Error::Corrupt),
+                Err(error) => return Err(error),
+            }
+            if sequence <= oldest {
+                break;
+            }
+            sequence -= 1;
+        }
+        Ok(visited)
+    }
+
+    /// Removes the oldest live entries until at most `keep` remain.
+    ///
+    /// Sequence gaps are counted as absent. Returns the number of entries
+    /// deleted and advances `oldest` to the first retained sequence.
+    pub fn prune_to_count(&mut self, keep: usize) -> Result<usize, Error> {
+        let latest = self.latest()?;
+        if latest == 0 {
+            return Ok(0);
+        }
+        let oldest = self.oldest()?;
+        if oldest > latest {
+            return Ok(0);
+        }
+
+        let mut live = 0usize;
+        let mut sequence = oldest;
+        while sequence <= latest {
+            let key = sequence_key(sequence);
+            let mut value = [0u8; MAX_ENCODED_LOG_LEN];
+            match self.store.get(&key, &mut value) {
+                Ok(_) => live = live.saturating_add(1),
+                Err(Error::NotFound) => {}
+                Err(Error::BufferTooSmall(_)) => return Err(Error::Corrupt),
+                Err(error) => return Err(error),
+            }
+            if sequence == latest {
+                break;
+            }
+            sequence += 1;
+        }
+        if live <= keep {
+            return Ok(0);
+        }
+
+        let mut remaining = live - keep;
+        let mut deleted = 0usize;
+        let mut next_oldest = oldest;
+        sequence = oldest;
+        while sequence <= latest {
+            let key = sequence_key(sequence);
+            let mut value = [0u8; MAX_ENCODED_LOG_LEN];
+            match self.store.get(&key, &mut value) {
+                Ok(_) => {
+                    if remaining == 0 {
+                        break;
+                    }
+                    self.store.delete(&key)?;
+                    deleted = deleted.saturating_add(1);
+                    remaining -= 1;
+                }
+                Err(Error::NotFound) => {}
+                Err(Error::BufferTooSmall(_)) => return Err(Error::Corrupt),
+                Err(error) => return Err(error),
+            }
+            next_oldest = sequence.saturating_add(1);
+            if sequence == latest {
+                break;
+            }
+            sequence += 1;
+        }
+        if deleted > 0 {
+            self.store.set(OLDEST_KEY, &next_oldest.to_le_bytes())?;
+        }
+        Ok(deleted)
+    }
+
     /// Invalidates a timestamp prefix and advances `oldest`.
     ///
     /// Pruning stops at the first entry not older than `before`, so entries

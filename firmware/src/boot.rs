@@ -5,8 +5,6 @@
 //! `desk_init` bodies.
 
 use core::fmt::Debug;
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use embassy_time::Duration;
 use esp_hal::delay::Delay;
 use esp_hal::gpio::{Level, Output, OutputConfig};
@@ -29,22 +27,6 @@ pub type Touch = Ft3168<Bus, Output<'static>, Delay>;
 
 /// IMU driver type owned by the boot chain.
 pub type Imu = Qmi8658<Bus, Delay>;
-
-/// SRAM heap size reserved for the runtime.
-pub const SRAM_HEAP_BYTES: usize = 96 * 1024;
-
-static HEAP_READY: AtomicBool = AtomicBool::new(false);
-
-/// Initializes the internal-SRAM heap on the first desk entry.
-///
-/// Watch boot never calls this; a live switch to desk does. Repeated desk
-/// entries reuse the existing heap region.
-pub fn ensure_sram_heap() {
-    if HEAP_READY.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    esp_alloc::heap_allocator!(size: SRAM_HEAP_BYTES);
-}
 
 /// How often the awake loops poll VBUS.
 pub const VBUS_POLL_PERIOD: Duration = Duration::from_millis(500);

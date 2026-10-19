@@ -3,7 +3,6 @@
 use common::{Millivolts, Mode, Timestamp, WakeReason};
 use drivers::flash::{FlashDevice, PartitionFlash};
 use esp_println::println;
-use static_cell::StaticCell;
 use storage::{Provisioning, TimeSeries, REGION_SIZE};
 
 use crate::retained;
@@ -13,8 +12,21 @@ const LOG_LABEL: &str = "logs";
 const WATCH_FLUSH_RECORDS: usize = 32;
 /// Below this voltage a watch-mode flash write is not worth the risk.
 pub(crate) const STORAGE_WRITE_MIN_MV: u16 = 3_500;
+/// Keep at most this many log records.
+const LOG_RETENTION_MAX: usize = 4_096;
+/// Drop records older than thirty days.
+const LOG_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
+/// Earliest clock value that is treated as trustworthy for age pruning.
+const MIN_VALID_CLOCK_SECS: u64 = 1_704_067_200;
 
-static LOG_BUFFER: StaticCell<[u8; REGION_SIZE]> = StaticCell::new();
+// SAFETY: only the main task uses this scratch buffer, and never concurrently.
+static mut LOG_BUFFER: [u8; REGION_SIZE] = [0; REGION_SIZE];
+
+/// Scratch buffer shared by boot flushing and the Logs viewer.
+pub(crate) fn read_buffer() -> &'static mut [u8; REGION_SIZE] {
+    // SAFETY: see the module comment above.
+    unsafe { &mut *core::ptr::addr_of_mut!(LOG_BUFFER) }
+}
 
 /// Result of the boot logging pass.
 pub struct LogReport {
@@ -48,7 +60,7 @@ pub fn run(
             Err(error) => return fail(ring, mode, error.to_common(), "logs partition", now),
         };
 
-        let buffer = LOG_BUFFER.init([0u8; REGION_SIZE]);
+        let buffer = read_buffer();
         let provisioning = if mode == Mode::Desk {
             Provisioning::Force
         } else {
@@ -71,6 +83,7 @@ pub fn run(
             if let Some(sequence) = flush(ring, &mut series) {
                 latest = Some(sequence);
             }
+            apply_retention(&mut series, now);
         }
 
         let dropped = dropped_before.max(ring.dropped());
@@ -83,6 +96,18 @@ pub fn run(
             dropped,
         }
     })
+}
+
+fn apply_retention(series: &mut TimeSeries<'_, PartitionFlash<'_>>, now: Timestamp) {
+    let mut pruned = 0usize;
+    if now.as_secs() >= MIN_VALID_CLOCK_SECS {
+        let cutoff = Timestamp::from_secs(now.as_secs().saturating_sub(LOG_RETENTION_SECS));
+        pruned = pruned.saturating_add(series.prune_logs(cutoff).unwrap_or(0));
+    }
+    pruned = pruned.saturating_add(series.prune_to_count(LOG_RETENTION_MAX).unwrap_or(0));
+    if pruned > 0 {
+        let _ = series.gc();
+    }
 }
 
 fn flush(

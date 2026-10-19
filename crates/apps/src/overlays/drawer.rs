@@ -1,4 +1,4 @@
-//! The app drawer: a full-page, one-column grid on watch.
+//! The app drawer: a full-page grid with the watch app set.
 
 use common::Region;
 use shell::{Action, App, AppContext, AppError};
@@ -24,8 +24,10 @@ const TILE_BASE: u16 = 860;
 
 /// Settings tile.
 pub const SETTINGS_ID: u16 = TILE_BASE;
+/// Logs tile.
+pub const LOGS_ID: u16 = TILE_BASE + 1;
 
-/// The drawer with one tile.
+/// The drawer with the current watch app set.
 pub struct Drawer {
     columns: u8,
     hits: HitRegistry,
@@ -90,6 +92,7 @@ impl App for Drawer {
     fn tap(&mut self, x: u16, y: u16, context: &mut AppContext<'_>) -> Result<(), AppError> {
         let action = match self.hits.hit(x, y) {
             Some(SETTINGS_ID) => Action::OpenApp(crate::SETTINGS_APP_ID),
+            Some(LOGS_ID) => Action::OpenApp(crate::LOGS_APP_ID),
             _ => Action::CloseAppDrawer,
         };
         context
@@ -127,15 +130,19 @@ fn build<'a>(
             label: "Settings",
         }),
     );
+    let logs = Widget::new(
+        LOGS_ID,
+        WidgetKind::Tile(TileProps {
+            icon: IconId::List,
+            label: "Logs",
+        }),
+    );
     let title_node = fill_node(&title, theme, cache, viewport.width);
     let tile_height = theme.min_touch_px.saturating_mul(2);
-    let tile_nodes = [crate::view::node(
-        &settings,
-        theme,
-        cache,
-        Length::Fill(1),
-        tile_height,
-    )];
+    let tile_nodes = [
+        crate::view::node(&settings, theme, cache, Length::Fill(1), tile_height),
+        crate::view::node(&logs, theme, cache, Length::Fill(1), tile_height),
+    ];
 
     let mut builder = Builder {
         theme,
@@ -147,6 +154,7 @@ fn build<'a>(
     builder.push(background(BG_ID))?;
     builder.push(title)?;
     builder.push(settings)?;
+    builder.push(logs)?;
 
     let crown_children = [title_node];
     let crown_node = crown(CROWN_ID, &crown_children, theme);

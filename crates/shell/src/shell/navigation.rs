@@ -19,6 +19,11 @@ impl<R: AppRegistry> Shell<R> {
             self.close_layer(LayerKind::AppDrawer);
             return Ok(());
         }
+        if let Some(id) = self.active_app() {
+            if self.call_app(id, |app, context| app.back(context))?? {
+                return Ok(());
+            }
+        }
         self.pop_route()
     }
 

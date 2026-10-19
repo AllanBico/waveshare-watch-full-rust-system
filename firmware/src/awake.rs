@@ -2,6 +2,7 @@
 
 use core::fmt::Debug;
 
+use drivers::flash::FlashDevice;
 use embassy_time::{Duration, Timer};
 use esp_hal::peripherals::PSRAM;
 use esp_println::println;
@@ -44,6 +45,8 @@ pub struct Inputs<'a, D, P> {
     pub settings: &'a mut SettingsStore<SettingsBackend>,
     /// Battery millivolts at boot, used to gate flash writes.
     pub battery_mv: u16,
+    /// Flash device, when bring-up succeeded.
+    pub device: Option<&'static FlashDevice>,
     /// Panel, when initialized.
     pub display: &'a mut Option<D>,
     /// Touch controller, when initialized.
@@ -96,6 +99,7 @@ where
             power: input.power,
             settings: input.settings,
             battery_mv: input.battery_mv,
+            device: input.device,
             touch: input.touch,
             psram: input.psram,
             log: input.log,

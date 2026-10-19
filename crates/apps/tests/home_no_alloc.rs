@@ -6,7 +6,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use apps::{Home, SettingsApp};
+use apps::{Home, LogsApp, SettingsApp};
 use common::{DateTime, Mode, Percent, Region, Timestamp};
 use settings::{Settings, TimeFormat};
 use ui::{MonoSurface, Theme};
@@ -51,6 +51,7 @@ fn the_watch_home_render_path_allocates_nothing() {
     let viewport = Region::full(WIDTH, HEIGHT);
     let mut next = Timestamp::from_secs(now.as_secs());
     let mut settings_app = SettingsApp::new(Mode::Watch, Settings::new());
+    let mut logs_app = LogsApp::new();
 
     let before = ALLOCATIONS.load(Ordering::Relaxed);
     for _ in 0..4 {
@@ -59,6 +60,9 @@ fn the_watch_home_render_path_allocates_nothing() {
         home.render_frame(&mut surface, &Theme::WATCH, viewport)
             .unwrap();
         settings_app
+            .render_frame(&mut surface, &Theme::WATCH, viewport)
+            .unwrap();
+        logs_app
             .render_frame(&mut surface, &Theme::WATCH, viewport)
             .unwrap();
     }

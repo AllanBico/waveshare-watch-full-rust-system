@@ -241,3 +241,57 @@ fn entries_with_a_wrong_schema_are_rejected() {
         Err(Error::VersionMismatch)
     ));
 }
+
+#[test]
+fn descending_read_returns_latest_first_and_stops_early() {
+    let (mut series, _) = open_series(LOG_FLASH_SIZE);
+    for millis in 0..10u64 {
+        series
+            .append_log(entry(
+                millis,
+                Event::Battery(common::Millivolts::new(3_700)),
+            ))
+            .unwrap();
+    }
+
+    let mut seen = Vec::new();
+    let visited = series
+        .read_logs_descending(|record| {
+            seen.push(record.timestamp.as_millis());
+            seen.len() < 3
+        })
+        .unwrap();
+    assert_eq!(visited, 3);
+    assert_eq!(seen, vec![9, 8, 7]);
+}
+
+#[test]
+fn count_prune_keeps_only_the_newest_entries() {
+    let (mut series, _) = open_series(LOG_FLASH_SIZE);
+    for millis in 0..10u64 {
+        series.append_log(wake(millis)).unwrap();
+    }
+
+    assert_eq!(series.prune_to_count(4).unwrap(), 6);
+    assert_eq!(series.oldest().unwrap(), 7);
+    assert_eq!(series.latest().unwrap(), 10);
+
+    let mut timestamps = Vec::new();
+    series
+        .read_logs_since(0, |record| {
+            timestamps.push(record.timestamp.as_millis());
+            true
+        })
+        .unwrap();
+    assert_eq!(timestamps, vec![6, 7, 8, 9]);
+}
+
+#[test]
+fn count_prune_is_a_noop_below_the_limit() {
+    let (mut series, _) = open_series(LOG_FLASH_SIZE);
+    for millis in 0..3u64 {
+        series.append_log(wake(millis)).unwrap();
+    }
+    assert_eq!(series.prune_to_count(4).unwrap(), 0);
+    assert_eq!(series.oldest().unwrap(), 1);
+}
