@@ -436,7 +436,8 @@ USB wakes into desk (or uses the documented fallback); unplug switches to watch
 and sleeps; no VBUS polling in watch; rails match the plan after every switch.
 
 ### 6.6 Spine Gate
-- Record a hardware checklist for boot, switch, sleep, and wake.
+- Record the boot, switch, sleep, and wake checklist in `docs/spine-gate.md`.
+- Run the automated checks and the on-device rows before starting Phase 7.
 - Temporary bring-up logging is still allowed; removing it is a watch-phase
   task.
 

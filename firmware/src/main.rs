@@ -161,7 +161,7 @@ async fn main(_spawner: Spawner) {
         println!("[boot] policy {:?}", policy);
     }
 
-    if mode == Mode::Desk {
+    if plan.logging {
         println!(
             "[kv] {} boot {} log {:?} buf {} drop {} batt {} error {:?}",
             report.label(),
