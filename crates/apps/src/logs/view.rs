@@ -85,8 +85,8 @@ pub(super) fn build_list<'a>(
     category: LogCategory,
     entries: &[LogEntry],
     page: usize,
-    event_texts: &'a [[u8; 28]; LOGS_PER_PAGE],
-    time_texts: &'a [[u8; 12]; LOGS_PER_PAGE],
+    lines: &'a [[u8; 40]; LOGS_PER_PAGE],
+    line_lens: &'a [u8; LOGS_PER_PAGE],
     theme: &Theme,
     cache: &mut TextCache,
     widgets: &mut WidgetArena<'a>,
@@ -102,16 +102,14 @@ pub(super) fn build_list<'a>(
     let mut row_widgets: [Option<Widget<'a>>; LOGS_PER_PAGE] = [None; LOGS_PER_PAGE];
     let mut row_nodes = [spacer(0, Length::Fill(1), Length::Fixed(0)); LOGS_PER_PAGE];
     for index in 0..count {
-        let event = text(&event_texts[index]);
-        let time = text(&time_texts[index]);
+        let length = usize::from(line_lens[index]).min(lines[index].len());
         let widget = Widget::new(
             ROW_BASE + index as u16,
-            WidgetKind::SettingsRow(SettingsRowProps {
-                title: event,
-                subtitle: "",
+            WidgetKind::Label(LabelProps {
+                text: text(&lines[index][..length]),
+                role: TextRole::Caption,
+                align: TextAlign::Start,
                 icon: None,
-                trailing: SettingsTrailing::Value(time),
-                compact: true,
             }),
         );
         row_nodes[index] = fill_node(&widget, theme, cache, content_width);

@@ -38,8 +38,8 @@ pub struct LogsApp {
     entries: LogPage,
     load_request: Option<LogCategory>,
     page: usize,
-    event_texts: [[u8; 28]; LOGS_PER_PAGE],
-    time_texts: [[u8; 12]; LOGS_PER_PAGE],
+    lines: [[u8; 40]; LOGS_PER_PAGE],
+    line_lens: [u8; LOGS_PER_PAGE],
     hits: HitRegistry,
     cache: TextCache,
     scene: Scene,
@@ -53,8 +53,8 @@ impl LogsApp {
             entries: LogPage::new(),
             load_request: None,
             page: 0,
-            event_texts: [[0; 28]; LOGS_PER_PAGE],
-            time_texts: [[0; 12]; LOGS_PER_PAGE],
+            lines: [[0; 40]; LOGS_PER_PAGE],
+            line_lens: [0; LOGS_PER_PAGE],
             hits: HitRegistry::new(),
             cache: TextCache::new(),
             scene: Scene::new(),
@@ -105,8 +105,8 @@ impl LogsApp {
         let Self {
             view,
             entries,
-            event_texts,
-            time_texts,
+            lines,
+            line_lens,
             hits,
             cache,
             scene,
@@ -123,8 +123,8 @@ impl LogsApp {
                 category,
                 entries.entries(),
                 *page,
-                event_texts,
-                time_texts,
+                lines,
+                line_lens,
                 theme,
                 cache,
                 &mut widgets,
@@ -163,11 +163,22 @@ impl LogsApp {
         let entries = self.entries.entries();
         let start = self.page.saturating_mul(LOGS_PER_PAGE);
         for index in 0..LOGS_PER_PAGE {
-            self.event_texts[index] = [0; 28];
-            self.time_texts[index] = [0; 12];
+            self.lines[index] = [0; 40];
+            self.line_lens[index] = 0;
             if let Some(entry) = entries.get(start + index) {
-                format::event_text(entry, &mut self.event_texts[index]);
-                format::time_text(entry.timestamp, &mut self.time_texts[index]);
+                let mut time = [0u8; 12];
+                let mut event = [0u8; 28];
+                let time = format::time_text(entry.timestamp, &mut time);
+                let event = format::event_text(entry, &mut event);
+                let mut len = 0usize;
+                for byte in time.as_bytes().iter().chain(b"  ").chain(event.as_bytes()) {
+                    if len >= self.lines[index].len() {
+                        break;
+                    }
+                    self.lines[index][len] = *byte;
+                    len += 1;
+                }
+                self.line_lens[index] = len as u8;
             }
         }
     }

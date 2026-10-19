@@ -44,17 +44,16 @@ pub(super) fn event_text<'a>(entry: &LogEntry, out: &'a mut [u8; TEXT_LEN]) -> &
 fn wake_text(reason: WakeReason, out: &mut [u8; TEXT_LEN], index: &mut usize) {
     match reason {
         WakeReason::Alarm => put_str(out, index, "Alarm"),
-        WakeReason::Timer => put_str(out, index, "Woke: Timer"),
-        WakeReason::Button => put_str(out, index, "Woke: Button"),
-        WakeReason::Motion => put_str(out, index, "Woke: Motion"),
-        WakeReason::Usb => put_str(out, index, "Woke: USB"),
-        WakeReason::Unknown => put_str(out, index, "Woke: Unknown"),
-        _ => put_str(out, index, "Woke: Unknown"),
+        WakeReason::Timer => put_str(out, index, "Timer"),
+        WakeReason::Button => put_str(out, index, "Button"),
+        WakeReason::Motion => put_str(out, index, "Motion"),
+        WakeReason::Usb => put_str(out, index, "USB"),
+        WakeReason::Unknown => put_str(out, index, "Unknown"),
+        _ => put_str(out, index, "Unknown"),
     }
 }
 
 fn battery_text(millivolts: Millivolts, out: &mut [u8; TEXT_LEN], index: &mut usize) {
-    put_str(out, index, "Battery ");
     let value = millivolts.value();
     put_u16(out, index, value / 1_000);
     out[*index] = b'.';
@@ -176,7 +175,7 @@ mod tests {
         let mut buffer = [0u8; TEXT_LEN];
         assert_eq!(
             event_text(&entry(1, Event::Wake(WakeReason::Motion)), &mut buffer),
-            "Woke: Motion"
+            "Motion"
         );
         assert_eq!(
             event_text(&entry(1, Event::Wake(WakeReason::Alarm)), &mut buffer),
@@ -187,7 +186,7 @@ mod tests {
                 &entry(1, Event::Battery(Millivolts::new(3_812))),
                 &mut buffer
             ),
-            "Battery 3.81V"
+            "3.81V"
         );
         assert_eq!(
             event_text(
