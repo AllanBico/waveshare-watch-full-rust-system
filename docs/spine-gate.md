@@ -59,7 +59,6 @@ Run each switch while the device is awake.
 | Button wake | Press PWR while asleep | Retained ring records Button; Home shows; mode matches VBUS | pending |
 | Motion wake | Move the device while asleep | Retained ring records Motion; Home shows; mode matches VBUS | pending |
 | USB while asleep (fallback) | Sleep on battery, plug USB, then move/press or wait for the timer | Device boots with `mode: Desk` and shows Home | pending |
-| Alarm | Build with `--features trace`, boot on USB to provision the alarm partition, then unplug | Alarm is stored 60s ahead; watch wakes, shows `ALARM`, pulses GPIO18, then sleeps | pending |
 | Awake budget | Leave watch awake without input or USB | Device returns to deep sleep after the policy budget | pending |
 
 The AXP IRQ path is not implemented because `EXIO5`/`AXP_IRQ` is not mapped to
@@ -84,7 +83,6 @@ Settings that are intentionally not wired in this phase: `power_saving`,
 - Both modes boot at 80 MHz; the desk may raise clocks in Phase 8.
 - Desk audio is not initialized; it returns in Phase 8.
 - The sleep timer is 30 s for wake debugging.
-- A `trace` desk boot seeds one alarm 60 s ahead when the alarm store is empty.
 - PSRAM is initialized lazily on the first desk entry.
 - VBUS insert while asleep relies on motion, button, or timer wake.
 

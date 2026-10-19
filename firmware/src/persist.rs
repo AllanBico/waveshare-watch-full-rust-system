@@ -157,8 +157,7 @@ pub fn init(
     };
 
     let (mut report, opened) = open_kv(device, mode, battery_mv);
-    let mut alarms =
-        crate::alarm_boot::seed_trace(crate::alarm_boot::open(device, mode), now, battery_mv, mode);
+    let mut alarms = crate::alarm_boot::open(device, mode);
     let alarm = alarms.due(now);
     let wake = if alarm.is_some() {
         Some(WakeReason::Alarm)

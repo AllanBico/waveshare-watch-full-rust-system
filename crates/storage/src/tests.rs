@@ -186,6 +186,26 @@ fn corrupt_store_is_not_reformatted() {
 }
 
 #[test]
+fn force_recovers_a_corrupt_super_key() {
+    let (store, handle) = provisioned(FLASH_SIZE);
+    drop(store);
+
+    let regions = FLASH_SIZE / REGION_SIZE;
+    let region = (MAIN_KEY_HASH as usize & 0xFFFF) % regions;
+    let start = region * REGION_SIZE;
+    for offset in 0..32 {
+        handle.corrupt(start + offset, 0x00);
+    }
+
+    let erases = handle.erase_count();
+    let flash = MockFlash::from_handle(handle.clone());
+    let (store, outcome) = open(flash, Provisioning::Force).unwrap();
+    assert_eq!(outcome, OpenOutcome::Provisioned);
+    assert!(handle.erase_count() > erases);
+    drop(store);
+}
+
+#[test]
 fn schema_mismatch_is_rejected() {
     let (mut store, handle) = provisioned(FLASH_SIZE);
     store.set(b"meta/schema", &2u16.to_le_bytes()).unwrap();

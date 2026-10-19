@@ -82,6 +82,10 @@ impl<'a, F: NorFlash + ReadStorage> TicKvStorage<'a, F> {
                 kv.initialise(MAIN_KEY_HASH).map_err(map_tickv)?;
                 OpenOutcome::Provisioned
             }
+            Err(_code) if matches!(provisioning, Provisioning::Force) => {
+                kv.initialise(MAIN_KEY_HASH).map_err(map_tickv)?;
+                OpenOutcome::Provisioned
+            }
             Err(code) => return Err(map_tickv(code)),
         };
 

@@ -5,6 +5,9 @@ use common::Timestamp;
 /// Maximum alarms retained by the watch.
 pub const MAX_ALARMS: usize = 4;
 
+/// Immediate re-wake when an alarm became due while the device was awake.
+const DUE_WAKE_MS: u32 = 10;
+
 /// A set of absolute one-shot alarm times, earliest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AlarmSet {
@@ -81,6 +84,9 @@ impl AlarmSet {
 
     /// The RTC sleep interval: the next alarm delta or the housekeeping timer.
     pub fn next_wake_in_ms(&self, now: Timestamp, housekeeping_ms: u32) -> u32 {
+        if self.due(now).is_some() {
+            return DUE_WAKE_MS;
+        }
         let Some(next) = self.next_after(now) else {
             return housekeeping_ms;
         };
@@ -158,5 +164,12 @@ mod tests {
         let mut set = AlarmSet::new();
         set.add(at(10));
         assert_eq!(set.due(at(1_000)), Some(at(10)));
+    }
+
+    #[test]
+    fn an_alarm_that_became_due_while_awake_wakes_immediately() {
+        let mut set = AlarmSet::new();
+        set.add(at(10));
+        assert_eq!(set.next_wake_in_ms(at(11), 30_000), DUE_WAKE_MS);
     }
 }
