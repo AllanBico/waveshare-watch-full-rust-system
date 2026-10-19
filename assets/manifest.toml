@@ -201,3 +201,7 @@ file = "icons/phosphor/usb.svg"
 [[icons.item]]
 id = "power"
 file = "icons/phosphor/power.svg"
+
+[[icons.item]]
+id = "desktop"
+file = "icons/phosphor/desktop.svg"

@@ -34,16 +34,12 @@ pub(crate) const BOTTOM_SPACER_ID: u16 = 9;
 pub(crate) const CROWN_ID: u16 = 10;
 /// Content container below the crown.
 pub(crate) const CONTENT_ID: u16 = 11;
-/// Desk dashboard grid.
-pub(crate) const GRID_ID: u16 = 20;
-/// Desk alarm tile.
-pub(crate) const ALARM_ID: u16 = 21;
-/// Desk settings tile.
-pub(crate) const SETTINGS_ID: u16 = 22;
-/// Desk battery tile.
-pub(crate) const DESK_BATTERY_ID: u16 = 23;
-/// Desk sync tile.
-pub(crate) const SYNC_ID: u16 = 24;
+/// Desk badge icon.
+pub(crate) const DESKTOP_ICON_ID: u16 = 20;
+/// Desk badge label.
+pub(crate) const DESKTOP_LABEL_ID: u16 = 21;
+/// Desk badge container.
+pub(crate) const DESKTOP_ID: u16 = 22;
 /// Ringing alarm label.
 pub(crate) const ALARM_RING_ID: u16 = 25;
 

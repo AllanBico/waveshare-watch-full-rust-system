@@ -1,4 +1,4 @@
-//! Verifies the watch Home render path does not allocate.
+//! Verifies the watch and desk Home render paths do not allocate.
 //!
 //! This lives in its own test binary so the global allocation counter is not
 //! disturbed by tests running in parallel.
@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use apps::{Home, LogsApp, SettingsApp};
 use common::{DateTime, Mode, Percent, Region, Timestamp};
 use settings::{Settings, TimeFormat};
-use ui::{MonoSurface, Theme};
+use ui::{GraySurface, MonoSurface, Theme};
 
 struct CountingAllocator;
 
@@ -37,17 +37,20 @@ const WIDTH: u16 = 410;
 const HEIGHT: u16 = 502;
 
 #[test]
-fn the_watch_home_render_path_allocates_nothing() {
+fn the_home_render_path_allocates_nothing() {
     let now = DateTime::new(2026, 10, 18, 7, 5, 0).to_timestamp().unwrap();
-    let mut home = Home::new(
+    let mut watch = Home::new(
         Mode::Watch,
         now,
         Percent::new(80),
         false,
         TimeFormat::Hour24,
     );
+    let mut desk = Home::new(Mode::Desk, now, Percent::new(80), false, TimeFormat::Hour24);
     let mut data = vec![0u8; MonoSurface::buffer_len(WIDTH, HEIGHT)];
     let mut surface = MonoSurface::new(WIDTH, HEIGHT, &mut data).unwrap();
+    let mut gray_data = vec![0u8; GraySurface::buffer_len(WIDTH, HEIGHT)];
+    let mut gray_surface = GraySurface::new(WIDTH, HEIGHT, &mut gray_data).unwrap();
     let viewport = Region::full(WIDTH, HEIGHT);
     let mut next = Timestamp::from_secs(now.as_secs());
     let mut settings_app = SettingsApp::new(Mode::Watch, Settings::new());
@@ -56,8 +59,12 @@ fn the_watch_home_render_path_allocates_nothing() {
     let before = ALLOCATIONS.load(Ordering::Relaxed);
     for _ in 0..4 {
         next = Timestamp::from_secs(next.as_secs().saturating_add(60));
-        home.update(next, Percent::new(80), false);
-        home.render_frame(&mut surface, &Theme::WATCH, viewport)
+        watch.update(next, Percent::new(80), false);
+        watch
+            .render_frame(&mut surface, &Theme::WATCH, viewport)
+            .unwrap();
+        desk.update(next, Percent::new(80), false);
+        desk.render_frame(&mut gray_surface, &Theme::DESK, viewport)
             .unwrap();
         settings_app
             .render_frame(&mut surface, &Theme::WATCH, viewport)

@@ -1,15 +1,17 @@
-//! Desk Home: a grayscale dashboard built from the same components.
+//! Desk Home: a grayscale clock with a desktop mode badge.
 
 use ui::{
-    Align, IconId, LabelProps, Length, ListItemProps, TextAlign, TextRole, Widget, WidgetKind,
+    Align, IconId, IconProps, IconSize, Kind, LabelProps, Length, Node, TextAlign, TextRole,
+    Widget, WidgetKind,
 };
 
 use super::{
-    HomeState, ALARM_ID, BG_ID, CLOCK_ID, CONTENT_ID, CROWN_ID, DATE_ID, DESK_BATTERY_ID, GRID_ID,
-    ROOT_ID, SETTINGS_ID, SYNC_ID,
+    HomeState, BATTERY_ID, BG_ID, CLOCK_ID, CONTENT_ID, CROWN_ID, DATE_ID, DESKTOP_ICON_ID,
+    DESKTOP_ID, DESKTOP_LABEL_ID, HEADER_ID, HEADER_SPACER_ID, ROOT_ID,
 };
 use crate::view::{
-    background, column, content_padding, crown, fill_node, grid, leaf, spacer, BuildError, Builder,
+    background, column, content_padding, crown, fill_node, fit_node, leaf, row, spacer, BuildError,
+    Builder,
 };
 
 pub(super) fn build<'a>(
@@ -28,50 +30,74 @@ pub(super) fn build<'a>(
         DATE_ID,
         state.date(),
         TextRole::Caption,
+        TextAlign::Start,
+        None,
+    );
+    let battery_icon = if state.is_charging() {
+        IconId::Usb
+    } else {
+        IconId::BatteryHigh
+    };
+    let battery = label(
+        BATTERY_ID,
+        state.battery(),
+        TextRole::Caption,
+        TextAlign::End,
+        Some(battery_icon),
+    );
+    let badge_icon = Widget::new(
+        DESKTOP_ICON_ID,
+        WidgetKind::Icon(IconProps {
+            icon: IconId::Desktop,
+            size: IconSize::Xl,
+        }),
+    );
+    let badge_label = label(
+        DESKTOP_LABEL_ID,
+        "Desktop",
+        TextRole::Label,
         TextAlign::Center,
         None,
     );
-    let charge = if state.is_charging() {
-        "Charging"
-    } else {
-        "On battery"
-    };
-    let alarm = list(ALARM_ID, "Alarms", "07:00", IconId::Bell);
-    let settings = list(SETTINGS_ID, "Settings", "Wi-Fi + BT", IconId::GearSix);
-    let battery = list(DESK_BATTERY_ID, "Battery", charge, IconId::BatteryHigh);
-    let sync = list(SYNC_ID, "Sync", "Idle", IconId::ArrowClockwise);
 
     let content_width = view
         .viewport
         .width
         .saturating_sub(theme.shape.content_inset * 2);
-    let cell = content_width.saturating_sub(theme.spacing.sm) / 2;
     let clock_node = fill_node(&clock, theme, view.cache, content_width);
-    let date_node = fill_node(&date, theme, view.cache, content_width);
-    let alarm_node = fill_node(&alarm, theme, view.cache, cell);
-    let settings_node = fill_node(&settings, theme, view.cache, cell);
-    let battery_node = fill_node(&battery, theme, view.cache, cell);
-    let sync_node = fill_node(&sync, theme, view.cache, cell);
+    let date_node = fit_node(&date, theme, view.cache);
+    let battery_node = fit_node(&battery, theme, view.cache);
+    let badge_icon_node = fit_node(&badge_icon, theme, view.cache);
+    let badge_label_node = fill_node(&badge_label, theme, view.cache, content_width);
     view.push(background(BG_ID))?;
-    for widget in [clock, date, alarm, settings, battery, sync] {
+    for widget in [clock, date, battery, badge_icon, badge_label] {
         view.push(widget)?;
     }
 
-    let crown_children = [date_node];
+    let header_children = [
+        date_node,
+        spacer(HEADER_SPACER_ID, Length::Fill(1), Length::Fixed(0)),
+        battery_node,
+    ];
+    let header = row(HEADER_ID, &header_children, theme.spacing.sm, Align::Center);
+    let crown_children = [header];
     let crown_node = crown(CROWN_ID, &crown_children, theme);
-    let grid_children = [alarm_node, settings_node, battery_node, sync_node];
-    let dashboard = grid(
-        GRID_ID,
-        &grid_children,
-        2,
-        theme.spacing.sm,
-        theme.spacing.sm,
+    let badge_children = [badge_icon_node, badge_label_node];
+    let badge = Node::container(
+        DESKTOP_ID,
+        Length::Fill(1),
+        Length::Fit,
+        Kind::Column {
+            spacing: theme.spacing.xs,
+            cross_align: Align::Center,
+        },
+        &badge_children,
     );
     let content_children = [
         spacer(12, Length::Fill(1), Length::Fill(1)),
         clock_node,
         spacer(13, Length::Fill(1), Length::Fixed(theme.spacing.md)),
-        dashboard,
+        badge,
         spacer(14, Length::Fill(1), Length::Fill(1)),
     ];
     let content = column(
@@ -102,18 +128,6 @@ fn label<'a>(
             role,
             align,
             icon,
-        }),
-    )
-}
-
-fn list<'a>(id: u16, title: &'a str, subtitle: &'a str, icon: IconId) -> Widget<'a> {
-    Widget::new(
-        id,
-        WidgetKind::ListItem(ListItemProps {
-            title,
-            subtitle,
-            leading: Some(icon),
-            trailing: None,
         }),
     )
 }

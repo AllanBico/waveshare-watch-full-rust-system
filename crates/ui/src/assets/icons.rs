@@ -47,9 +47,10 @@ pub enum IconId {
     CellSignalFull = 41,
     Usb = 42,
     Power = 43,
+    Desktop = 44,
 }
 
-pub const ICON_COUNT: usize = 44;
+pub const ICON_COUNT: usize = 45;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IconMask {
@@ -111,6 +112,7 @@ static ICON_24_MASKS: &[IconMask] = &[
     IconMask { offset: 11808, len: 288, width: 24, height: 24 },
     IconMask { offset: 12096, len: 288, width: 24, height: 24 },
     IconMask { offset: 12384, len: 288, width: 24, height: 24 },
+    IconMask { offset: 12672, len: 288, width: 24, height: 24 },
 ];
 static ICON_24_DATA: &[u8] = include_bytes!("../../assets/icons/icons_24.bin");
 
@@ -159,6 +161,7 @@ static ICON_32_MASKS: &[IconMask] = &[
     IconMask { offset: 20992, len: 512, width: 32, height: 32 },
     IconMask { offset: 21504, len: 512, width: 32, height: 32 },
     IconMask { offset: 22016, len: 512, width: 32, height: 32 },
+    IconMask { offset: 22528, len: 512, width: 32, height: 32 },
 ];
 static ICON_32_DATA: &[u8] = include_bytes!("../../assets/icons/icons_32.bin");
 
@@ -207,6 +210,7 @@ static ICON_40_MASKS: &[IconMask] = &[
     IconMask { offset: 32800, len: 800, width: 40, height: 40 },
     IconMask { offset: 33600, len: 800, width: 40, height: 40 },
     IconMask { offset: 34400, len: 800, width: 40, height: 40 },
+    IconMask { offset: 35200, len: 800, width: 40, height: 40 },
 ];
 static ICON_40_DATA: &[u8] = include_bytes!("../../assets/icons/icons_40.bin");
 
@@ -255,6 +259,7 @@ static ICON_48_MASKS: &[IconMask] = &[
     IconMask { offset: 47232, len: 1152, width: 48, height: 48 },
     IconMask { offset: 48384, len: 1152, width: 48, height: 48 },
     IconMask { offset: 49536, len: 1152, width: 48, height: 48 },
+    IconMask { offset: 50688, len: 1152, width: 48, height: 48 },
 ];
 static ICON_48_DATA: &[u8] = include_bytes!("../../assets/icons/icons_48.bin");
 
