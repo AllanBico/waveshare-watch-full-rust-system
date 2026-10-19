@@ -5,6 +5,5 @@ edition.workspace = true
 
 [dependencies]
 common = { path = "../common" }
-shell = { path = "../shell" }
 ui = { path = "../ui" }
 settings = { path = "../settings" }

@@ -1,4 +1,4 @@
-//! Fixed-capacity view construction shared by the preview screens.
+//! Fixed-capacity view construction shared by the screens.
 
 use common::Region;
 use ui::{
@@ -6,7 +6,7 @@ use ui::{
     ScreenScaffoldProps, TextCache, Theme, Widget, WidgetArena, WidgetError, WidgetKind,
 };
 
-/// Maximum layout entries retained by one preview screen.
+/// Maximum layout entries retained by one screen.
 pub(crate) const ENTRY_CAPACITY: usize = 128;
 
 const EMPTY_ENTRY: LayoutEntry = LayoutEntry {
@@ -24,7 +24,7 @@ pub(crate) enum BuildError {
     Layout(LayoutError),
 }
 
-/// Borrowed state for building one preview frame.
+/// Borrowed state for building one frame.
 pub(crate) struct Builder<'a, 'w> {
     /// Active theme.
     pub theme: &'a Theme,
@@ -55,7 +55,7 @@ pub(crate) const fn entries() -> [LayoutEntry; ENTRY_CAPACITY] {
     [EMPTY_ENTRY; ENTRY_CAPACITY]
 }
 
-/// The full-screen background used by every preview screen.
+/// The full-screen background used by every screen.
 pub(crate) fn background(id: NodeId) -> Widget<'static> {
     Widget::new(
         id,

@@ -7,7 +7,6 @@ edition.workspace = true
 default = []
 logging = []
 trace = []
-simulator = []
 
 [dependencies]
 common = { path = "../crates/common" }

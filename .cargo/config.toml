@@ -1,5 +1,4 @@
-# Target the ESP32-S3 by default. The simulator overrides this with
-# `--target x86_64-unknown-linux-gnu`.
+# Target the ESP32-S3 by default.
 [build]
 target = "xtensa-esp32s3-none-elf"
 

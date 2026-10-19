@@ -20,12 +20,6 @@ use embedded_hal_bus::i2c::RefCellDevice;
 /// CPU clock for bring-up. Mode-based clock switching comes later.
 pub const BRINGUP_CPU_CLOCK_MHZ: u32 = 160;
 
-/// Input poll period while the panel is awake.
-pub const INPUT_POLL_PERIOD: Duration = Duration::from_millis(50);
-
-/// Input polls between desk-mode VBUS checks.
-pub const INPUT_POLLS_PER_SECOND: u32 = 20;
-
 /// I2C bus device handle shared by all on-board peripherals.
 pub type Bus = RefCellDevice<'static, I2c<'static, esp_hal::Blocking>>;
 
@@ -98,6 +92,7 @@ pub fn wake_reason() -> Option<WakeReason> {
 
 /// Idles forever after a fatal bring-up error.
 pub async fn halt() -> ! {
+    println!("[boot] halted");
     loop {
         Timer::after(Duration::from_secs(1)).await;
     }

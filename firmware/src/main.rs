@@ -23,7 +23,7 @@ use esp_hal::rtc_cntl::Rtc;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
-use common::{Mode, Percent, WakeOnMotion, WakeReason};
+use common::{Mode, WakeOnMotion, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
 use drivers::es7210::Es7210;
@@ -35,10 +35,10 @@ use embedded_hal_bus::i2c::RefCellDevice;
 use power::PowerManager;
 
 mod audio;
+mod bringup;
 mod display;
 mod log_boot;
 mod persist;
-mod preview;
 mod retained;
 mod runtime;
 
@@ -53,8 +53,11 @@ esp_bootloader_esp_idf::esp_app_desc!();
 const AWAKE_BUDGET_MS: u32 = 7_000;
 
 /// How long to stay awake before sleeping in watch mode.
-// TODO(phase-6): return to the 2 s watch budget once the wake cycle is tuned.
+// TODO(phase-7): return to the 2 s watch budget once the wake cycle is tuned.
 const AWAKE_WINDOW: Duration = Duration::from_secs(7);
+
+/// How often desk mode checks whether USB was removed.
+const VBUS_POLL_PERIOD: Duration = Duration::from_millis(500);
 
 /// Deep-sleep timer interval. Longer for wake-on-motion debugging.
 const SLEEP_TIMER_MS: u32 = 30_000;
@@ -158,12 +161,9 @@ async fn main(_spawner: Spawner) {
     let battery_mv = snapshot
         .map(|snapshot| snapshot.battery.value())
         .unwrap_or(0);
-    let battery_percent = snapshot
-        .map(|snapshot| snapshot.percent)
-        .unwrap_or(Percent::new(0));
     let boot = persist::init(peripherals.FLASH, mode, battery_mv, wake, now);
     let report = boot.report;
-    let mut settings = boot.settings;
+    let _settings = boot.settings;
     if mode == Mode::Desk {
         println!(
             "[kv] {} boot {} log {:?} buf {} drop {} batt {} error {:?}",
@@ -282,20 +282,10 @@ async fn main(_spawner: Spawner) {
             }
         };
         if let Some(panel) = display.as_mut() {
-            preview::run_desk(
-                panel,
-                &mut touch,
-                &mut power,
-                now,
-                battery_percent,
-                battery_mv,
-                &mut settings,
-            )
-            .await;
-        } else {
-            while power.is_vbus_present().unwrap_or(true) {
-                Timer::after(AWAKE_WINDOW).await;
-            }
+            bringup::draw(panel, Mode::Desk, bringup::staging());
+        }
+        while power.is_vbus_present().unwrap_or(true) {
+            Timer::after(VBUS_POLL_PERIOD).await;
         }
         if let Some(audio) = audio.as_mut() {
             if let Err(error) = audio.shutdown() {
@@ -307,18 +297,10 @@ async fn main(_spawner: Spawner) {
             halt().await
         }
         Timer::after(AWAKE_WINDOW).await;
-    } else if let Some(panel) = display.as_mut() {
-        preview::run_watch(
-            panel,
-            &mut touch,
-            now,
-            battery_percent,
-            AWAKE_WINDOW,
-            battery_mv,
-            &mut settings,
-        )
-        .await;
     } else {
+        if let Some(panel) = display.as_mut() {
+            bringup::draw(panel, Mode::Watch, bringup::staging());
+        }
         Timer::after(AWAKE_WINDOW).await;
     }
 

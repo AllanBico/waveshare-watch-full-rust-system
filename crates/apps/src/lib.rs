@@ -1,4 +1,4 @@
-//! Screens and preview views for the in-house UI.
+//! Screens for the in-house UI.
 //!
 //! Apps own their state and produce pure views through the fixed-capacity UI
 //! engine. They never touch hardware and never branch on `Mode` inside widgets.
@@ -7,9 +7,10 @@
 #![forbid(unsafe_code)]
 
 mod format;
+// Home and view are retained for the Phase 6.3 shell boot, not wired yet.
+#[allow(dead_code)]
 pub mod home;
-pub mod preview;
+#[allow(dead_code)]
 mod view;
 
 pub use home::HomeState;
-pub use preview::{Overlay, Preview, RenderError, Screen};
