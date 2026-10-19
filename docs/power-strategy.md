@@ -27,7 +27,8 @@ esp-hal 1.0.0 marks GPIO0–21 as RTC pins (deep-sleep wake capable). Therefore:
   confirmed; do not add periodic polling in watch mode as a substitute.
 
 ## Display strategy
-- Watch mode sleeps with the panel dark. Clock shows on motion/tap/button.
+- Watch mode sleeps with the panel dark. Motion and button wakes show Home;
+  timer housekeeping wakes keep the panel dark and return to sleep.
 - Panel main power is VCC3V3 (system), so it cannot be isolated by a rail. Turn
   it off with the CO5300 sleep command and by driving `DSI_PWR_EN` low.
 - The cuttable peripheral rail is **ALDO3** (motor + VL peripherals): cut it in

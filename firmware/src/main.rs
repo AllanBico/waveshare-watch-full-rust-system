@@ -15,7 +15,6 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
-use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
@@ -25,7 +24,7 @@ use drivers::board;
 use drivers::pcf85063a::Pcf85063a;
 use drivers::qmi8658::Qmi8658;
 use embedded_hal_bus::i2c::RefCellDevice;
-use power::PowerManager;
+use power::{PowerManager, WakeAction};
 use settings::BootPolicy;
 
 mod boot;
@@ -44,7 +43,7 @@ use boot::{SLEEP_TIMER_MS, VBUS_POLL_PERIOD};
 use esp_alloc as _;
 use esp_backtrace as _;
 
-use runtime::{debounce_button, halt, open_bus, report_boot, report_time, wake_reason};
+use runtime::{debounce_power_button, halt, open_bus, report_boot, report_time, wake_reason};
 
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) {
@@ -54,16 +53,8 @@ async fn main(_spawner: Spawner) {
     esp_rtos::start(timg0.timer0);
 
     let raw_wake = wake_reason();
-    let mut pwr_button = peripherals.GPIO10;
-    let button_pressed = if matches!(raw_wake, Some(WakeReason::Button)) {
-        let input = Input::new(
-            pwr_button.reborrow(),
-            InputConfig::default().with_pull(Pull::Up),
-        );
-        debounce_button(&input).await
-    } else {
-        false
-    };
+    let (mut pwr_button, button_pressed) =
+        debounce_power_button(peripherals.GPIO10, raw_wake).await;
 
     // One boot chain: PMIC -> mode -> RTC -> storage/settings -> PSRAM ->
     // display -> mode peripherals. `ModePlan` is the only mode seam.
@@ -123,6 +114,7 @@ async fn main(_spawner: Spawner) {
     } else {
         raw_wake
     };
+    let show_home = WakeAction::for_wake(mode, wake).presents_home();
     if log {
         match wake {
             Some(reason) => println!(
@@ -184,25 +176,29 @@ async fn main(_spawner: Spawner) {
     }
 
     // Own the panel across the awake window so it can sleep before the rail cut.
-    let mut display = match display::Display::new(display::Peripherals {
-        spi: peripherals.SPI2,
-        dma: peripherals.DMA_CH0,
-        sclk: peripherals.GPIO11,
-        cs: peripherals.GPIO12,
-        sio0: peripherals.GPIO4,
-        sio1: peripherals.GPIO5,
-        sio2: peripherals.GPIO6,
-        sio3: peripherals.GPIO7,
-        reset: peripherals.GPIO8,
-    }) {
-        Ok(display) => Some(display),
-        Err(error) => {
-            crate::retained::record_error(common::Error::HardwareFailure.code());
-            if log {
-                println!("[lcd] init failed: {:?}", error);
+    let mut display = if show_home {
+        match display::Display::new(display::Peripherals {
+            spi: peripherals.SPI2,
+            dma: peripherals.DMA_CH0,
+            sclk: peripherals.GPIO11,
+            cs: peripherals.GPIO12,
+            sio0: peripherals.GPIO4,
+            sio1: peripherals.GPIO5,
+            sio2: peripherals.GPIO6,
+            sio3: peripherals.GPIO7,
+            reset: peripherals.GPIO8,
+        }) {
+            Ok(display) => Some(display),
+            Err(error) => {
+                crate::retained::record_error(common::Error::HardwareFailure.code());
+                if log {
+                    println!("[lcd] init failed: {:?}", error);
+                }
+                None
             }
-            None
         }
+    } else {
+        None
     };
     // Touch stays powered across the awake window; reset and put it to sleep
     // explicitly so the FT3168 stops scanning before deep sleep. Watch skips it.
@@ -227,61 +223,63 @@ async fn main(_spawner: Spawner) {
         }
     }
 
-    if let Some(reason) = wake {
-        if let Err(error) = power.request_awake(reason, policy.awake_budget_ms, 0) {
-            crate::retained::record_error(error.to_common().code());
-            if log {
-                println!("[pm] awake failed: {}", error.to_common());
+    if show_home {
+        if let Some(reason) = wake {
+            if let Err(error) = power.request_awake(reason, policy.awake_budget_ms, 0) {
+                crate::retained::record_error(error.to_common().code());
+                if log {
+                    println!("[pm] awake failed: {}", error.to_common());
+                }
             }
         }
-    }
 
-    let mut shell = match session::boot(
-        mode,
-        now,
-        battery_percent,
-        is_charging,
-        settings.settings().display.time_format,
-    ) {
-        Ok(shell) => shell,
-        Err(error) => {
-            crate::retained::record_error(common::Error::NotReady.code());
-            if log {
-                println!("[shell] boot failed: {:?}", error);
+        let mut shell = match session::boot(
+            mode,
+            now,
+            battery_percent,
+            is_charging,
+            settings.settings().display.time_format,
+        ) {
+            Ok(shell) => shell,
+            Err(error) => {
+                crate::retained::record_error(common::Error::NotReady.code());
+                if log {
+                    println!("[shell] boot failed: {:?}", error);
+                }
+                halt().await
             }
-            halt().await
-        }
-    };
-    if let Some(panel) = display.as_mut() {
-        if let Err(error) = session::run(
-            panel,
-            &mut shell,
-            &mut power,
-            settings.settings(),
-            &mut psram,
-            plan.logging,
-        )
-        .await
-        {
-            crate::retained::record_error(common::Error::NotReady.code());
-            if log {
-                println!("[session] failed: {:?}", error);
+        };
+        if let Some(panel) = display.as_mut() {
+            if let Err(error) = session::run(
+                panel,
+                &mut shell,
+                &mut power,
+                settings.settings(),
+                &mut psram,
+                plan.logging,
+            )
+            .await
+            {
+                crate::retained::record_error(common::Error::NotReady.code());
+                if log {
+                    println!("[session] failed: {:?}", error);
+                }
+                halt().await
             }
-            halt().await
-        }
-    } else if mode == Mode::Desk {
-        while power.is_vbus_present().unwrap_or(true) {
-            Timer::after(VBUS_POLL_PERIOD).await;
-        }
-        if let Err(error) = power.set_mode(Mode::Watch) {
-            crate::retained::record_error(error.to_common().code());
-            if log {
-                println!("[pm] set_mode failed: {}", error.to_common());
+        } else if mode == Mode::Desk {
+            while power.is_vbus_present().unwrap_or(true) {
+                Timer::after(VBUS_POLL_PERIOD).await;
             }
-            halt().await
+            if let Err(error) = power.set_mode(Mode::Watch) {
+                crate::retained::record_error(error.to_common().code());
+                if log {
+                    println!("[pm] set_mode failed: {}", error.to_common());
+                }
+                halt().await
+            }
+        } else {
+            Timer::after(Duration::from_millis(u64::from(policy.awake_budget_ms))).await;
         }
-    } else {
-        Timer::after(Duration::from_millis(u64::from(policy.awake_budget_ms))).await;
     }
 
     sleep_cycle::enter(sleep_cycle::SleepInputs {

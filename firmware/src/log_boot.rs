@@ -1,6 +1,6 @@
 //! Boot-time logging: retained ring, battery sample, and time-series flush.
 
-use common::{Event, LogEntry, Millivolts, Mode, Timestamp, WakeReason};
+use common::{Millivolts, Mode, Timestamp, WakeReason};
 use drivers::flash::{FlashDevice, PartitionFlash};
 use esp_println::println;
 use static_cell::StaticCell;
@@ -38,14 +38,9 @@ pub fn run(
     now: Timestamp,
 ) -> LogReport {
     retained::with_ring(|ring| {
-        let _ = ring.push(&LogEntry::new(
-            now,
-            Event::Wake(wake.unwrap_or(WakeReason::Unknown)),
-        ));
-        let _ = ring.push(&LogEntry::new(
-            now,
-            Event::Battery(Millivolts::new(battery_mv)),
-        ));
+        for entry in logging::wake_entries(now, wake, Millivolts::new(battery_mv)) {
+            let _ = ring.push(&entry);
+        }
 
         let dropped_before = ring.dropped();
         let region = match device.partition(LOG_LABEL) {
@@ -120,7 +115,10 @@ fn fail(
 ) -> LogReport {
     report(mode, error, what);
     if error != common::Error::NotReady {
-        let _ = ring.push(&LogEntry::new(now, Event::Error(error.code())));
+        let _ = ring.push(&common::LogEntry::new(
+            now,
+            common::Event::Error(error.code()),
+        ));
     }
     snapshot(ring, None)
 }

@@ -55,9 +55,9 @@ Run each switch while the device is awake.
 
 | Case | Steps | Expected | Result |
 |---|---|---|---|
-| Timer wake | Let the device sleep, wait for the timer | Serial wake reason Timer; mode matches VBUS | pending |
-| Button wake | Press PWR while asleep | Serial wake reason Button; mode matches VBUS | pending |
-| Motion wake | Move the device while asleep | Serial wake reason Motion; mode matches VBUS | pending |
+| Timer wake | Let the device sleep, wait for the timer | Retained ring records Timer; panel stays dark; mode matches VBUS | pending |
+| Button wake | Press PWR while asleep | Retained ring records Button; Home shows; mode matches VBUS | pending |
+| Motion wake | Move the device while asleep | Retained ring records Motion; Home shows; mode matches VBUS | pending |
 | USB while asleep (fallback) | Sleep on battery, plug USB, then move/press or wait for the timer | Device boots with `mode: Desk` and shows Home | pending |
 | Awake budget | Leave watch awake without input or USB | Device returns to deep sleep after the policy budget | pending |
 

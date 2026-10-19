@@ -6,8 +6,9 @@ use core::cell::RefCell;
 
 use embassy_time::{Duration, Timer};
 use esp_hal::efuse::Efuse;
-use esp_hal::gpio::Input;
+use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
+use esp_hal::peripherals::GPIO10;
 use esp_hal::rtc_cntl::wakeup_cause;
 use esp_hal::system::SleepSource;
 use esp_hal::time::Rate;
@@ -158,4 +159,18 @@ pub async fn debounce_button(pin: &Input<'_>) -> bool {
         Timer::after(BUTTON_SAMPLE_PERIOD).await;
     }
     high * 2 > BUTTON_SAMPLES
+}
+
+/// Measures the PWR button only on a button wake, returning the pin for the
+/// sleep configuration.
+pub async fn debounce_power_button(
+    mut pin: GPIO10<'static>,
+    raw_wake: Option<WakeReason>,
+) -> (GPIO10<'static>, bool) {
+    if !matches!(raw_wake, Some(WakeReason::Button)) {
+        return (pin, false);
+    }
+    let input = Input::new(pin.reborrow(), InputConfig::default().with_pull(Pull::Up));
+    let pressed = debounce_button(&input).await;
+    (pin, pressed)
 }

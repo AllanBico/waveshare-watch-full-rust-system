@@ -140,6 +140,19 @@ fn budget_expires() {
 }
 
 #[test]
+fn a_hundred_wake_cycles_expire_into_sleep() {
+    let mut pm = manager();
+    for cycle in 0..100u64 {
+        let now = cycle * 1_000;
+        pm.request_awake(WakeReason::Timer, 100, now).unwrap();
+        assert_eq!(pm.check_budget(now + 99), BudgetStatus::Awake);
+        assert_eq!(pm.check_budget(now + 100), BudgetStatus::Expired);
+        pm.enter_sleep().unwrap();
+        assert_eq!(pm.check_budget(now + 1_000_000), BudgetStatus::Awake);
+    }
+}
+
+#[test]
 fn audit_detects_lie() {
     let mut pm = PowerManager::new(FakePower::new(), Mode::Watch);
     pm.pmic_mut().lie = true;

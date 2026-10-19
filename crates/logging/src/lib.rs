@@ -12,8 +12,10 @@
 #![forbid(unsafe_code)]
 
 mod ring;
+mod wake;
 
 pub use ring::{Retained, Ring, CAPACITY, RETAINED_BYTES};
+pub use wake::wake_entries;
 
 /// Appends an entry only when the caller's `logging` feature is enabled.
 ///

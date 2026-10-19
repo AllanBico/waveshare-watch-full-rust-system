@@ -12,6 +12,7 @@ mod error;
 mod manager;
 mod plan;
 mod sleep;
+mod wake;
 
 #[cfg(test)]
 mod tests;
@@ -21,3 +22,4 @@ pub use error::PowerError;
 pub use manager::PowerManager;
 pub use plan::{PowerState, RailPlan};
 pub use sleep::SleepPlan;
+pub use wake::WakeAction;
