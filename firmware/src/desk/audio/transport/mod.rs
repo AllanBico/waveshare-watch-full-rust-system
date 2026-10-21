@@ -16,10 +16,15 @@ use voice::lab::SAMPLE_RATE_HZ;
 mod capture;
 mod playback;
 
-/// Internal-SRAM ring used by the RX DMA.
-pub(super) const RX_RING_BYTES: usize = 32_768;
-/// Internal-SRAM ring used by the TX DMA.
-pub(super) const TX_RING_BYTES: usize = 32_768;
+/// DMA descriptor chunk size. Must be a multiple of the 4-byte stereo frame so
+/// `available` never leaves a 1-3 byte tail that cannot be pushed.
+const DMA_CHUNK_BYTES: usize = 4_092;
+/// Internal-SRAM ring used by the RX DMA. A multiple of the chunk size so the
+/// circular descriptor chain has no short tail.
+pub(super) const RX_RING_BYTES: usize = DMA_CHUNK_BYTES * 8;
+/// Internal-SRAM ring used by the TX DMA. A multiple of the chunk size so the
+/// circular descriptor chain has no short tail.
+pub(super) const TX_RING_BYTES: usize = DMA_CHUNK_BYTES * 8;
 /// Capture polling interval while the ring has no data.
 pub(super) const POLL_MS: u64 = 2;
 /// Frames discarded after RX starts so capture begins on a settled frame.
@@ -30,9 +35,6 @@ pub(super) const PRIME_TIMEOUT_MS: u64 = 250;
 pub(super) const METER_MS: u64 = 100;
 /// Time for the amplifier to settle after a level change.
 pub(super) const PA_SETTLE_MS: u64 = 5;
-/// DMA descriptor chunk size. Must be a multiple of the 4-byte stereo frame so
-/// `available` never leaves a 1-3 byte tail that cannot be pushed.
-const DMA_CHUNK_BYTES: usize = 4_092;
 
 /// A PSRAM-backed clip.
 pub type Clip = ExternalVec<u8, ExternalMemory>;

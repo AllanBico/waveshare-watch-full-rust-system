@@ -2,10 +2,8 @@
 //!
 //! Configured as an I2S slave for stereo MIC1/MIC2 capture at 16 kHz with
 //! 16-bit samples. The init sequence follows the vendor ES7210 user guide
-//! (`5.1 Sequence - TDMIN-IIS 30DB`), which is also what the current
-//! esp-bsp/ESPHome drivers use. Earlier esp_codec_dev values (0x43 analog
-//! power, 0x00 mic-bias power) leave the analog blocks powered differently and
-//! produce a noisy capture on this board.
+//! (`5.1 Sequence - TDMIN-IIS 30DB`). All four channels are initialized and
+//! powered; channel selection happens above this driver.
 
 use embedded_hal::i2c::I2c;
 use hal::AudioCapture;

@@ -83,9 +83,6 @@ pub async fn task(mut transport: Transport) {
                 if CANCEL.load(Ordering::Acquire) {
                     let _ = sender.try_send(LabEvent::Stopped);
                 } else {
-                    if result.is_ok() {
-                        dump_clip(&clip);
-                    }
                     send_result(&sender, result.map(LabEvent::Recorded));
                 }
             }
@@ -119,6 +116,7 @@ pub async fn task(mut transport: Transport) {
 }
 
 /// Prints the first frames of a clip as `LRLR...` hex, eight frames per line.
+#[allow(dead_code)]
 fn dump_clip(clip: &[u8]) {
     if !DUMP_CAPTURE {
         return;
