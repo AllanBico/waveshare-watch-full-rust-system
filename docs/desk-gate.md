@@ -1,6 +1,7 @@
 # Desk Gate — Phase 8.6
 
 Status: host-side checks pass. Hardware rows are pending on-device execution.
+The Phase 9.1b Audio Lab is a desk-only development instrument.
 
 The gate covers the scoped desk slice: Home, drawer with Settings and Logs,
 blank quick settings, Settings, and Logs. Animations, calibration, battery
@@ -29,6 +30,11 @@ stats, voice, sync, and AI are intentionally deferred.
 | Theme | Tap Theme | One full redraw; high-contrast desk theme applies immediately | pending |
 | Desk stats | Leave desk idle for two seconds | CPU, RAM, PSRAM, and 80 MHz update once per second; no full redraw | pending |
 | Logs | Open Logs from the drawer | Category list opens; a category shows entries with paging | pending |
+| Audio Lab | Open Audio Lab from the desk drawer | Loopback, Mic, and Speaker tabs render; no audio error on a desk boot | pending |
+| Pitch diagnosis | Loopback, press Tone test | Recording shows meters; report shows MIC1/MIC2 Hz and rate near 100% | pending |
+| Mic tuning | Mic, cycle gain 0–30 dB, record | Meters respond; the selected gain is audible on playback | pending |
+| Speaker tuning | Speaker, cycle volume, play 440 Hz and 1 kHz | Volume follows the dB curve; tones are clean and not clipped | pending |
+| Dual mic | Record while speaking near MIC1 and MIC2 | Both meter bars move independently | pending |
 | Brightness | Change brightness in Settings | Panel brightness changes immediately | pending |
 | Persistence | Change theme and brightness, reboot on USB | Both settings are restored | pending |
 

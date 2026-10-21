@@ -593,6 +593,20 @@ and sleeps correctly after desk use.
 
 **Test:** Record 5 seconds, play back.
 
+### 9.1b Audio Lab and Pitch Diagnosis
+- Desk-only Audio Lab app with Loopback, Mic, and Speaker pages.
+- Stereo I2S framing, per-channel MIC1/MIC2 meters, 1 kHz tone test, and
+  measured capture rate and tone frequency.
+- Loopback, play-last-clip, mic gain in 3 dB steps, speaker volume, mute, and
+  440 Hz / 1 kHz tone output.
+- ES8311 volume mapping corrected to a dB attenuation curve.
+- Tuning values are transcribed back into the driver defaults; the app is a
+  development instrument, not a shipping watch app.
+
+**Test:** Open Audio Lab from the desk drawer. A 1 kHz tone test reports close
+to 1 kHz and a capture rate near 100%. Pitchy playback is visible as a rate or
+frequency ratio other than 1.0. MIC1 and MIC2 meters move independently.
+
 ### 9.2 Wake Word
 - Hand-rolled `no_std` pipeline: I2S capture, `microfft` FFT, MFCC, small NN with `const` weights.
 - Train the small model and embed the weights as constants.

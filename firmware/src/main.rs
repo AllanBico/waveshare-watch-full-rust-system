@@ -30,6 +30,7 @@ use settings::BootPolicy;
 mod alarm_boot;
 mod awake;
 mod boot;
+mod desk;
 mod display;
 mod log_boot;
 mod log_view;
@@ -48,7 +49,7 @@ use esp_backtrace as _;
 use runtime::{debounce_power_button, halt, open_bus, report_boot, report_time, wake_reason};
 
 #[embassy_executor::task]
-async fn firmware(_spawner: Spawner) {
+async fn firmware(spawner: Spawner) {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::_80MHz));
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
@@ -162,6 +163,26 @@ async fn firmware(_spawner: Spawner) {
         0
     };
     report_boot(mode, psram_bytes, log);
+    let desk_inputs = desk::Inputs {
+        spawner,
+        bus,
+        i2s: peripherals.I2S0,
+        dma: peripherals.DMA_CH1,
+        mclk: peripherals.GPIO16,
+        bclk: peripherals.GPIO41,
+        ws: peripherals.GPIO45,
+        dout: peripherals.GPIO40,
+        din: peripherals.GPIO42,
+        pa: peripherals.GPIO46,
+        log,
+    };
+    let mut audio = None;
+    let mut desk_pending = None;
+    if mode == Mode::Desk {
+        audio = desk::start(desk_inputs);
+    } else {
+        desk_pending = Some(desk_inputs);
+    }
     if log {
         println!("[boot] policy {:?}", policy);
         println!(
@@ -250,6 +271,8 @@ async fn firmware(_spawner: Spawner) {
             psram: &mut psram,
             log: plan.logging,
             haptics,
+            audio,
+            desk: desk_pending,
         })
         .await
         {

@@ -8,3 +8,4 @@ common = { path = "../common" }
 shell = { path = "../shell" }
 ui = { path = "../ui" }
 settings = { path = "../settings" }
+voice = { path = "../voice" }

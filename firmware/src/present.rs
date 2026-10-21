@@ -10,7 +10,7 @@ use static_cell::StaticCell;
 use common::{RenderPolicy, ThemeId};
 use drivers::board;
 use shell::Shell;
-use ui::{flush, GraySurface, MonoSurface, Theme};
+use ui::{flush, Damage, GraySurface, MonoSurface, Theme};
 
 use crate::registry::Registry;
 
@@ -61,7 +61,7 @@ pub fn render<D: Display>(
     shell: &mut Shell<Registry>,
     theme_id: ThemeId,
     workspace: &mut Workspace,
-) -> Result<(), RenderError>
+) -> Result<Damage, RenderError>
 where
     D::Error: Debug,
 {
@@ -78,7 +78,7 @@ fn render_mono<D: Display>(
     shell: &mut Shell<Registry>,
     theme: &Theme,
     workspace: &mut Workspace,
-) -> Result<(), RenderError>
+) -> Result<Damage, RenderError>
 where
     D::Error: Debug,
 {
@@ -90,9 +90,10 @@ where
         .render_active(theme, &mut surface)
         .map_err(|_| RenderError::Shell)?;
     if damage.is_empty() {
-        return Ok(());
+        return Ok(damage);
     }
-    flush(display, &surface, &damage, workspace.staging).map_err(|_| RenderError::Flush)
+    flush(display, &surface, &damage, workspace.staging).map_err(|_| RenderError::Flush)?;
+    Ok(damage)
 }
 
 fn render_gray<D: Display>(
@@ -100,7 +101,7 @@ fn render_gray<D: Display>(
     shell: &mut Shell<Registry>,
     theme: &Theme,
     workspace: &mut Workspace,
-) -> Result<(), RenderError>
+) -> Result<Damage, RenderError>
 where
     D::Error: Debug,
 {
@@ -119,7 +120,8 @@ where
         .render_active(theme, &mut surface)
         .map_err(|_| RenderError::Shell)?;
     if damage.is_empty() {
-        return Ok(());
+        return Ok(damage);
     }
-    flush(display, &surface, &damage, &mut staging[..]).map_err(|_| RenderError::Flush)
+    flush(display, &surface, &damage, &mut staging[..]).map_err(|_| RenderError::Flush)?;
+    Ok(damage)
 }

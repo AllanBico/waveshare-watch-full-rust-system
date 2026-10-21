@@ -20,6 +20,7 @@ ui = { path = "../crates/ui" }
 storage = { path = "../crates/storage" }
 settings = { path = "../crates/settings" }
 logging = { path = "../crates/logging" }
+voice = { path = "../crates/voice" }
 static_cell = "2.1"
 embedded-hal = { workspace = true }
 embedded-hal-bus = "0.3"
@@ -34,3 +35,4 @@ esp-bootloader-esp-idf = { version = "0.4", features = ["esp32s3"] }
 
 embassy-executor = "0.9.0"
 embassy-time = "0.5.1"
+embassy-sync = "0.7"

@@ -6,6 +6,7 @@
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 
+mod audio_lab;
 mod format;
 pub mod home;
 mod logs;
@@ -15,6 +16,7 @@ mod view;
 
 use shell::AppId;
 
+pub use audio_lab::{AudioLab, RenderError as AudioLabRenderError};
 pub use home::{Home, HomeState, RenderError};
 pub use logs::{LogCategory, LogsApp};
 pub use overlays::{Drawer, QuickSettings};
@@ -24,3 +26,5 @@ pub use settings_app::SettingsApp;
 pub const SETTINGS_APP_ID: AppId = AppId::new(2);
 /// Stable app id for Logs.
 pub const LOGS_APP_ID: AppId = AppId::new(3);
+/// Stable app id for the desk Audio Lab.
+pub const AUDIO_LAB_APP_ID: AppId = AppId::new(4);

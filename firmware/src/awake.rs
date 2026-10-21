@@ -59,6 +59,10 @@ pub struct Inputs<'a, D, P> {
     pub log: bool,
     /// Alarm haptics, when enabled.
     pub haptics: Option<session::Haptics<'a>>,
+    /// Desk audio control, when this boot brought audio up.
+    pub audio: Option<crate::desk::Control>,
+    /// Desk peripherals, kept for the first desk entry after a watch boot.
+    pub desk: Option<crate::desk::Inputs>,
 }
 
 /// Boots Home, runs the awake loop, and returns when watch should sleep.
@@ -76,7 +80,7 @@ where
         }
     }
 
-    let mut shell: Shell<Registry> = session::boot(
+    let shell: &'static mut Shell<Registry> = session::boot(
         input.mode,
         input.now,
         input.battery,
@@ -95,7 +99,7 @@ where
     if let Some(panel) = input.display.as_mut() {
         session::run(session::RunInput {
             display: panel,
-            shell: &mut shell,
+            shell,
             power: input.power,
             settings: input.settings,
             battery_mv: input.battery_mv,
@@ -104,6 +108,8 @@ where
             psram: input.psram,
             log: input.log,
             haptics: input.haptics,
+            audio: input.audio,
+            desk: input.desk,
         })
         .await
         .map_err(|error| {

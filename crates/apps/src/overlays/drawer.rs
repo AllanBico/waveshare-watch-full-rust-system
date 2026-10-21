@@ -1,6 +1,6 @@
 //! The app drawer: a full-page grid with the watch app set.
 
-use common::Region;
+use common::{Mode, Region};
 use shell::{Action, App, AppContext, AppError};
 use ui::{
     collect_hits, paint_damage_shaped, paint_widgets, Align, Damage, HitRegistry, IconId,
@@ -26,10 +26,13 @@ const TILE_BASE: u16 = 860;
 pub const SETTINGS_ID: u16 = TILE_BASE;
 /// Logs tile.
 pub const LOGS_ID: u16 = TILE_BASE + 1;
+/// Audio Lab tile, desk only.
+pub const AUDIO_LAB_ID: u16 = TILE_BASE + 2;
 
 /// The drawer with the current watch app set.
 pub struct Drawer {
     columns: u8,
+    mode: Mode,
     hits: HitRegistry,
     cache: TextCache,
     scene: Scene,
@@ -37,13 +40,23 @@ pub struct Drawer {
 
 impl Drawer {
     /// Creates the drawer with a future mode-specific column count.
-    pub fn new(columns: u8) -> Self {
+    pub fn new(columns: u8, mode: Mode) -> Self {
         Self {
             columns: columns.max(1),
+            mode,
             hits: HitRegistry::new(),
             cache: TextCache::new(),
             scene: Scene::new(),
         }
+    }
+
+    /// Updates the mode shown by the drawer.
+    pub fn set_mode(&mut self, mode: Mode) {
+        if self.mode == mode {
+            return;
+        }
+        self.mode = mode;
+        self.scene.request_full(RedrawReason::ModeSwitch);
     }
 
     /// Builds, diffs, and paints the drawer frame.
@@ -55,14 +68,23 @@ impl Drawer {
     ) -> Result<Damage, AppError> {
         let Self {
             columns,
+            mode,
             hits,
             cache,
             scene,
         } = self;
         let mut widgets = WidgetArena::new();
         let mut entries = crate::view::entries();
-        let count = build(*columns, theme, cache, &mut widgets, &mut entries, viewport)
-            .map_err(|_| AppError::Failed(RENDER_FAILED_CODE))?;
+        let count = build(
+            *columns,
+            *mode,
+            theme,
+            cache,
+            &mut widgets,
+            &mut entries,
+            viewport,
+        )
+        .map_err(|_| AppError::Failed(RENDER_FAILED_CODE))?;
         collect_hits(&widgets, &entries[..count], hits)
             .map_err(|_| AppError::Failed(RENDER_FAILED_CODE))?;
 
@@ -89,10 +111,20 @@ impl Drawer {
 }
 
 impl App for Drawer {
+    fn enter(&mut self, context: &mut AppContext<'_>) -> Result<(), AppError> {
+        self.set_mode(context.mode());
+        Ok(())
+    }
+
+    fn tick(&mut self, context: &mut AppContext<'_>) {
+        self.set_mode(context.mode());
+    }
+
     fn tap(&mut self, x: u16, y: u16, context: &mut AppContext<'_>) -> Result<(), AppError> {
         let action = match self.hits.hit(x, y) {
             Some(SETTINGS_ID) => Action::OpenApp(crate::SETTINGS_APP_ID),
             Some(LOGS_ID) => Action::OpenApp(crate::LOGS_APP_ID),
+            Some(AUDIO_LAB_ID) => Action::OpenApp(crate::AUDIO_LAB_APP_ID),
             _ => Action::CloseAppDrawer,
         };
         context
@@ -110,12 +142,14 @@ impl App for Drawer {
         theme: &Theme,
         surface: &mut dyn Surface,
     ) -> Result<Damage, AppError> {
+        self.set_mode(context.mode());
         self.render_frame(surface, theme, context.viewport())
     }
 }
 
 fn build<'a>(
     columns: u8,
+    mode: Mode,
     theme: &Theme,
     cache: &mut TextCache,
     widgets: &mut WidgetArena<'a>,
@@ -137,12 +171,21 @@ fn build<'a>(
             label: "Logs",
         }),
     );
+    let audio = Widget::new(
+        AUDIO_LAB_ID,
+        WidgetKind::Tile(TileProps {
+            icon: IconId::Microphone,
+            label: "Audio Lab",
+        }),
+    );
     let title_node = fill_node(&title, theme, cache, viewport.width);
     let tile_height = theme.min_touch_px.saturating_mul(2);
-    let tile_nodes = [
+    let mut tile_nodes = [
         crate::view::node(&settings, theme, cache, Length::Fill(1), tile_height),
         crate::view::node(&logs, theme, cache, Length::Fill(1), tile_height),
+        crate::view::node(&audio, theme, cache, Length::Fill(1), tile_height),
     ];
+    let tile_count = if mode == Mode::Desk { 3 } else { 2 };
 
     let mut builder = Builder {
         theme,
@@ -155,12 +198,18 @@ fn build<'a>(
     builder.push(title)?;
     builder.push(settings)?;
     builder.push(logs)?;
+    if mode == Mode::Desk {
+        builder.push(audio)?;
+    }
 
     let crown_children = [title_node];
     let crown_node = crown(CROWN_ID, &crown_children, theme);
+    if tile_count < tile_nodes.len() {
+        tile_nodes[tile_count] = crate::view::spacer(0, Length::Fill(1), Length::Fixed(0));
+    }
     let apps = grid(
         GRID_ID,
-        &tile_nodes,
+        &tile_nodes[..tile_count],
         columns,
         theme.spacing.sm,
         theme.spacing.sm,
@@ -235,7 +284,7 @@ mod tests {
     fn two_columns_put_settings_and_logs_side_by_side() {
         let mut data = vec![0u8; MonoSurface::buffer_len(410, 502)];
         let mut surface = MonoSurface::new(410, 502, &mut data).unwrap();
-        let mut drawer = Drawer::new(2);
+        let mut drawer = Drawer::new(2, Mode::Desk);
         drawer
             .render_frame(&mut surface, &Theme::DESK, Region::full(410, 502))
             .unwrap();
@@ -260,10 +309,40 @@ mod tests {
     }
 
     #[test]
+    fn watch_hides_the_audio_lab_tile() {
+        let mut data = vec![0u8; MonoSurface::buffer_len(410, 502)];
+        let mut surface = MonoSurface::new(410, 502, &mut data).unwrap();
+        let mut drawer = Drawer::new(2, Mode::Watch);
+        drawer
+            .render_frame(&mut surface, &Theme::WATCH, Region::full(410, 502))
+            .unwrap();
+        assert!(drawer
+            .hits
+            .targets()
+            .iter()
+            .all(|target| target.id != AUDIO_LAB_ID));
+    }
+
+    #[test]
+    fn desk_shows_the_audio_lab_tile() {
+        let mut data = vec![0u8; MonoSurface::buffer_len(410, 502)];
+        let mut surface = MonoSurface::new(410, 502, &mut data).unwrap();
+        let mut drawer = Drawer::new(2, Mode::Desk);
+        drawer
+            .render_frame(&mut surface, &Theme::DESK, Region::full(410, 502))
+            .unwrap();
+        assert!(drawer
+            .hits
+            .targets()
+            .iter()
+            .any(|target| target.id == AUDIO_LAB_ID));
+    }
+
+    #[test]
     fn drawer_renders_one_tile_and_shell_routes_a_tap() {
         let mut data = vec![0u8; MonoSurface::buffer_len(410, 502)];
         let mut surface = MonoSurface::new(410, 502, &mut data).unwrap();
-        let mut drawer = Drawer::new(1);
+        let mut drawer = Drawer::new(1, Mode::Desk);
         let damage = drawer
             .render_frame(&mut surface, &Theme::WATCH, Region::full(410, 502))
             .unwrap();

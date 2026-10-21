@@ -12,13 +12,15 @@ use esp_println::println;
 use hal::{Display, Power};
 use power::PowerManager;
 
-use apps::SETTINGS_APP_ID;
+use crate::desk::lab::{LabError, LabEvent, LabIntent};
+use apps::{AUDIO_LAB_APP_ID, SETTINGS_APP_ID};
 use common::{Event, LogEntry, Mode, Percent, Region, Timestamp, TouchReport};
 use drivers::board;
 use drivers::flash::FlashDevice;
 use drivers::haptics::Motor;
 use settings::{BootPolicy, Settings, SettingsEvent, SettingsStore};
 use shell::{GestureOutcome, Shell, ShellError};
+use static_cell::StaticCell;
 
 use crate::boot::{self, VBUS_POLL_PERIOD};
 use crate::log_boot::STORAGE_WRITE_MIN_MV;
@@ -77,6 +79,10 @@ pub struct RunInput<'a, D, P> {
     pub log: bool,
     /// Alarm haptics, when an alarm is ringing.
     pub haptics: Option<Haptics<'a>>,
+    /// Desk audio control, when this boot brought audio up.
+    pub audio: Option<crate::desk::Control>,
+    /// Desk peripherals, kept for the first desk entry after a watch boot.
+    pub desk: Option<crate::desk::Inputs>,
 }
 
 /// Inputs for one watch awake loop.
@@ -110,6 +116,7 @@ struct DeskInput<'a, D, P> {
     base_now: Timestamp,
     started: Instant,
     log: bool,
+    audio: Option<&'a mut crate::desk::Control>,
 }
 
 /// The reason the watch awake loop stopped.
@@ -120,6 +127,9 @@ enum WatchExit {
     BudgetExpired,
 }
 
+/// The single shell for this boot, kept off the task stack.
+static SHELL: StaticCell<Shell<Registry>> = StaticCell::new();
+
 /// Boots the shell with Home and runs its first lifecycle calls.
 pub fn boot(
     mode: Mode,
@@ -128,19 +138,22 @@ pub fn boot(
     is_charging: bool,
     settings: &Settings,
     alarm: Option<Timestamp>,
-) -> Result<Shell<Registry>, ShellError> {
-    let mut registry = Registry::new(mode, now, battery, is_charging, settings);
-    registry.set_alarm(alarm);
-    let mut shell = Shell::new(
-        registry,
-        HOME_ID,
-        mode,
-        Region::full(board::LCD_WIDTH, board::LCD_HEIGHT),
-    );
+) -> Result<&'static mut Shell<Registry>, ShellError> {
+    let shell = SHELL.init_with(|| {
+        let mut registry = Registry::new(mode, now, battery, is_charging, settings);
+        registry.set_alarm(alarm);
+        Shell::new(
+            registry,
+            HOME_ID,
+            mode,
+            Region::full(board::LCD_WIDTH, board::LCD_HEIGHT),
+        )
+    });
     shell.set_time(now);
     shell.set_battery(battery, is_charging);
     if mode == Mode::Desk {
         let _ = shell.set_system_stats(crate::metrics::snapshot());
+        shell.registry_mut().ensure_audio_lab();
     }
     shell.start()?;
     shell.tick(0)?;
@@ -166,6 +179,8 @@ where
         psram,
         log,
         mut haptics,
+        mut audio,
+        mut desk,
     } = input;
     let mut workspace = present::workspace();
     let base_now = shell.now();
@@ -182,7 +197,7 @@ where
         shell.set_time(now());
         let mode = shell.mode();
         boot::apply_brightness(display, settings.settings(), mode, log);
-        present(display, shell, settings.settings(), &mut workspace, log)?;
+        let _ = present(display, shell, settings.settings(), &mut workspace, log)?;
         match mode {
             Mode::Watch => {
                 let policy = BootPolicy::from_settings(settings.settings());
@@ -207,7 +222,17 @@ where
                 match exit {
                     WatchExit::VbusInserted => {
                         haptics = None;
-                        switch(shell, power, psram, Mode::Desk, log, now())?
+                        switch(shell, power, psram, Mode::Desk, log, now())?;
+                        shell.registry_mut().ensure_audio_lab();
+                        if let Some(inputs) = desk.take() {
+                            audio = crate::desk::start(inputs);
+                        } else if let Some(audio) = audio.as_mut() {
+                            if let Err(error) = audio.init() {
+                                if log {
+                                    println!("[audio] re-init failed: {:?}", error);
+                                }
+                            }
+                        }
                     }
                     WatchExit::BudgetExpired => return Ok(()),
                 }
@@ -225,8 +250,12 @@ where
                     base_now,
                     started,
                     log,
+                    audio: audio.as_mut(),
                 })
                 .await;
+                if let Some(audio) = audio.as_mut() {
+                    audio.shutdown();
+                }
                 commit_settings(settings, battery_mv, log);
                 switch(shell, power, psram, Mode::Watch, log, now())?
             }
@@ -240,7 +269,7 @@ fn present<D: Display>(
     settings: &Settings,
     workspace: &mut present::Workspace,
     log: bool,
-) -> Result<(), RunError>
+) -> Result<ui::Damage, RunError>
 where
     D::Error: Debug,
 {
@@ -456,6 +485,50 @@ fn commit_settings(store: &mut SettingsStore<SettingsBackend>, battery_mv: u16, 
     }
 }
 
+fn service_audio(
+    shell: &mut Shell<Registry>,
+    mut audio: Option<&mut crate::desk::Control>,
+) -> bool {
+    let mut changed = false;
+    loop {
+        let Some(intent) = shell
+            .registry_mut()
+            .audio_lab_mut()
+            .and_then(|app| app.take_intent())
+        else {
+            break;
+        };
+        let Some(audio) = audio.as_deref_mut() else {
+            if let Some(app) = shell.registry_mut().audio_lab_mut() {
+                app.ingest(LabEvent::Error(LabError::NotReady));
+            }
+            changed = true;
+            continue;
+        };
+        match intent {
+            LabIntent::Command(command) => {
+                changed |= crate::desk::lab::command(command);
+            }
+            LabIntent::SetMicGain(db) => {
+                let _ = audio.set_gain(db);
+            }
+            LabIntent::SetVolume(percent) => {
+                let _ = audio.set_volume(percent);
+            }
+            LabIntent::SetMute(muted) => {
+                let _ = audio.set_mute(muted);
+            }
+        }
+    }
+    while let Some(event) = crate::desk::lab::try_event() {
+        if let Some(app) = shell.registry_mut().audio_lab_mut() {
+            app.ingest(event);
+        }
+        changed = true;
+    }
+    changed
+}
+
 fn stop_haptics<'a, 'h>(haptics: &'a mut Option<&'a mut Haptics<'h>>) {
     if let Some(haptics) = haptics.as_deref_mut() {
         haptics.motor.set(false);
@@ -478,8 +551,10 @@ where
         base_now,
         started,
         log,
+        mut audio,
     } = input;
     let mut next_vbus = Instant::now() + VBUS_POLL_PERIOD;
+    let mut next_meter = Instant::now();
     let mut next_repaint = Instant::now() + IDLE_REPAINT_PERIOD;
     let mut next_stats = Instant::now() + STATS_PERIOD;
     let mut sampler = crate::metrics::Sampler::new();
@@ -506,6 +581,7 @@ where
         }
         let report = read_touch(touch);
         let was_settings = shell.active_app() == Some(SETTINGS_APP_ID);
+        let was_audio = shell.active_app() == Some(AUDIO_LAB_APP_ID);
         let outcome = shell.handle_touch(&report, uptime).unwrap_or_else(|error| {
             crate::retained::record_error(common::Error::NotReady.code());
             if log {
@@ -530,19 +606,50 @@ where
         if let Some(category) = shell.registry_mut().logs_mut().take_load_request() {
             log_view::load(category, device, shell.registry_mut().logs_mut(), log);
         }
+        let is_audio = shell.active_app() == Some(AUDIO_LAB_APP_ID);
+        if was_audio && !is_audio && audio.is_some() {
+            crate::desk::lab::stop();
+        }
+        let audio_changed = service_audio(shell, audio.as_deref_mut());
+        let audio_active = shell
+            .registry()
+            .audio_lab()
+            .is_some_and(|app| app.is_active());
+        let meter_due = audio_active && Instant::now() >= next_meter;
+        if meter_due {
+            next_meter = Instant::now() + Duration::from_millis(100);
+        }
 
         let completed = matches!(
             outcome,
             GestureOutcome::Tap { .. } | GestureOutcome::Swipe(_)
         );
-        if completed || changed || stats_changed || Instant::now() >= next_repaint {
+        if completed
+            || changed
+            || stats_changed
+            || audio_changed
+            || meter_due
+            || Instant::now() >= next_repaint
+        {
             next_repaint = Instant::now() + IDLE_REPAINT_PERIOD;
             boot::apply_brightness(display, settings.settings(), Mode::Desk, log);
-            if let Err(error) = present(display, shell, settings.settings(), workspace, log) {
-                crate::retained::record_error(common::Error::NotReady.code());
-                if log {
-                    println!("[ui] desk present failed: {:?}", error);
+            let render_start = Instant::now();
+            match present(display, shell, settings.settings(), workspace, log) {
+                Ok(damage) => {
+                    if log && damage.is_full() {
+                        println!("[ui] desk full frame");
+                    }
                 }
+                Err(error) => {
+                    crate::retained::record_error(common::Error::NotReady.code());
+                    if log {
+                        println!("[ui] desk present failed: {:?}", error);
+                    }
+                }
+            }
+            let render_ms = (Instant::now() - render_start).as_millis();
+            if log && render_ms > 150 {
+                println!("[ui] desk frame {} ms", render_ms);
             }
         }
     }
