@@ -1,6 +1,6 @@
 //! Home complication values, formatted once per change.
 
-use common::{Percent, SystemStats, Timestamp};
+use common::{Cpu1State, Percent, SystemStats, Timestamp};
 use settings::{DateFormat, TimeFormat};
 
 use crate::format::{clock_text, date_text, kb_text, percent_text, speed_text};
@@ -20,6 +20,8 @@ pub struct HomeState {
     battery_len: usize,
     cpu_buf: [u8; 4],
     cpu_len: usize,
+    cpu1_buf: [u8; 4],
+    cpu1_len: usize,
     ram_buf: [u8; 28],
     ram_len: usize,
     psram_buf: [u8; 28],
@@ -65,6 +67,8 @@ impl HomeState {
             battery_len: 0,
             cpu_buf: [0; 4],
             cpu_len: 0,
+            cpu1_buf: [0; 4],
+            cpu1_len: 0,
             ram_buf: [0; 28],
             ram_len: 0,
             psram_buf: [0; 28],
@@ -114,6 +118,20 @@ impl HomeState {
     fn write_stats(&mut self) {
         let cpu = percent_text(self.stats.cpu_percent, &mut self.cpu_buf);
         self.cpu_len = cpu.len();
+        self.cpu1_len = match self.stats.cpu1_state {
+            Cpu1State::Off => {
+                self.cpu1_buf[..3].copy_from_slice(b"off");
+                3
+            }
+            Cpu1State::Error => {
+                self.cpu1_buf[..3].copy_from_slice(b"err");
+                3
+            }
+            _ => {
+                let cpu1 = percent_text(self.stats.cpu1_percent, &mut self.cpu1_buf);
+                cpu1.len()
+            }
+        };
         let ram = kb_text(
             self.stats.ram_used_kb,
             self.stats.ram_total_kb,
@@ -173,9 +191,14 @@ impl HomeState {
         text(&self.battery_text[..self.battery_len])
     }
 
-    /// The CPU load text.
+    /// The CPU0 load text.
     pub fn cpu(&self) -> &str {
         text(&self.cpu_buf[..self.cpu_len])
+    }
+
+    /// The CPU1 load or state text.
+    pub fn cpu1(&self) -> &str {
+        text(&self.cpu1_buf[..self.cpu1_len])
     }
 
     /// The internal SRAM text.
@@ -252,24 +275,39 @@ mod tests {
         let mut home = HomeState::new(timestamp(7, 5), Percent::new(80), false);
         let stats = SystemStats {
             cpu_percent: Percent::new(7),
-            cpu_mhz: 80,
+            cpu1_percent: Percent::new(11),
+            cpu1_state: Cpu1State::Audio,
+            cpu_mhz: 240,
             ram_used_kb: 143,
             ram_total_kb: 320,
             psram_used_kb: 8192,
             psram_total_kb: 8192,
         };
         assert_eq!(home.cpu(), "00%");
+        assert_eq!(home.cpu1(), "off");
         assert!(home.set_stats(stats));
         assert_eq!(home.cpu(), "07%");
+        assert_eq!(home.cpu1(), "11%");
         assert_eq!(home.ram(), "143 / 320 KB");
         assert_eq!(home.psram(), "8192 / 8192 KB");
-        assert_eq!(home.speed(), "80 MHz");
+        assert_eq!(home.speed(), "240 MHz");
         assert!(!home.set_stats(stats));
         assert!(home.set_stats(SystemStats {
             cpu_percent: Percent::new(8),
             ..stats
         }));
         assert_eq!(home.cpu(), "08%");
+        assert!(home.set_stats(SystemStats {
+            cpu1_percent: Percent::new(0),
+            cpu1_state: Cpu1State::Idle,
+            ..stats
+        }));
+        assert_eq!(home.cpu1(), "00%");
+        assert!(home.set_stats(SystemStats {
+            cpu1_state: Cpu1State::Error,
+            ..stats
+        }));
+        assert_eq!(home.cpu1(), "err");
     }
 }
 

@@ -36,8 +36,10 @@ pub(crate) const CROWN_ID: u16 = 10;
 pub(crate) const CONTENT_ID: u16 = 11;
 /// Desk stats container.
 pub(crate) const STATS_ID: u16 = 22;
-/// Desk CPU row.
+/// Desk CPU0 row.
 pub(crate) const STATS_CPU_ID: u16 = 30;
+/// Desk CPU1 row.
+pub(crate) const STATS_CPU1_ID: u16 = 34;
 /// Desk RAM row.
 pub(crate) const STATS_RAM_ID: u16 = 31;
 /// Desk PSRAM row.

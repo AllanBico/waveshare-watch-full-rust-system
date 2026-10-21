@@ -1,7 +1,7 @@
 //! Watch and desk Home golden frame, idle damage, and pixel-budget tests.
 
 use apps::Home;
-use common::{DateTime, Mode, Percent, Region, SystemStats, Timestamp};
+use common::{Cpu1State, DateTime, Mode, Percent, Region, SystemStats, Timestamp};
 use settings::TimeFormat;
 use ui::{Damage, GraySurface, MonoSurface, Surface, Theme};
 
@@ -27,7 +27,9 @@ fn home() -> Home {
 fn stats(cpu: u8) -> SystemStats {
     SystemStats {
         cpu_percent: Percent::new(cpu),
-        cpu_mhz: 80,
+        cpu1_percent: Percent::new(11),
+        cpu1_state: Cpu1State::Audio,
+        cpu_mhz: 240,
         ram_used_kb: 143,
         ram_total_kb: 320,
         psram_used_kb: 1024,
@@ -95,7 +97,7 @@ fn watch_home_golden_frame_is_stable() {
 fn desk_home_golden_frame_is_stable() {
     let (damage, lit, hash) = render_desk(&mut desk_home());
     assert!(damage.is_full());
-    assert_eq!((hash, lit), (0x098a_3c6b_9df7_693d, 10649));
+    assert_eq!((hash, lit), (0x919d_d423_fbf6_a9e0, 11177));
 }
 
 #[test]

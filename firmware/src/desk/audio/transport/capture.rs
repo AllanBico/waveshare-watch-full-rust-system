@@ -7,7 +7,6 @@
 use core::sync::atomic::Ordering;
 
 use embassy_time::{Duration, Instant, Timer};
-use esp_println::println;
 use voice::lab::{ClipReport, LabEvent};
 
 use super::super::analysis::{self, Levels, Tone};
@@ -65,7 +64,6 @@ impl Transport {
             let available = match rx_transfer.available() {
                 Ok(value) => value,
                 Err(error) => {
-                    println!("[audio] prime rx {:?}", error);
                     return Err(error.into());
                 }
             };
@@ -77,14 +75,12 @@ impl Transport {
             let popped = match rx_transfer.pop(&mut scratch[..take]) {
                 Ok(value) => value,
                 Err(error) => {
-                    println!("[audio] prime pop {:?}", error);
                     return Err(error.into());
                 }
             };
             primed += popped / 4;
         }
         if primed == 0 {
-            println!("[audio] no capture data after priming");
             return Err(TransportError::Empty);
         }
 
@@ -97,22 +93,13 @@ impl Transport {
         let mut last_meter = started;
         let mut levels = Levels::new();
         let mut written = 0usize;
-        let mut chunks = 0u32;
         let mut mic1_hz = 0u16;
         let mut mic2_hz = 0u16;
 
         while Instant::now() < deadline && !cancel.load(Ordering::Acquire) {
-            chunks = chunks.wrapping_add(1);
             let available = match rx_transfer.available() {
                 Ok(value) => value,
                 Err(error) => {
-                    println!(
-                        "[audio] rx {:?} at {} ms, chunks {}, frames {}",
-                        error,
-                        (Instant::now() - started).as_millis(),
-                        chunks,
-                        written / 4
-                    );
                     return Err(error.into());
                 }
             };
@@ -124,14 +111,6 @@ impl Transport {
             let popped = match rx_transfer.pop(&mut scratch[..take]) {
                 Ok(value) => value,
                 Err(error) => {
-                    println!(
-                        "[audio] pop {:?} at {} ms, avail {}, scratch {}, frames {}",
-                        error,
-                        (Instant::now() - started).as_millis(),
-                        available,
-                        scratch.len(),
-                        written / 4
-                    );
                     return Err(error.into());
                 }
             };
@@ -172,13 +151,8 @@ impl Transport {
         let elapsed_ms = (Instant::now() - started)
             .as_millis()
             .min(u64::from(u32::MAX)) as u32;
-        let (mic1, mic2) = levels.snapshot();
-        println!(
-            "[audio] recorded {} frames in {} ms ({} chunks)",
-            written / 4,
-            elapsed_ms,
-            chunks
-        );
+        let mic1 = analysis::meter(clip, 0);
+        let mic2 = analysis::meter(clip, 2);
         Ok(ClipReport {
             frames: (written / 4) as u32,
             elapsed_ms,

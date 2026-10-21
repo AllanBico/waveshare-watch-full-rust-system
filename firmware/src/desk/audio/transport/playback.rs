@@ -3,7 +3,6 @@
 use core::sync::atomic::Ordering;
 
 use embassy_time::{Duration, Instant, Timer};
-use esp_println::println;
 use voice::lab::{LabEvent, MicChannel};
 
 use super::super::analysis::{self, PlaybackFilter, Tone};
@@ -41,7 +40,10 @@ impl Transport {
         let first = frames.min(ring_frames);
         let mut filter = PlaybackFilter::new();
         analysis::fill_playback(clip, 0, offset, &mut tx_buffer[..first * 4]);
+        let input_peak = analysis::peak(&tx_buffer[..first * 4], 0);
         filter.apply(&mut tx_buffer[..first * 4]);
+        let output_peak = analysis::peak(&tx_buffer[..first * 4], 0);
+        crate::metrics::set_play_peaks(input_peak, output_peak);
         tx_buffer[first * 4..].fill(0);
         let stage = &mut scratch[..];
 
@@ -89,7 +91,6 @@ impl Transport {
             Timer::after(Duration::from_millis(POLL_MS)).await;
         }
         transfer.stop()?;
-        println!("[audio] clip done");
         Ok(())
     }
 
@@ -113,6 +114,8 @@ impl Transport {
         } = self;
         let mut tone = Tone::new(frequency_hz);
         tone.fill(&mut tx_buffer[..]);
+        let tone_peak = analysis::peak(&tx_buffer[..], 0);
+        crate::metrics::set_play_peaks(tone_peak, tone_peak);
         let total_frames = frames_for(duration_ms);
         let ring_frames = tx_buffer.len() / 4;
         let stage = &mut scratch[..];
@@ -150,7 +153,6 @@ impl Transport {
             Timer::after(Duration::from_millis(1)).await;
         }
         transfer.stop()?;
-        println!("[audio] tone done");
         Ok(())
     }
 }

@@ -58,5 +58,5 @@ fn desk_settings_golden_frame_is_stable() {
     let mut app = SettingsApp::new(Mode::Desk, Settings::new());
     let (damage, lit, hash) = render_desk(&mut app);
     assert!(damage.is_full());
-    assert_eq!((hash, lit), (0x017e_4ffa_97de_c21f, 140231));
+    assert_eq!((hash, lit), (0xcbdd_732a_5f1f_fa87, 140231));
 }

@@ -7,7 +7,7 @@ use ui::{
 
 use super::{
     HomeState, BATTERY_ID, BG_ID, CLOCK_ID, CONTENT_ID, CROWN_ID, DATE_ID, HEADER_ID,
-    HEADER_SPACER_ID, ROOT_ID, STATS_CPU_ID, STATS_ID, STATS_PSRAM_ID, STATS_RAM_ID,
+    HEADER_SPACER_ID, ROOT_ID, STATS_CPU1_ID, STATS_CPU_ID, STATS_ID, STATS_PSRAM_ID, STATS_RAM_ID,
     STATS_SPEED_ID,
 };
 use crate::view::{
@@ -46,7 +46,8 @@ pub(super) fn build<'a>(
         TextAlign::End,
         Some(battery_icon),
     );
-    let cpu = key_value(STATS_CPU_ID, "CPU", state.cpu());
+    let cpu = key_value(STATS_CPU_ID, "C0", state.cpu());
+    let cpu1 = key_value(STATS_CPU1_ID, "C1", state.cpu1());
     let ram = key_value(STATS_RAM_ID, "RAM", state.ram());
     let psram = key_value(STATS_PSRAM_ID, "PSRAM", state.psram());
     let speed = key_value(STATS_SPEED_ID, "SPD", state.speed());
@@ -59,11 +60,12 @@ pub(super) fn build<'a>(
     let date_node = fit_node(&date, theme, view.cache);
     let battery_node = fit_node(&battery, theme, view.cache);
     let cpu_node = fill_node(&cpu, theme, view.cache, content_width);
+    let cpu1_node = fill_node(&cpu1, theme, view.cache, content_width);
     let ram_node = fill_node(&ram, theme, view.cache, content_width);
     let psram_node = fill_node(&psram, theme, view.cache, content_width);
     let speed_node = fill_node(&speed, theme, view.cache, content_width);
     view.push(background(BG_ID))?;
-    for widget in [clock, date, battery, cpu, ram, psram, speed] {
+    for widget in [clock, date, battery, cpu, cpu1, ram, psram, speed] {
         view.push(widget)?;
     }
 
@@ -75,7 +77,7 @@ pub(super) fn build<'a>(
     let header = row(HEADER_ID, &header_children, theme.spacing.sm, Align::Center);
     let crown_children = [header];
     let crown_node = crown(CROWN_ID, &crown_children, theme);
-    let stats_children = [cpu_node, ram_node, psram_node, speed_node];
+    let stats_children = [cpu_node, cpu1_node, ram_node, psram_node, speed_node];
     let stats = Node::container(
         STATS_ID,
         Length::Fill(1),

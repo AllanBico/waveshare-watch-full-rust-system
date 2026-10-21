@@ -63,6 +63,8 @@ pub struct Inputs<'a, D, P> {
     pub audio: Option<crate::desk::Control>,
     /// Desk peripherals, kept for the first desk entry after a watch boot.
     pub desk: Option<crate::desk::Inputs>,
+    /// CPU1 lifecycle controller.
+    pub core1: &'a mut crate::desk::Core1,
 }
 
 /// Boots Home, runs the awake loop, and returns when watch should sleep.
@@ -110,6 +112,7 @@ where
             haptics: input.haptics,
             audio: input.audio,
             desk: input.desk,
+            core1: input.core1,
         })
         .await
         .map_err(|error| {

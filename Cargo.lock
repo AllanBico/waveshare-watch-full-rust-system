@@ -910,6 +910,7 @@ dependencies = [
  "esp-hal",
  "esp-println",
  "esp-rtos",
+ "esp-sync",
  "hal",
  "logging",
  "power",

@@ -9,10 +9,10 @@
 
 #![no_std]
 #![no_main]
+#![feature(asm_experimental_arch)]
 
 extern crate alloc;
 
-use embassy_executor::Spawner;
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
 use esp_hal::timer::timg::TimerGroup;
@@ -21,6 +21,7 @@ use esp_println::println;
 use common::{Mode, ModePlan, Percent, WakeReason};
 use drivers::axp2101::Axp2101;
 use drivers::board;
+use drivers::clock::{self, CpuSpeed};
 use drivers::pcf85063a::Pcf85063a;
 use drivers::qmi8658::Qmi8658;
 use embedded_hal_bus::i2c::RefCellDevice;
@@ -49,8 +50,9 @@ use esp_backtrace as _;
 use runtime::{debounce_power_button, halt, open_bus, report_boot, report_time, wake_reason};
 
 #[embassy_executor::task]
-async fn firmware(spawner: Spawner) {
+async fn firmware() {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::_80MHz));
+    let mut core1 = desk::Core1::new(peripherals.CPU_CTRL, peripherals.SW_INTERRUPT);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
@@ -113,6 +115,12 @@ async fn firmware(spawner: Spawner) {
     } else {
         raw_wake
     };
+    let cpu_speed = if mode == Mode::Desk {
+        CpuSpeed::Mhz240
+    } else {
+        CpuSpeed::Mhz80
+    };
+    clock::set_speed(cpu_speed);
     if let Err(error) = power.set_mode(mode) {
         if log {
             println!("[pm] set_mode failed: {}", error.to_common());
@@ -164,7 +172,6 @@ async fn firmware(spawner: Spawner) {
     };
     report_boot(mode, psram_bytes, log);
     let desk_inputs = desk::Inputs {
-        spawner,
         bus,
         i2s: peripherals.I2S1,
         dma: peripherals.DMA_CH1,
@@ -179,7 +186,7 @@ async fn firmware(spawner: Spawner) {
     let mut audio = None;
     let mut desk_pending = None;
     if mode == Mode::Desk {
-        audio = desk::start(desk_inputs);
+        audio = desk::start(desk_inputs, &mut core1);
     } else {
         desk_pending = Some(desk_inputs);
     }
@@ -273,6 +280,7 @@ async fn firmware(spawner: Spawner) {
             haptics,
             audio,
             desk: desk_pending,
+            core1: &mut core1,
         })
         .await
         {
@@ -315,7 +323,7 @@ fn main() -> ! {
     // the `'static` reference is valid for the whole program lifetime.
     let executor = unsafe { &mut *(&mut executor as *mut esp_rtos::embassy::Executor) };
     executor.run_with_callbacks(
-        |spawner| spawner.must_spawn(firmware(spawner)),
+        |spawner| spawner.must_spawn(firmware()),
         metrics::LoadCallbacks,
     )
 }

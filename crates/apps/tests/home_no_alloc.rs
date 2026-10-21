@@ -7,7 +7,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use apps::{Home, LogsApp, SettingsApp};
-use common::{DateTime, Mode, Percent, Region, SystemStats, Timestamp};
+use common::{Cpu1State, DateTime, Mode, Percent, Region, SystemStats, Timestamp};
 use settings::{Settings, TimeFormat};
 use ui::{GraySurface, MonoSurface, Theme};
 
@@ -66,7 +66,9 @@ fn the_home_render_path_allocates_nothing() {
         desk.update(next, Percent::new(80), false);
         desk.set_stats(SystemStats {
             cpu_percent: Percent::new(7),
-            cpu_mhz: 80,
+            cpu1_percent: Percent::new(11),
+            cpu1_state: Cpu1State::Audio,
+            cpu_mhz: 240,
             ram_used_kb: 143,
             ram_total_kb: 320,
             psram_used_kb: 1024,

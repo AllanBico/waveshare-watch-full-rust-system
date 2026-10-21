@@ -4,9 +4,13 @@
 //! after VBUS selects desk mode.
 
 pub mod audio;
+mod cpu1;
 pub mod lab;
 
+pub use cpu1::Core1;
+
 use embedded_hal_bus::i2c::RefCellDevice;
+use esp_alloc::ExternalMemory;
 use esp_hal::i2c::master::I2c;
 use esp_hal::peripherals::{DMA_CH1, GPIO16, GPIO40, GPIO41, GPIO42, GPIO45, GPIO46, I2S1};
 use esp_hal::Blocking;
@@ -15,14 +19,12 @@ use esp_println::println;
 use drivers::board;
 use drivers::es7210::Es7210;
 use drivers::es8311::Es8311;
-use voice::lab::MAX_GAIN_DB;
+use voice::lab::{FRAME_BYTES, MAX_GAIN_DB, MAX_RECORD_MS, SAMPLE_RATE_HZ};
 
-use audio::{AudioError, Codecs, Peripherals};
+use audio::{AudioError, Clip, Codecs, Peripherals};
 
 /// Everything `main` hands to the desk audio bring-up.
 pub struct Inputs {
-    /// Task spawner.
-    pub spawner: embassy_executor::Spawner,
     /// Shared I2C bus.
     pub bus: &'static core::cell::RefCell<I2c<'static, Blocking>>,
     /// I2S peripheral.
@@ -51,8 +53,8 @@ pub struct Control {
     log: bool,
 }
 
-/// Brings up the codecs, starts the audio task, and returns the control handle.
-pub fn start(inputs: Inputs) -> Option<Control> {
+/// Brings up the codecs, starts CPU1, and returns the control handle.
+pub fn start(inputs: Inputs, core: &mut Core1) -> Option<Control> {
     let codec = Es8311::new(RefCellDevice::new(inputs.bus), board::ES8311_I2C_ADDR);
     let mic = Es7210::new(RefCellDevice::new(inputs.bus), board::ES7210_I2C_ADDR);
     let peripherals = Peripherals {
@@ -85,7 +87,17 @@ pub fn start(inputs: Inputs) -> Option<Control> {
                 );
                 println!("[audio] ES8311 + ES7210 ready");
             }
-            inputs.spawner.must_spawn(lab::task(brought.transport));
+            let Some(clip) = empty_clip(inputs.log) else {
+                let _ = brought.codecs.shutdown();
+                return None;
+            };
+            if !core.start_audio(brought.transport, clip) {
+                if inputs.log {
+                    println!("[audio] cpu1 start failed");
+                }
+                let _ = brought.codecs.shutdown();
+                return None;
+            }
             Some(Control {
                 codecs: brought.codecs,
                 log: inputs.log,
@@ -129,8 +141,8 @@ impl Control {
     }
 
     /// Powers the codecs down after leaving desk mode.
-    pub fn shutdown(&mut self) {
-        lab::stop();
+    pub async fn shutdown(&mut self) {
+        lab::stop_and_wait().await;
         if self.codecs.shutdown().is_err() {
             self.log_failure("shutdown", 0);
         }
@@ -149,6 +161,20 @@ impl Control {
             println!("[audio] {} {} failed", operation, value);
         }
     }
+}
+
+fn empty_clip(log: bool) -> Option<Clip> {
+    let frames = u64::from(MAX_RECORD_MS) * u64::from(SAMPLE_RATE_HZ) / 1_000;
+    let bytes = frames.checked_mul(FRAME_BYTES as u64)?;
+    let bytes = usize::try_from(bytes).ok()?;
+    let mut clip = Clip::new_in(ExternalMemory);
+    if clip.try_reserve_exact(bytes).is_err() {
+        if log {
+            println!("[audio] clip allocation failed");
+        }
+        return None;
+    }
+    Some(clip)
 }
 
 fn map_codec<E>(error: AudioError<E>) -> lab::ControlError {

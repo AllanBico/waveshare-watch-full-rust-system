@@ -37,7 +37,7 @@ pub use mode::Mode;
 pub use mode_plan::ModePlan;
 pub use motion::{Acceleration, AngularRate, MotionSample, WakeOnMotion};
 pub use render_policy::{PixelMode, RenderPolicy};
-pub use system::SystemStats;
+pub use system::{Cpu1State, SystemStats};
 pub use theme::ThemeId;
 pub use time::Timestamp;
 pub use touch::{TouchPoint, TouchReport, MAX_TOUCH_POINTS};

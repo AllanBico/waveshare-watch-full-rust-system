@@ -802,5 +802,6 @@ frequency ratio other than 1.0. MIC1 and MIC2 meters move independently.
 
 
 ## CPU
-- CPU0 (PRO_CPU) — the one running everything today: boot, UI, shell, touch, display flush, logs.
-- CPU1 (APP_CPU) — parked by the bootloader and never unparked in this firmware. esp_rtos::start() only brings up the scheduler on CPU0; starting CPU1 needs an explicit start_second_core with its own software interrupt, CPU_CTRL, and static stack. We never call it, so it sits idle/parked.
+- CPU0 (PRO_CPU) — boot, PMIC/mode policy, UI, shell, touch, display flush, logs, storage, and sleep.
+- CPU1 (APP_CPU) — desk-only audio worker. It is started on the first desk entry with `CpuControl` and an interrupt-mode executor, and parked on every return to watch. Watch boot never starts it.
+- Both cores share one CPU clock: 80 MHz in watch and 240 MHz in desk. Watch mode keeps CPU1 parked, audio stopped, and desk-only rails off.

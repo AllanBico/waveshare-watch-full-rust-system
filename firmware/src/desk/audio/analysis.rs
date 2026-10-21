@@ -82,6 +82,41 @@ impl Levels {
     }
 }
 
+/// Peak magnitude of one interleaved channel.
+pub fn peak(clip: &[u8], offset: usize) -> u16 {
+    let mut peak = 0u16;
+    let mut index = offset;
+    while index + 1 < clip.len() {
+        peak = peak.max(i16::from_le_bytes([clip[index], clip[index + 1]]).unsigned_abs());
+        index += 4;
+    }
+    peak
+}
+
+/// Measures one interleaved channel of a stored clip.
+pub fn meter(clip: &[u8], offset: usize) -> Meter {
+    let mut peak = 0u16;
+    let mut sum = 0u64;
+    let mut count = 0u32;
+    let mut clipped = false;
+    let mut index = offset;
+    while index + 1 < clip.len() {
+        let sample = i16::from_le_bytes([clip[index], clip[index + 1]]);
+        let magnitude = sample.unsigned_abs();
+        peak = peak.max(magnitude);
+        sum += u64::from(sample.unsigned_abs()) * u64::from(sample.unsigned_abs());
+        count += 1;
+        clipped |= magnitude >= CLIP_LEVEL;
+        index += 4;
+    }
+    let rms = if count == 0 {
+        0
+    } else {
+        integer_sqrt(sum / u64::from(count))
+    };
+    Meter { peak, rms, clipped }
+}
+
 /// Mean sample for one interleaved channel.
 pub fn dc_offset(clip: &[u8], offset: usize) -> i16 {
     let mut sum = 0i64;
@@ -313,6 +348,20 @@ mod tests {
         let before = rms(&original);
         let after = rms(&filtered);
         assert!(after * 100 / before > 80);
+    }
+
+    #[test]
+    fn meter_reads_the_stored_clip() {
+        let mut clip = vec![0u8; 4 * 4];
+        for (index, sample) in [10_000i16, -20_000, 5_000, -1_000].into_iter().enumerate() {
+            let bytes = sample.to_le_bytes();
+            clip[index * 4..index * 4 + 2].copy_from_slice(&bytes);
+            clip[index * 4 + 2..index * 4 + 4].copy_from_slice(&bytes);
+        }
+        let meter = meter(&clip, 0);
+        assert_eq!(meter.peak, 20_000);
+        assert!(meter.rms > 10_000);
+        assert!(!meter.clipped);
     }
 
     #[test]

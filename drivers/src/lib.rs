@@ -6,10 +6,11 @@
 //! pins, and I2C addresses.
 
 #![cfg_attr(not(test), no_std)]
-#![forbid(unsafe_code)]
 
 pub mod axp2101;
 pub mod board;
+#[cfg(feature = "hardware")]
+pub mod clock;
 pub mod co5300;
 pub mod es7210;
 pub mod es8311;

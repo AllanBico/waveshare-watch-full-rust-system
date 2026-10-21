@@ -16,6 +16,7 @@ use crate::desk::lab::{LabError, LabEvent, LabIntent};
 use apps::{AUDIO_LAB_APP_ID, SETTINGS_APP_ID};
 use common::{Event, LogEntry, Mode, Percent, Region, Timestamp, TouchReport};
 use drivers::board;
+use drivers::clock::{self, CpuSpeed};
 use drivers::flash::FlashDevice;
 use drivers::haptics::Motor;
 use settings::{BootPolicy, Settings, SettingsEvent, SettingsStore};
@@ -83,6 +84,8 @@ pub struct RunInput<'a, D, P> {
     pub audio: Option<crate::desk::Control>,
     /// Desk peripherals, kept for the first desk entry after a watch boot.
     pub desk: Option<crate::desk::Inputs>,
+    /// CPU1 lifecycle controller.
+    pub core1: &'a mut crate::desk::Core1,
 }
 
 /// Inputs for one watch awake loop.
@@ -181,6 +184,7 @@ where
         mut haptics,
         mut audio,
         mut desk,
+        core1,
     } = input;
     let mut workspace = present::workspace();
     let base_now = shell.now();
@@ -225,12 +229,16 @@ where
                         switch(shell, power, psram, Mode::Desk, log, now())?;
                         shell.registry_mut().ensure_audio_lab();
                         if let Some(inputs) = desk.take() {
-                            audio = crate::desk::start(inputs);
+                            audio = crate::desk::start(inputs, core1);
                         } else if let Some(audio) = audio.as_mut() {
-                            if let Err(error) = audio.init() {
-                                if log {
-                                    println!("[audio] re-init failed: {:?}", error);
+                            if core1.resume() {
+                                if let Err(error) = audio.init() {
+                                    if log {
+                                        println!("[audio] re-init failed: {:?}", error);
+                                    }
                                 }
+                            } else if log {
+                                println!("[audio] cpu1 resume failed");
                             }
                         }
                     }
@@ -254,8 +262,9 @@ where
                 })
                 .await;
                 if let Some(audio) = audio.as_mut() {
-                    audio.shutdown();
+                    audio.shutdown().await;
                 }
+                core1.park();
                 commit_settings(settings, battery_mv, log);
                 switch(shell, power, psram, Mode::Watch, log, now())?
             }
@@ -289,15 +298,18 @@ fn switch<P: Power>(
     log: bool,
     now: Timestamp,
 ) -> Result<(), RunError> {
-    // Bring up PSRAM before the desk presenter allocates its gray surface.
-    // Watch never initializes it.
+    // Desk runs at 240 MHz before PSRAM and the desk presenter are brought up.
+    // Watch returns to 80 MHz after CPU1 has been parked.
     if target == Mode::Desk {
+        clock::set_speed(CpuSpeed::Mhz240);
         if let Some(psram) = psram.take() {
             let bytes = boot::init_psram(psram);
             if log {
                 println!("[boot] psram {} bytes", bytes);
             }
         }
+    } else {
+        clock::set_speed(CpuSpeed::Mhz80);
     }
 
     // The presenter flushes synchronously, so no frame is pending here.
@@ -310,6 +322,12 @@ fn switch<P: Power>(
         // The shell rolls back to the previous mode on a failed Home entry, so
         // put the rails back to match it rather than leaving desk rails on.
         let restore = shell.mode();
+        let restore_speed = if restore == Mode::Desk {
+            CpuSpeed::Mhz240
+        } else {
+            CpuSpeed::Mhz80
+        };
+        clock::set_speed(restore_speed);
         if let Err(power_error) = power.set_mode(restore) {
             if log {
                 println!("[pm] rollback failed: {}", power_error.to_common());
@@ -494,6 +512,7 @@ fn report_control_error(shell: &mut Shell<Registry>) {
 fn service_audio(
     shell: &mut Shell<Registry>,
     mut audio: Option<&mut crate::desk::Control>,
+    log: bool,
 ) -> bool {
     let mut changed = false;
     loop {
@@ -513,6 +532,9 @@ fn service_audio(
         };
         match intent {
             LabIntent::Command(command) => {
+                if log {
+                    println!("[audio] cmd {:?}", command);
+                }
                 changed |= crate::desk::lab::command(command);
             }
             LabIntent::SetMicGain(db) => {
@@ -536,6 +558,18 @@ fn service_audio(
         }
     }
     while let Some(event) = crate::desk::lab::try_event() {
+        if log
+            && !matches!(
+                event,
+                LabEvent::Recording { .. } | LabEvent::Playback { .. }
+            )
+        {
+            if matches!(event, LabEvent::Finished) {
+                let (input, output) = crate::metrics::play_peaks();
+                println!("[audio] play peaks in {} out {}", input, output);
+            }
+            println!("[audio] ev {:?}", event);
+        }
         if let Some(app) = shell.registry_mut().audio_lab_mut() {
             app.ingest(event);
         }
@@ -625,7 +659,7 @@ where
         if was_audio && !is_audio && audio.is_some() {
             crate::desk::lab::stop();
         }
-        let audio_changed = service_audio(shell, audio.as_deref_mut());
+        let audio_changed = service_audio(shell, audio.as_deref_mut(), log);
         let audio_active = shell
             .registry()
             .audio_lab()
