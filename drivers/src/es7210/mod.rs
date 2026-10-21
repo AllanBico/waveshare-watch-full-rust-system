@@ -1,9 +1,11 @@
 //! ES7210 four-channel ADC driver.
 //!
 //! Configured as an I2S slave for stereo MIC1/MIC2 capture at 16 kHz with
-//! 16-bit samples. The sequence follows the known vendor/esp_codec_dev driver:
-//! the ES7210 datasheet in the repository has no register map, so the loopback
-//! test is the verification gate.
+//! 16-bit samples. The init sequence follows the vendor ES7210 user guide
+//! (`5.1 Sequence - TDMIN-IIS 30DB`), which is also what the current
+//! esp-bsp/ESPHome drivers use. Earlier esp_codec_dev values (0x43 analog
+//! power, 0x00 mic-bias power) leave the analog blocks powered differently and
+//! produce a noisy capture on this board.
 
 use embedded_hal::i2c::I2c;
 use hal::AudioCapture;
@@ -25,6 +27,40 @@ const MAX_GAIN_DB: u8 = 30;
 /// Register code for the default gain.
 const DEFAULT_GAIN: u8 = DEFAULT_GAIN_DB / 3;
 
+/// Registers dumped after init when firmware logging is enabled.
+pub const DIAGNOSTIC_REGISTERS: [u8; 27] = [
+    RESET,
+    CLOCK_OFF,
+    MAIN_CLOCK,
+    POWER_DOWN,
+    OSR,
+    MODE_CONFIG,
+    TIME_CONTROL0,
+    TIME_CONTROL1,
+    SDP_INTERFACE1,
+    SDP_INTERFACE2,
+    ADC34_HPF2,
+    ADC34_HPF1,
+    ADC12_HPF1,
+    ADC12_HPF2,
+    ANALOG,
+    MIC12_BIAS,
+    MIC34_BIAS,
+    MIC1_GAIN,
+    MIC2_GAIN,
+    MIC3_GAIN,
+    MIC4_GAIN,
+    MIC12_POWER,
+    MIC34_POWER,
+    MIC1_POWER,
+    MIC2_POWER,
+    MIC3_POWER,
+    MIC4_POWER,
+];
+
+/// A snapshot of the registers in [`DIAGNOSTIC_REGISTERS`].
+pub type DiagnosticRegisters = [(u8, u8); DIAGNOSTIC_REGISTERS.len()];
+
 /// An ES7210 ADC on a shared I2C bus.
 pub struct Es7210<I> {
     i2c: I,
@@ -44,22 +80,42 @@ impl<I: I2c> Es7210<I> {
     }
 
     fn open(&mut self) -> Result<(), Es7210Error<I::Error>> {
+        // Vendor ES7210 power-up sequence.
         self.write_reg(RESET, RESET_ALL)?;
-        self.write_reg(RESET, RESET_RELEASE)?;
-        self.write_reg(CLOCK_OFF, CLOCK_ON)?;
+        self.write_reg(RESET, RESET_DEFAULT)?;
         self.write_reg(TIME_CONTROL0, TIME_CYCLE)?;
         self.write_reg(TIME_CONTROL1, TIME_CYCLE)?;
+
         self.write_reg(ADC12_HPF2, ADC12_HPF2_VALUE)?;
         self.write_reg(ADC12_HPF1, ADC12_HPF1_VALUE)?;
         self.write_reg(ADC34_HPF2, ADC34_HPF2_VALUE)?;
         self.write_reg(ADC34_HPF1, ADC34_HPF1_VALUE)?;
-        self.update_reg(MODE_CONFIG, SLAVE_MODE_CLEAR, SLAVE_MODE_SET)?;
+
+        self.write_reg(SDP_INTERFACE1, SDP_16_BIT_I2S)?;
+        self.write_reg(SDP_INTERFACE2, TDM_OFF)?;
+
+        // 0xC3 powers the analog block and selects the 3.3 V VMID setup.
         self.write_reg(ANALOG, ANALOG_ON)?;
         self.write_reg(MIC12_BIAS, MIC_BIAS)?;
         self.write_reg(MIC34_BIAS, MIC_BIAS)?;
+
+        self.write_all_gains()?;
+        self.write_reg(MIC1_POWER, MIC_POWER_UP)?;
+        self.write_reg(MIC2_POWER, MIC_POWER_UP)?;
+        self.write_reg(MIC3_POWER, MIC_POWER_UP)?;
+        self.write_reg(MIC4_POWER, MIC_POWER_UP)?;
+
         self.write_reg(OSR, OSR_VALUE)?;
         self.write_reg(MAIN_CLOCK, MAIN_CLOCK_VALUE)?;
-        self.select_mics()
+        self.write_reg(POWER_DOWN, DLL_POWER_DOWN)?;
+
+        // Only MIC1/MIC2 are used for the stereo pair. Power down MIC3/4
+        // (the AEC reference pair) so its input cannot add noise or crosstalk.
+        self.write_reg(MIC12_POWER, MIC_GROUP_POWER)?;
+        self.write_reg(MIC34_POWER, MIC_POWER_DOWN)?;
+
+        self.write_reg(RESET, RESET_START)?;
+        self.write_reg(RESET, RESET_RELEASE)
     }
 
     fn configure_format(&mut self) -> Result<(), Es7210Error<I::Error>> {
@@ -67,51 +123,35 @@ impl<I: I2c> Es7210<I> {
         self.write_reg(SDP_INTERFACE2, TDM_OFF)
     }
 
-    fn select_mics(&mut self) -> Result<(), Es7210Error<I::Error>> {
-        for reg in [MIC1_GAIN, MIC2_GAIN, MIC3_GAIN, MIC4_GAIN] {
-            self.update_reg(reg, MIC_DISABLE_MASK, 0)?;
-        }
-        self.write_reg(MIC12_POWER, MIC_POWER_DOWN)?;
-        self.write_reg(MIC34_POWER, MIC_POWER_DOWN)?;
-        self.update_reg(CLOCK_OFF, MIC_CLOCK_MASK, 0)?;
-        self.write_reg(MIC12_POWER, 0)?;
+    fn write_all_gains(&mut self) -> Result<(), Es7210Error<I::Error>> {
         for reg in [MIC1_GAIN, MIC2_GAIN] {
-            self.update_reg(reg, MIC_ENABLE, MIC_ENABLE)?;
-            self.update_reg(reg, MIC_GAIN_MASK, self.gain)?;
+            self.write_reg(reg, MIC_ENABLE | self.gain)?;
         }
-        self.write_reg(SDP_INTERFACE2, TDM_OFF)
-    }
-
-    fn start(&mut self) -> Result<(), Es7210Error<I::Error>> {
-        self.write_reg(CLOCK_OFF, CLOCK_ON_MIC)?;
-        self.write_reg(POWER_DOWN, 0)?;
-        self.write_reg(ANALOG, ANALOG_ON)?;
-        self.write_reg(MIC1_POWER, MIC_POWER_UP)?;
-        self.write_reg(MIC2_POWER, MIC_POWER_UP)?;
-        self.write_reg(MIC3_POWER, MIC_POWER_UP)?;
-        self.write_reg(MIC4_POWER, MIC_POWER_UP)?;
-        self.select_mics()?;
-        self.write_reg(ANALOG, ANALOG_ON)?;
-        self.write_reg(RESET, RESET_START)?;
-        self.write_reg(RESET, RESET_RELEASE)
+        for reg in [MIC3_GAIN, MIC4_GAIN] {
+            self.write_reg(reg, 0)?;
+        }
+        Ok(())
     }
 
     fn verify(&mut self) -> Result<(), Es7210Error<I::Error>> {
-        // Only read back registers the vendor driver also reads. Some ES7210
-        // power registers are not reliable readback sources on all parts.
+        // Keep this limited to registers the vendor driver also reads. The
+        // analog/DLL state is reported by `read_diagnostics` instead of
+        // blocking bring-up on parts with different readback behavior.
         self.expect(SDP_INTERFACE1, SDP_16_BIT_I2S)?;
-        self.expect(CLOCK_OFF, CLOCK_ON_MIC)?;
-
-        let mode = self.read_reg(MODE_CONFIG)?;
-        if mode & SLAVE_MODE_CLEAR != SLAVE_MODE_SET {
-            return Err(Es7210Error::BadConfig {
-                register: MODE_CONFIG,
-                value: mode,
-            });
-        }
+        self.expect(SDP_INTERFACE2, TDM_OFF)?;
         for reg in [MIC1_GAIN, MIC2_GAIN] {
+            let expected = MIC_ENABLE | self.gain;
             let value = self.read_reg(reg)?;
-            if value & MIC_ENABLE != MIC_ENABLE || value & MIC_GAIN_MASK != self.gain {
+            if value != expected {
+                return Err(Es7210Error::BadConfig {
+                    register: reg,
+                    value,
+                });
+            }
+        }
+        for reg in [MIC3_GAIN, MIC4_GAIN] {
+            let value = self.read_reg(reg)?;
+            if value != 0 {
                 return Err(Es7210Error::BadConfig {
                     register: reg,
                     value,
@@ -119,6 +159,15 @@ impl<I: I2c> Es7210<I> {
             }
         }
         Ok(())
+    }
+
+    /// Reads the key registers for a post-init diagnostic dump.
+    pub fn read_diagnostics(&mut self) -> Result<DiagnosticRegisters, Es7210Error<I::Error>> {
+        let mut out = [(0u8, 0u8); DIAGNOSTIC_REGISTERS.len()];
+        for (slot, &reg) in out.iter_mut().zip(DIAGNOSTIC_REGISTERS.iter()) {
+            *slot = (reg, self.read_reg(reg)?);
+        }
+        Ok(out)
     }
 
     fn expect(&mut self, reg: u8, expected: u8) -> Result<(), Es7210Error<I::Error>> {
@@ -146,11 +195,6 @@ impl<I: I2c> Es7210<I> {
             .write(self.address, &[reg, value])
             .map_err(Es7210Error::Bus)
     }
-
-    fn update_reg(&mut self, reg: u8, clear: u8, set: u8) -> Result<(), Es7210Error<I::Error>> {
-        let value = (self.read_reg(reg)? & !clear) | (set & clear);
-        self.write_reg(reg, value)
-    }
 }
 
 impl<I: I2c> AudioCapture for Es7210<I> {
@@ -158,10 +202,8 @@ impl<I: I2c> AudioCapture for Es7210<I> {
 
     fn init(&mut self) -> Result<(), Self::Error> {
         self.open()?;
-        self.configure_format()?;
-        self.start()?;
-        // The start reset can leave the serial port at its 24-bit default on
-        // some parts; re-apply 16-bit I2S after it so format and data agree.
+        // Re-apply the format after the start reset so 16-bit I2S is
+        // guaranteed even if the part reloads its 24-bit default.
         self.configure_format()?;
         self.verify()
     }
@@ -171,17 +213,11 @@ impl<I: I2c> AudioCapture for Es7210<I> {
             return Err(Es7210Error::InvalidGain(db));
         }
         self.gain = db / 3;
-        for reg in [MIC1_GAIN, MIC2_GAIN] {
-            self.update_reg(reg, MIC_GAIN_MASK, self.gain)?;
-        }
-        Ok(())
+        self.write_all_gains()
     }
 
     fn shutdown(&mut self) -> Result<(), Self::Error> {
-        self.write_reg(MIC1_POWER, MIC_POWER_DOWN)?;
-        self.write_reg(MIC2_POWER, MIC_POWER_DOWN)?;
-        self.write_reg(MIC3_POWER, MIC_POWER_DOWN)?;
-        self.write_reg(MIC4_POWER, MIC_POWER_DOWN)?;
+        // Vendor standby sequence.
         self.write_reg(MIC12_POWER, MIC_POWER_DOWN)?;
         self.write_reg(MIC34_POWER, MIC_POWER_DOWN)?;
         self.write_reg(ANALOG, ANALOG_OFF)?;

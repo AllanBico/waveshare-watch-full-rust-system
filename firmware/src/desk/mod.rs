@@ -8,7 +8,7 @@ pub mod lab;
 
 use embedded_hal_bus::i2c::RefCellDevice;
 use esp_hal::i2c::master::I2c;
-use esp_hal::peripherals::{DMA_CH1, GPIO16, GPIO40, GPIO41, GPIO42, GPIO45, GPIO46, I2S0};
+use esp_hal::peripherals::{DMA_CH1, GPIO16, GPIO40, GPIO41, GPIO42, GPIO45, GPIO46, I2S1};
 use esp_hal::Blocking;
 use esp_println::println;
 
@@ -26,7 +26,7 @@ pub struct Inputs {
     /// Shared I2C bus.
     pub bus: &'static core::cell::RefCell<I2c<'static, Blocking>>,
     /// I2S peripheral.
-    pub i2s: I2S0<'static>,
+    pub i2s: I2S1<'static>,
     /// DMA channel.
     pub dma: DMA_CH1<'static>,
     /// I2S master clock.
@@ -66,8 +66,23 @@ pub fn start(inputs: Inputs) -> Option<Control> {
         pa: inputs.pa,
     };
     match audio::bring_up(peripherals, codec, mic) {
-        Ok(brought) => {
+        Ok(mut brought) => {
             if inputs.log {
+                match brought.codecs.read_mic_diagnostics() {
+                    Ok(dump) => {
+                        for (reg, value) in dump {
+                            println!("[audio] es7210 0x{:02X}=0x{:02X}", reg, value);
+                        }
+                    }
+                    Err(_) => println!("[audio] es7210 diagnostic read failed"),
+                }
+                println!(
+                    "[audio] i2s master 16 kHz/16-bit stereo, MCLK 4.096 MHz, pins mclk {} bclk {} ws {} din {}",
+                    board::I2S_MCLK,
+                    board::I2S_SCLK,
+                    board::I2S_LRCK,
+                    board::I2S_ASDOUT
+                );
                 println!("[audio] ES8311 + ES7210 ready");
             }
             inputs.spawner.must_spawn(lab::task(brought.transport));

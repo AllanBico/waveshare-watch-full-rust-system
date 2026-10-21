@@ -10,7 +10,7 @@ mod transport;
 
 pub use transport::{Clip, Peripherals, Transport, TransportError};
 
-use drivers::es7210::{Es7210, Es7210Error};
+use drivers::es7210::{DiagnosticRegisters, Es7210, Es7210Error};
 use drivers::es8311::{Es8311, Es8311Error};
 use embedded_hal::i2c::I2c;
 use hal::{Audio as _, AudioCapture as _};
@@ -86,6 +86,11 @@ impl<I: I2c> Codecs<I> {
         self.mic.init()?;
         self.ready = true;
         Ok(())
+    }
+
+    /// Reads the ES7210 key registers for a post-init diagnostic dump.
+    pub fn read_mic_diagnostics(&mut self) -> Result<DiagnosticRegisters, Es7210Error<I::Error>> {
+        self.mic.read_diagnostics()
     }
 
     /// Sets playback volume as a percentage.

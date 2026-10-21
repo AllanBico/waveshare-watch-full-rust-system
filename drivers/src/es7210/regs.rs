@@ -31,15 +31,12 @@ pub(super) const MIC12_POWER: u8 = 0x4B;
 pub(super) const MIC34_POWER: u8 = 0x4C;
 
 pub(super) const RESET_ALL: u8 = 0xFF;
+/// Reset value that leaves the chip in its documented default state.
+pub(super) const RESET_DEFAULT: u8 = 0x32;
 pub(super) const RESET_RELEASE: u8 = 0x41;
 pub(super) const RESET_START: u8 = 0x71;
 
-pub(super) const SLAVE_MODE_CLEAR: u8 = 0x01;
-pub(super) const SLAVE_MODE_SET: u8 = 0x00;
-pub(super) const CLOCK_ON: u8 = 0x3F;
-pub(super) const CLOCK_ON_MIC: u8 = 0x34;
 pub(super) const CLOCK_OFF_ALL: u8 = 0x7F;
-pub(super) const MIC_CLOCK_MASK: u8 = 0x0B;
 
 pub(super) const TIME_CYCLE: u8 = 0x30;
 pub(super) const ADC12_HPF2_VALUE: u8 = 0x2A;
@@ -47,17 +44,23 @@ pub(super) const ADC12_HPF1_VALUE: u8 = 0x0A;
 pub(super) const ADC34_HPF2_VALUE: u8 = 0x0A;
 pub(super) const ADC34_HPF1_VALUE: u8 = 0x2A;
 
-pub(super) const ANALOG_ON: u8 = 0x43;
-pub(super) const ANALOG_OFF: u8 = 0xC0;
+/// Analog power/VMID setting from the vendor ES7210 sequence.
+pub(super) const ANALOG_ON: u8 = 0xC3;
+/// Standby analog setting from the vendor ES7210 sequence.
+pub(super) const ANALOG_OFF: u8 = 0x80;
 pub(super) const MIC_BIAS: u8 = 0x70;
 pub(super) const OSR_VALUE: u8 = 0x20;
 pub(super) const MAIN_CLOCK_VALUE: u8 = 0xC1;
 pub(super) const SDP_16_BIT_I2S: u8 = 0x60;
 pub(super) const TDM_OFF: u8 = 0x00;
+/// Power down the unused DLL after selecting the bypassed clock path.
+pub(super) const DLL_POWER_DOWN: u8 = 0x04;
 
 pub(super) const MIC_POWER_UP: u8 = 0x08;
 pub(super) const MIC_POWER_DOWN: u8 = 0xFF;
+/// MICBIAS, PGA and modulator power bits for one microphone pair.
+pub(super) const MIC_GROUP_POWER: u8 = 0x0F;
 pub(super) const MIC_ENABLE: u8 = 0x10;
+#[cfg(test)]
 pub(super) const MIC_GAIN_MASK: u8 = 0x0F;
-pub(super) const MIC_DISABLE_MASK: u8 = 0x10;
 pub(super) const POWER_DOWN_VALUE: u8 = 0x07;

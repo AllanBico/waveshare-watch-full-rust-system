@@ -3,7 +3,7 @@
 use hal::AudioCapture;
 
 use super::regs::*;
-use super::{Es7210, Es7210Error, DEFAULT_GAIN, DEFAULT_GAIN_DB};
+use super::{Es7210, Es7210Error, DEFAULT_GAIN, DEFAULT_GAIN_DB, DIAGNOSTIC_REGISTERS};
 use crate::board::ES7210_I2C_ADDR;
 use crate::test_support::{MockError, MockI2c};
 
@@ -12,13 +12,12 @@ fn adc() -> Es7210<MockI2c> {
 }
 
 #[test]
-fn init_runs_the_vendor_sequence_and_enables_both_mics() {
+fn init_runs_the_vendor_sequence_and_enables_all_mics() {
     let mut adc = adc();
     adc.init().unwrap();
 
     let writes = adc.i2c.writes();
-    assert_eq!(&writes[..2], &[(RESET, RESET_ALL), (RESET, RESET_RELEASE)]);
-    assert_eq!(adc.i2c.reg(MODE_CONFIG) & SLAVE_MODE_CLEAR, 0);
+    assert_eq!(&writes[..2], &[(RESET, RESET_ALL), (RESET, RESET_DEFAULT)]);
     assert_eq!(adc.i2c.reg(SDP_INTERFACE1), SDP_16_BIT_I2S);
     assert_eq!(adc.i2c.reg(SDP_INTERFACE2), TDM_OFF);
     assert_eq!(adc.i2c.reg(ANALOG), ANALOG_ON);
@@ -26,21 +25,20 @@ fn init_runs_the_vendor_sequence_and_enables_both_mics() {
     assert_eq!(adc.i2c.reg(MIC34_BIAS), MIC_BIAS);
     assert_eq!(adc.i2c.reg(OSR), OSR_VALUE);
     assert_eq!(adc.i2c.reg(MAIN_CLOCK), MAIN_CLOCK_VALUE);
-    assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_ENABLE, MIC_ENABLE);
-    assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, DEFAULT_GAIN);
-    assert_eq!(adc.i2c.reg(MIC2_GAIN) & MIC_ENABLE, MIC_ENABLE);
-    assert_eq!(adc.i2c.reg(MIC2_GAIN) & MIC_GAIN_MASK, DEFAULT_GAIN);
-    assert_eq!(adc.i2c.reg(MIC3_GAIN) & MIC_ENABLE, 0);
-    assert_eq!(adc.i2c.reg(MIC4_GAIN) & MIC_ENABLE, 0);
-    assert_eq!(adc.i2c.reg(MIC12_POWER), 0);
+    assert_eq!(adc.i2c.reg(POWER_DOWN), DLL_POWER_DOWN);
+    for reg in [MIC1_GAIN, MIC2_GAIN] {
+        assert_eq!(adc.i2c.reg(reg) & MIC_ENABLE, MIC_ENABLE);
+        assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, DEFAULT_GAIN);
+    }
+    for reg in [MIC3_GAIN, MIC4_GAIN] {
+        assert_eq!(adc.i2c.reg(reg), 0);
+    }
+    assert_eq!(adc.i2c.reg(MIC12_POWER), MIC_GROUP_POWER);
     assert_eq!(adc.i2c.reg(MIC34_POWER), MIC_POWER_DOWN);
-    assert_eq!(adc.i2c.reg(MIC1_POWER), MIC_POWER_UP);
-    assert_eq!(adc.i2c.reg(MIC2_POWER), MIC_POWER_UP);
-    assert_eq!(adc.i2c.reg(MIC3_POWER), MIC_POWER_UP);
-    assert_eq!(adc.i2c.reg(MIC4_POWER), MIC_POWER_UP);
-    assert_eq!(adc.i2c.reg(CLOCK_OFF), CLOCK_ON_MIC);
+    for reg in [MIC1_POWER, MIC2_POWER, MIC3_POWER, MIC4_POWER] {
+        assert_eq!(adc.i2c.reg(reg), MIC_POWER_UP);
+    }
     assert_eq!(adc.i2c.reg(RESET), RESET_RELEASE);
-    assert_eq!(adc.i2c.reg(POWER_DOWN), 0);
 }
 
 #[test]
@@ -66,6 +64,22 @@ fn gain_accepts_only_three_db_steps() {
     for reg in [MIC1_GAIN, MIC2_GAIN] {
         assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, 30 / 3);
     }
+    for reg in [MIC3_GAIN, MIC4_GAIN] {
+        assert_eq!(adc.i2c.reg(reg), 0);
+    }
+}
+
+#[test]
+fn diagnostics_return_the_expected_register_snapshot() {
+    let mut adc = adc();
+    adc.init().unwrap();
+
+    let dump = adc.read_diagnostics().unwrap();
+    assert_eq!(dump.len(), DIAGNOSTIC_REGISTERS.len());
+    for ((reg, value), expected_reg) in dump.iter().zip(DIAGNOSTIC_REGISTERS.iter()) {
+        assert_eq!(reg, expected_reg);
+        assert_eq!(*value, adc.i2c.reg(*reg));
+    }
 }
 
 #[test]
@@ -74,10 +88,6 @@ fn shutdown_powers_down_mics_and_clocks() {
     adc.init().unwrap();
     adc.shutdown().unwrap();
 
-    assert_eq!(adc.i2c.reg(MIC1_POWER), MIC_POWER_DOWN);
-    assert_eq!(adc.i2c.reg(MIC2_POWER), MIC_POWER_DOWN);
-    assert_eq!(adc.i2c.reg(MIC3_POWER), MIC_POWER_DOWN);
-    assert_eq!(adc.i2c.reg(MIC4_POWER), MIC_POWER_DOWN);
     assert_eq!(adc.i2c.reg(MIC12_POWER), MIC_POWER_DOWN);
     assert_eq!(adc.i2c.reg(MIC34_POWER), MIC_POWER_DOWN);
     assert_eq!(adc.i2c.reg(ANALOG), ANALOG_OFF);
@@ -94,7 +104,7 @@ fn init_after_shutdown_restores_capture() {
 
     assert_eq!(adc.i2c.reg(ANALOG), ANALOG_ON);
     assert_eq!(adc.i2c.reg(MIC1_POWER), MIC_POWER_UP);
-    assert_eq!(adc.i2c.reg(MIC12_POWER), 0);
+    assert_eq!(adc.i2c.reg(MIC12_POWER), MIC_GROUP_POWER);
     assert_eq!(adc.i2c.reg(RESET), RESET_RELEASE);
 }
 

@@ -40,7 +40,7 @@ pub type Clip = ExternalVec<u8, ExternalMemory>;
 /// The audio subsystem's exclusive peripherals.
 pub struct Peripherals<'d> {
     /// I2S peripheral.
-    pub i2s: esp_hal::peripherals::I2S0<'d>,
+    pub i2s: esp_hal::peripherals::I2S1<'d>,
     /// DMA channel shared by playback and capture.
     pub dma: esp_hal::peripherals::DMA_CH1<'d>,
     /// I2S master clock.

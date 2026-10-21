@@ -166,7 +166,7 @@ async fn firmware(spawner: Spawner) {
     let desk_inputs = desk::Inputs {
         spawner,
         bus,
-        i2s: peripherals.I2S0,
+        i2s: peripherals.I2S1,
         dma: peripherals.DMA_CH1,
         mclk: peripherals.GPIO16,
         bclk: peripherals.GPIO41,
