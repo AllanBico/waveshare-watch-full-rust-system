@@ -67,20 +67,21 @@ fn bus_failure_is_propagated() {
 }
 
 #[test]
-fn volume_maps_to_zero_db_maximum() {
+fn volume_uses_positive_digital_boost_above_zero_db() {
     let mut codec = chip();
     codec.init().unwrap();
 
     codec.set_volume(0).unwrap();
     assert_eq!(codec.i2c.reg(DAC_32), 0);
     codec.set_volume(50).unwrap();
-    assert_eq!(codec.i2c.reg(DAC_32), 0x83);
+    assert_eq!(codec.i2c.reg(DAC_32), DAC_ZERO_DB);
     codec.set_volume(80).unwrap();
     assert_eq!(codec.i2c.reg(DAC_32), DEFAULT_VOLUME);
     codec.set_volume(100).unwrap();
-    assert_eq!(codec.i2c.reg(DAC_32), DAC_ZERO_DB);
+    assert_eq!(codec.i2c.reg(DAC_32), 0xFB);
+    assert!(codec.i2c.reg(DAC_32) > DAC_ZERO_DB);
     assert_eq!(codec.set_volume(101), Err(Es8311Error::InvalidVolume(101)));
-    assert_eq!(codec.i2c.reg(DAC_32), DAC_ZERO_DB);
+    assert_eq!(codec.i2c.reg(DAC_32), 0xFB);
 }
 
 #[test]
