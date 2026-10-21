@@ -25,16 +25,15 @@ fn init_runs_the_vendor_sequence_and_enables_all_mics() {
     assert_eq!(adc.i2c.reg(MIC34_BIAS), MIC_BIAS);
     assert_eq!(adc.i2c.reg(OSR), OSR_VALUE);
     assert_eq!(adc.i2c.reg(MAIN_CLOCK), MAIN_CLOCK_VALUE);
+    assert_eq!(adc.i2c.reg(LRCK_DIVH), LRCK_DIVH_VALUE);
+    assert_eq!(adc.i2c.reg(LRCK_DIVL), LRCK_DIVL_VALUE);
     assert_eq!(adc.i2c.reg(POWER_DOWN), DLL_POWER_DOWN);
-    for reg in [MIC1_GAIN, MIC2_GAIN] {
+    for reg in [MIC1_GAIN, MIC2_GAIN, MIC3_GAIN, MIC4_GAIN] {
         assert_eq!(adc.i2c.reg(reg) & MIC_ENABLE, MIC_ENABLE);
         assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, DEFAULT_GAIN);
     }
-    for reg in [MIC3_GAIN, MIC4_GAIN] {
-        assert_eq!(adc.i2c.reg(reg), 0);
-    }
     assert_eq!(adc.i2c.reg(MIC12_POWER), MIC_GROUP_POWER);
-    assert_eq!(adc.i2c.reg(MIC34_POWER), MIC_POWER_DOWN);
+    assert_eq!(adc.i2c.reg(MIC34_POWER), MIC_GROUP_POWER);
     for reg in [MIC1_POWER, MIC2_POWER, MIC3_POWER, MIC4_POWER] {
         assert_eq!(adc.i2c.reg(reg), MIC_POWER_UP);
     }
@@ -47,25 +46,22 @@ fn gain_accepts_only_three_db_steps() {
     adc.init().unwrap();
 
     adc.set_gain(0).unwrap();
-    for reg in [MIC1_GAIN, MIC2_GAIN] {
+    for reg in [MIC1_GAIN, MIC2_GAIN, MIC3_GAIN, MIC4_GAIN] {
         assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, 0);
         assert_eq!(adc.i2c.reg(reg) & MIC_ENABLE, MIC_ENABLE);
     }
     adc.set_gain(DEFAULT_GAIN_DB).unwrap();
-    for reg in [MIC1_GAIN, MIC2_GAIN] {
+    for reg in [MIC1_GAIN, MIC2_GAIN, MIC3_GAIN, MIC4_GAIN] {
         assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, DEFAULT_GAIN);
     }
     adc.set_gain(30).unwrap();
-    for reg in [MIC1_GAIN, MIC2_GAIN] {
+    for reg in [MIC1_GAIN, MIC2_GAIN, MIC3_GAIN, MIC4_GAIN] {
         assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, 30 / 3);
     }
     assert_eq!(adc.set_gain(31), Err(Es7210Error::InvalidGain(31)));
     assert_eq!(adc.set_gain(4), Err(Es7210Error::InvalidGain(4)));
-    for reg in [MIC1_GAIN, MIC2_GAIN] {
+    for reg in [MIC1_GAIN, MIC2_GAIN, MIC3_GAIN, MIC4_GAIN] {
         assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, 30 / 3);
-    }
-    for reg in [MIC3_GAIN, MIC4_GAIN] {
-        assert_eq!(adc.i2c.reg(reg), 0);
     }
 }
 
@@ -105,6 +101,9 @@ fn init_after_shutdown_restores_capture() {
     assert_eq!(adc.i2c.reg(ANALOG), ANALOG_ON);
     assert_eq!(adc.i2c.reg(MIC1_POWER), MIC_POWER_UP);
     assert_eq!(adc.i2c.reg(MIC12_POWER), MIC_GROUP_POWER);
+    assert_eq!(adc.i2c.reg(MIC34_POWER), MIC_GROUP_POWER);
+    assert_eq!(adc.i2c.reg(LRCK_DIVH), LRCK_DIVH_VALUE);
+    assert_eq!(adc.i2c.reg(LRCK_DIVL), LRCK_DIVL_VALUE);
     assert_eq!(adc.i2c.reg(RESET), RESET_RELEASE);
 }
 

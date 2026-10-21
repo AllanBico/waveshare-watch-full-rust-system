@@ -3,6 +3,8 @@
 pub(super) const RESET: u8 = 0x00;
 pub(super) const CLOCK_OFF: u8 = 0x01;
 pub(super) const MAIN_CLOCK: u8 = 0x02;
+pub(super) const LRCK_DIVH: u8 = 0x04;
+pub(super) const LRCK_DIVL: u8 = 0x05;
 pub(super) const POWER_DOWN: u8 = 0x06;
 pub(super) const OSR: u8 = 0x07;
 pub(super) const MODE_CONFIG: u8 = 0x08;
@@ -51,6 +53,9 @@ pub(super) const ANALOG_OFF: u8 = 0x80;
 pub(super) const MIC_BIAS: u8 = 0x70;
 pub(super) const OSR_VALUE: u8 = 0x20;
 pub(super) const MAIN_CLOCK_VALUE: u8 = 0xC1;
+/// LRCK divider for 4.096 MHz MCLK at 16 kHz.
+pub(super) const LRCK_DIVH_VALUE: u8 = 0x01;
+pub(super) const LRCK_DIVL_VALUE: u8 = 0x00;
 pub(super) const SDP_16_BIT_I2S: u8 = 0x60;
 pub(super) const TDM_OFF: u8 = 0x00;
 /// Power down the unused DLL after selecting the bypassed clock path.

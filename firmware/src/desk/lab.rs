@@ -6,7 +6,7 @@ use embassy_executor::task;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use esp_alloc::ExternalMemory;
-use esp_println::println;
+use esp_println::{print, println};
 use voice::lab::LabCommand;
 
 pub use voice::lab::{LabError, LabEvent, LabIntent};
@@ -17,6 +17,12 @@ use super::audio::{Clip, Transport, TransportError};
 pub const EVENT_CAPACITY: usize = 16;
 /// Command queue depth.
 const COMMAND_CAPACITY: usize = 8;
+/// Temporary capture debugging: dump the start of the last clip over serial.
+const DUMP_CAPTURE: bool = true;
+/// Frames dumped by [`dump_clip`].
+const DUMP_FRAMES: usize = 8_000;
+/// Frames per hex line in the dump.
+const DUMP_FRAMES_PER_LINE: usize = 8;
 
 static COMMANDS: Channel<CriticalSectionRawMutex, LabCommand, COMMAND_CAPACITY> = Channel::new();
 static EVENTS: Channel<CriticalSectionRawMutex, LabEvent, EVENT_CAPACITY> = Channel::new();
@@ -77,6 +83,9 @@ pub async fn task(mut transport: Transport) {
                 if CANCEL.load(Ordering::Acquire) {
                     let _ = sender.try_send(LabEvent::Stopped);
                 } else {
+                    if result.is_ok() {
+                        dump_clip(&clip);
+                    }
                     send_result(&sender, result.map(LabEvent::Recorded));
                 }
             }
@@ -107,6 +116,31 @@ pub async fn task(mut transport: Transport) {
             }
         }
     }
+}
+
+/// Prints the first frames of a clip as `LRLR...` hex, eight frames per line.
+fn dump_clip(clip: &[u8]) {
+    if !DUMP_CAPTURE {
+        return;
+    }
+    let frames = (clip.len() / 4).min(DUMP_FRAMES);
+    println!(
+        "[pcm] begin frames={} channels=2 rate={}",
+        frames,
+        voice::lab::SAMPLE_RATE_HZ
+    );
+    for (index, frame) in clip.chunks_exact(4).take(frames).enumerate() {
+        let left = u16::from_le_bytes([frame[0], frame[1]]);
+        let right = u16::from_le_bytes([frame[2], frame[3]]);
+        print!("{:04X}{:04X}", left, right);
+        if (index + 1) % DUMP_FRAMES_PER_LINE == 0 {
+            println!();
+        }
+    }
+    if !frames.is_multiple_of(DUMP_FRAMES_PER_LINE) {
+        println!();
+    }
+    println!("[pcm] end");
 }
 
 fn send_finished(
