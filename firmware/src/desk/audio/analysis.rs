@@ -161,6 +161,56 @@ impl Tone {
     }
 }
 
+/// High-pass coefficient for a ~100 Hz corner at 16 kHz, in Q15.
+const HP_ALPHA_Q15: i64 = 31_507;
+/// Low-pass coefficient for a ~6.3 kHz corner at 16 kHz, in Q15.
+const LP_ALPHA_Q15: i64 = 30_000;
+
+/// A stateful voice-band filter for clip playback.
+///
+/// Removes DC/rumble and high-frequency hiss without touching the generated
+/// tone path. The output is duplicated to both slots, matching [`fill_playback`].
+#[derive(Default)]
+pub struct PlaybackFilter {
+    hp_prev_in: i32,
+    hp_prev_out: i32,
+    lp_prev: i32,
+}
+
+impl PlaybackFilter {
+    /// A filter with zeroed history.
+    pub const fn new() -> Self {
+        Self {
+            hp_prev_in: 0,
+            hp_prev_out: 0,
+            lp_prev: 0,
+        }
+    }
+
+    /// Filters stereo frames in place, duplicating the left sample to the right.
+    pub fn apply(&mut self, out: &mut [u8]) {
+        for frame in out.chunks_exact_mut(4) {
+            let sample = i16::from_le_bytes([frame[0], frame[1]]);
+            let filtered = self.filter(sample).to_le_bytes();
+            frame[..2].copy_from_slice(&filtered);
+            frame[2..].copy_from_slice(&filtered);
+        }
+    }
+
+    fn filter(&mut self, sample: i16) -> i16 {
+        let input = i32::from(sample);
+        let high_passed =
+            ((HP_ALPHA_Q15 * i64::from(self.hp_prev_out + input - self.hp_prev_in)) >> 15) as i32;
+        self.hp_prev_in = input;
+        self.hp_prev_out = high_passed;
+
+        let low_passed =
+            self.lp_prev + ((LP_ALPHA_Q15 * i64::from(high_passed - self.lp_prev)) >> 15) as i32;
+        self.lp_prev = low_passed;
+        low_passed.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16
+    }
+}
+
 /// Copies one channel from a stereo clip into stereo output, duplicating it.
 ///
 /// Returns the number of frames written.
@@ -226,6 +276,43 @@ mod tests {
         assert!(left.clipped);
         assert_eq!(left.peak, 32_767);
         assert_eq!(right.peak, 16_000);
+    }
+
+    #[test]
+    fn playback_filter_removes_dc_and_duplicates() {
+        let mut clip = vec![0u8; 4 * 400];
+        for frame in clip.chunks_exact_mut(4) {
+            frame[..2].copy_from_slice(&10_000i16.to_le_bytes());
+            frame[2..].copy_from_slice(&10_000i16.to_le_bytes());
+        }
+        let mut filter = PlaybackFilter::new();
+        filter.apply(&mut clip);
+        let last = &clip[clip.len() - 4..];
+        assert!(i16::from_le_bytes([last[0], last[1]]).abs() < 100);
+        assert_eq!(last[..2], last[2..]);
+    }
+
+    #[test]
+    fn playback_filter_passes_voice_band_energy() {
+        let mut tone = Tone::new(1_000);
+        let mut original = vec![0u8; 4 * 1_600];
+        tone.fill(&mut original);
+        let mut filtered = original.clone();
+        let mut filter = PlaybackFilter::new();
+        filter.apply(&mut filtered);
+
+        let rms = |clip: &[u8]| -> u64 {
+            clip.chunks_exact(4)
+                .map(|frame| {
+                    let sample = i64::from(i16::from_le_bytes([frame[0], frame[1]]));
+                    (sample * sample) as u64
+                })
+                .sum::<u64>()
+                / (clip.len() / 4) as u64
+        };
+        let before = rms(&original);
+        let after = rms(&filtered);
+        assert!(after * 100 / before > 80);
     }
 
     #[test]

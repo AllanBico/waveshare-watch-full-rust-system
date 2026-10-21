@@ -6,7 +6,7 @@ use embassy_time::{Duration, Instant, Timer};
 use esp_println::println;
 use voice::lab::{LabEvent, MicChannel};
 
-use super::super::analysis::{self, Tone};
+use super::super::analysis::{self, PlaybackFilter, Tone};
 use super::{frames_for, PaGuard, Transport, TransportError, METER_MS, PA_SETTLE_MS, POLL_MS};
 
 impl Transport {
@@ -39,7 +39,9 @@ impl Transport {
         } = self;
         let ring_frames = tx_buffer.len() / 4;
         let first = frames.min(ring_frames);
+        let mut filter = PlaybackFilter::new();
         analysis::fill_playback(clip, 0, offset, &mut tx_buffer[..first * 4]);
+        filter.apply(&mut tx_buffer[..first * 4]);
         tx_buffer[first * 4..].fill(0);
         let stage = &mut scratch[..];
 
@@ -69,6 +71,7 @@ impl Transport {
             if written == 0 {
                 break;
             }
+            filter.apply(&mut stage[..written * 4]);
             transfer.push(&stage[..written * 4])?;
             next += written;
             Timer::after(Duration::from_millis(1)).await;

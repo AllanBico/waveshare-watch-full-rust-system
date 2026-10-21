@@ -12,7 +12,7 @@ fn adc() -> Es7210<MockI2c> {
 }
 
 #[test]
-fn init_runs_the_vendor_sequence_and_enables_mic1() {
+fn init_runs_the_vendor_sequence_and_enables_both_mics() {
     let mut adc = adc();
     adc.init().unwrap();
 
@@ -28,6 +28,10 @@ fn init_runs_the_vendor_sequence_and_enables_mic1() {
     assert_eq!(adc.i2c.reg(MAIN_CLOCK), MAIN_CLOCK_VALUE);
     assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_ENABLE, MIC_ENABLE);
     assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, DEFAULT_GAIN);
+    assert_eq!(adc.i2c.reg(MIC2_GAIN) & MIC_ENABLE, MIC_ENABLE);
+    assert_eq!(adc.i2c.reg(MIC2_GAIN) & MIC_GAIN_MASK, DEFAULT_GAIN);
+    assert_eq!(adc.i2c.reg(MIC3_GAIN) & MIC_ENABLE, 0);
+    assert_eq!(adc.i2c.reg(MIC4_GAIN) & MIC_ENABLE, 0);
     assert_eq!(adc.i2c.reg(MIC12_POWER), 0);
     assert_eq!(adc.i2c.reg(MIC34_POWER), MIC_POWER_DOWN);
     assert_eq!(adc.i2c.reg(MIC1_POWER), MIC_POWER_UP);
@@ -45,14 +49,23 @@ fn gain_accepts_only_three_db_steps() {
     adc.init().unwrap();
 
     adc.set_gain(0).unwrap();
-    assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, 0);
+    for reg in [MIC1_GAIN, MIC2_GAIN] {
+        assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, 0);
+        assert_eq!(adc.i2c.reg(reg) & MIC_ENABLE, MIC_ENABLE);
+    }
     adc.set_gain(DEFAULT_GAIN_DB).unwrap();
-    assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, DEFAULT_GAIN);
+    for reg in [MIC1_GAIN, MIC2_GAIN] {
+        assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, DEFAULT_GAIN);
+    }
     adc.set_gain(30).unwrap();
-    assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, 30 / 3);
+    for reg in [MIC1_GAIN, MIC2_GAIN] {
+        assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, 30 / 3);
+    }
     assert_eq!(adc.set_gain(31), Err(Es7210Error::InvalidGain(31)));
     assert_eq!(adc.set_gain(4), Err(Es7210Error::InvalidGain(4)));
-    assert_eq!(adc.i2c.reg(MIC1_GAIN) & MIC_GAIN_MASK, 30 / 3);
+    for reg in [MIC1_GAIN, MIC2_GAIN] {
+        assert_eq!(adc.i2c.reg(reg) & MIC_GAIN_MASK, 30 / 3);
+    }
 }
 
 #[test]

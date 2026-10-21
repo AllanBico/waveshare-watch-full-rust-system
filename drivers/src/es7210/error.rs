@@ -13,6 +13,13 @@ pub enum Es7210Error<E> {
     Bus(E),
     /// The microphone gain was not a supported 3 dB step from 0 to 30.
     InvalidGain(u8),
+    /// A register did not read back the value written during init.
+    BadConfig {
+        /// Register address.
+        register: u8,
+        /// Value read back.
+        value: u8,
+    },
 }
 
 impl<E> Es7210Error<E> {
@@ -21,6 +28,7 @@ impl<E> Es7210Error<E> {
         match self {
             Es7210Error::Bus(_) => Error::HardwareFailure,
             Es7210Error::InvalidGain(_) => Error::InvalidInput,
+            Es7210Error::BadConfig { .. } => Error::HardwareFailure,
         }
     }
 }
@@ -30,6 +38,7 @@ impl<E> fmt::Display for Es7210Error<E> {
         f.write_str(match self {
             Es7210Error::Bus(_) => "i2c bus error",
             Es7210Error::InvalidGain(_) => "unsupported microphone gain",
+            Es7210Error::BadConfig { .. } => "unexpected codec configuration",
         })
     }
 }

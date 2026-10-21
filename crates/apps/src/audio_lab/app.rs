@@ -104,7 +104,7 @@ impl AudioLab {
             mode,
             page: Page::Loopback,
             record_ms: DEFAULT_RECORD_MS,
-            gain_db: 18,
+            gain_db: 24,
             volume: 80,
             muted: false,
             channel: MicChannel::One,

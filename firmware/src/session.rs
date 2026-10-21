@@ -485,6 +485,12 @@ fn commit_settings(store: &mut SettingsStore<SettingsBackend>, battery_mv: u16, 
     }
 }
 
+fn report_control_error(shell: &mut Shell<Registry>) {
+    if let Some(app) = shell.registry_mut().audio_lab_mut() {
+        app.ingest(LabEvent::Error(LabError::Codec));
+    }
+}
+
 fn service_audio(
     shell: &mut Shell<Registry>,
     mut audio: Option<&mut crate::desk::Control>,
@@ -510,13 +516,22 @@ fn service_audio(
                 changed |= crate::desk::lab::command(command);
             }
             LabIntent::SetMicGain(db) => {
-                let _ = audio.set_gain(db);
+                if audio.set_gain(db).is_err() {
+                    report_control_error(shell);
+                    changed = true;
+                }
             }
             LabIntent::SetVolume(percent) => {
-                let _ = audio.set_volume(percent);
+                if audio.set_volume(percent).is_err() {
+                    report_control_error(shell);
+                    changed = true;
+                }
             }
             LabIntent::SetMute(muted) => {
-                let _ = audio.set_mute(muted);
+                if audio.set_mute(muted).is_err() {
+                    report_control_error(shell);
+                    changed = true;
+                }
             }
         }
     }

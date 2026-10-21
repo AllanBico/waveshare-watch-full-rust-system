@@ -22,6 +22,10 @@ pub(super) const RX_RING_BYTES: usize = 32_768;
 pub(super) const TX_RING_BYTES: usize = 32_768;
 /// Capture polling interval while the ring has no data.
 pub(super) const POLL_MS: u64 = 2;
+/// Frames discarded after RX starts so capture begins on a settled frame.
+pub(super) const PRIME_FRAMES: usize = 512;
+/// Longest wait for the first primed capture data.
+pub(super) const PRIME_TIMEOUT_MS: u64 = 250;
 /// How often live meters are emitted.
 pub(super) const METER_MS: u64 = 100;
 /// Time for the amplifier to settle after a level change.

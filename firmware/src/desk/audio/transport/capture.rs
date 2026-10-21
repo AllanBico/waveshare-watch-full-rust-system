@@ -13,6 +13,7 @@ use voice::lab::{ClipReport, LabEvent};
 use super::super::analysis::{self, Levels, Tone};
 use super::{
     frames_for, Clip, PaGuard, Transport, TransportError, METER_MS, PA_SETTLE_MS, POLL_MS,
+    PRIME_FRAMES, PRIME_TIMEOUT_MS,
 };
 
 impl Transport {
@@ -55,6 +56,37 @@ impl Transport {
         let tx_hold = tx.write_dma_circular(&buffer)?;
         let mut rx_buffer_view: &mut [u8] = &mut rx_buffer[..];
         let mut rx_transfer = rx.read_dma_circular(&mut rx_buffer_view)?;
+
+        // Drop the first frames so the capture starts on a settled, whole
+        // stereo frame rather than whatever the RX was doing at enable time.
+        let mut primed = 0usize;
+        let prime_deadline = Instant::now() + Duration::from_millis(PRIME_TIMEOUT_MS);
+        while primed < PRIME_FRAMES && Instant::now() < prime_deadline {
+            let available = match rx_transfer.available() {
+                Ok(value) => value,
+                Err(error) => {
+                    println!("[audio] prime rx {:?}", error);
+                    return Err(error.into());
+                }
+            };
+            if available == 0 {
+                Timer::after(Duration::from_millis(POLL_MS)).await;
+                continue;
+            }
+            let take = available.min(scratch.len());
+            let popped = match rx_transfer.pop(&mut scratch[..take]) {
+                Ok(value) => value,
+                Err(error) => {
+                    println!("[audio] prime pop {:?}", error);
+                    return Err(error.into());
+                }
+            };
+            primed += popped / 4;
+        }
+        if primed == 0 {
+            println!("[audio] no capture data after priming");
+            return Err(TransportError::Empty);
+        }
 
         emit(LabEvent::Started {
             duration_ms,

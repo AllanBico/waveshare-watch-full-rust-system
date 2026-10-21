@@ -48,6 +48,7 @@ pub struct Inputs {
 /// The firmware-owned half of the Audio Lab.
 pub struct Control {
     codecs: Codecs<RefCellDevice<'static, I2c<'static, Blocking>>>,
+    log: bool,
 }
 
 /// Brings up the codecs, starts the audio task, and returns the control handle.
@@ -72,6 +73,7 @@ pub fn start(inputs: Inputs) -> Option<Control> {
             inputs.spawner.must_spawn(lab::task(brought.transport));
             Some(Control {
                 codecs: brought.codecs,
+                log: inputs.log,
             })
         }
         Err(error) => {
@@ -89,30 +91,48 @@ impl Control {
         if db > MAX_GAIN_DB || !db.is_multiple_of(3) {
             return Err(lab::ControlError::Gain);
         }
-        self.codecs.set_gain(db).map_err(map_codec)
+        self.codecs.set_gain(db).map_err(|error| {
+            self.log_failure("mic gain", db);
+            map_codec(error)
+        })
     }
 
     /// Applies a playback volume percentage.
     pub fn set_volume(&mut self, percent: u8) -> Result<(), lab::ControlError> {
-        self.codecs.set_volume(percent).map_err(map_codec)
+        self.codecs.set_volume(percent).map_err(|error| {
+            self.log_failure("volume", percent);
+            map_codec(error)
+        })
     }
 
     /// Mutes or unmutes playback.
     pub fn set_mute(&mut self, muted: bool) -> Result<(), lab::ControlError> {
-        self.codecs.set_mute(muted).map_err(map_codec)
+        self.codecs.set_mute(muted).map_err(|error| {
+            self.log_failure("mute", u8::from(muted));
+            map_codec(error)
+        })
     }
 
     /// Powers the codecs down after leaving desk mode.
     pub fn shutdown(&mut self) {
         lab::stop();
-        if let Err(error) = self.codecs.shutdown() {
-            let _ = error;
+        if self.codecs.shutdown().is_err() {
+            self.log_failure("shutdown", 0);
         }
     }
 
     /// Restores the codecs after returning to desk mode.
     pub fn init(&mut self) -> Result<(), lab::ControlError> {
-        self.codecs.init().map_err(map_codec)
+        self.codecs.init().map_err(|error| {
+            self.log_failure("init", 0);
+            map_codec(error)
+        })
+    }
+
+    fn log_failure(&self, operation: &str, value: u8) {
+        if self.log {
+            println!("[audio] {} {} failed", operation, value);
+        }
     }
 }
 
