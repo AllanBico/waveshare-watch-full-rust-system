@@ -11,7 +11,7 @@ use esp_hal::i2s::master::{
 };
 use esp_hal::time::Rate;
 use esp_hal::Blocking;
-use voice::lab::SAMPLE_RATE_HZ;
+use voice::lab::{FRAME_BYTES, SAMPLE_RATE_HZ};
 
 mod capture;
 mod playback;
@@ -25,6 +25,10 @@ pub(super) const RX_RING_BYTES: usize = DMA_CHUNK_BYTES * 8;
 /// Internal-SRAM ring used by the TX DMA. A multiple of the chunk size so the
 /// circular descriptor chain has no short tail.
 pub(super) const TX_RING_BYTES: usize = DMA_CHUNK_BYTES * 8;
+
+const _: () = assert!(DMA_CHUNK_BYTES % FRAME_BYTES == 0);
+const _: () = assert!(RX_RING_BYTES % DMA_CHUNK_BYTES == 0);
+const _: () = assert!(TX_RING_BYTES % DMA_CHUNK_BYTES == 0);
 /// Capture polling interval while the ring has no data.
 pub(super) const POLL_MS: u64 = 2;
 /// Frames discarded after RX starts so capture begins on a settled frame.
