@@ -50,7 +50,7 @@ fn watch_settings_golden_frame_is_stable() {
     let mut app = SettingsApp::new(Mode::Watch, Settings::new());
     let (damage, lit, hash) = render_watch(&mut app);
     assert!(damage.is_full());
-    assert_eq!((hash, lit), (0xf4ab_3cc3_9c14_d463, 11992));
+    assert_eq!((hash, lit), (0x6eef_950e_c237_4d4b, 10070));
 }
 
 #[test]
@@ -58,5 +58,5 @@ fn desk_settings_golden_frame_is_stable() {
     let mut app = SettingsApp::new(Mode::Desk, Settings::new());
     let (damage, lit, hash) = render_desk(&mut app);
     assert!(damage.is_full());
-    assert_eq!((hash, lit), (0xcbdd_732a_5f1f_fa87, 140231));
+    assert_eq!((hash, lit), (0x5ca7_6c22_d00e_5f5a, 139854));
 }

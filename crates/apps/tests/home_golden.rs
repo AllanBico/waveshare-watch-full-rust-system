@@ -90,14 +90,14 @@ fn hash(surface: &impl Surface) -> u64 {
 fn watch_home_golden_frame_is_stable() {
     let (damage, lit, hash) = render(&mut home());
     assert!(damage.is_full());
-    assert_eq!((hash, lit), (0x087a_cfb8_8745_0470, 4519));
+    assert_eq!((hash, lit), (0x37cc_6731_c4a7_e178, 3739));
 }
 
 #[test]
 fn desk_home_golden_frame_is_stable() {
     let (damage, lit, hash) = render_desk(&mut desk_home());
     assert!(damage.is_full());
-    assert_eq!((hash, lit), (0x919d_d423_fbf6_a9e0, 11177));
+    assert_eq!((hash, lit), (0xbac2_5bce_bfda_3ec4, 9650));
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn watch_alarm_frame_is_stable() {
     let mut home = home();
     home.set_alarm(Some(at(7, 5)));
     let (_, _, hash) = render(&mut home);
-    assert_eq!(hash, 0xe51a_b1dc_6c8c_22dd);
+    assert_eq!(hash, 0x7ee3_2ef8_e79e_c0e7);
 }
 
 #[test]

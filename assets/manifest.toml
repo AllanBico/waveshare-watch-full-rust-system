@@ -5,21 +5,21 @@
 [[font]]
 id = "ui"
 weight = "regular"
-path = "fonts/sora/Sora-Regular.ttf"
+path = "fonts/kode_mono/KodeMono.ttf"
 sizes = [22, 28, 48]
 charset = "ui"
 
 [[font]]
 id = "ui"
 weight = "medium"
-path = "fonts/sora/Sora-Medium.ttf"
+path = "fonts/kode_mono/KodeMono.ttf"
 sizes = [24, 36]
 charset = "ui"
 
 [[font]]
 id = "numeric"
 weight = "medium"
-path = "fonts/jetbrains_mono/JetBrainsMono-Medium.ttf"
+path = "fonts/kode_mono/KodeMono.ttf"
 sizes = [24, 72]
 charset = "numeric"
 

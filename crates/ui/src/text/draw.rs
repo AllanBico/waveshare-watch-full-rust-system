@@ -202,6 +202,6 @@ mod tests {
             );
         }
         assert!(surface.lit_pixels() > 0);
-        assert_eq!(fnv1a(&mono_ppm(&surface)), 0xd8a6_c599_c4c7_6d0e);
+        assert_eq!(fnv1a(&mono_ppm(&surface)), 0x4890_e23d_2957_2f02);
     }
 }
