@@ -28,6 +28,8 @@ pub const SETTINGS_ID: u16 = TILE_BASE;
 pub const LOGS_ID: u16 = TILE_BASE + 1;
 /// Audio Lab tile, desk only.
 pub const AUDIO_LAB_ID: u16 = TILE_BASE + 2;
+/// Network tile, desk only.
+pub const CONNECTIVITY_ID: u16 = TILE_BASE + 3;
 
 /// The drawer with the current watch app set.
 pub struct Drawer {
@@ -125,6 +127,7 @@ impl App for Drawer {
             Some(SETTINGS_ID) => Action::OpenApp(crate::SETTINGS_APP_ID),
             Some(LOGS_ID) => Action::OpenApp(crate::LOGS_APP_ID),
             Some(AUDIO_LAB_ID) => Action::OpenApp(crate::AUDIO_LAB_APP_ID),
+            Some(CONNECTIVITY_ID) => Action::OpenApp(crate::CONNECTIVITY_APP_ID),
             _ => Action::CloseAppDrawer,
         };
         context
@@ -178,14 +181,22 @@ fn build<'a>(
             label: "Audio Lab",
         }),
     );
+    let network = Widget::new(
+        CONNECTIVITY_ID,
+        WidgetKind::Tile(TileProps {
+            icon: IconId::WifiHigh,
+            label: "Network",
+        }),
+    );
     let title_node = fill_node(&title, theme, cache, viewport.width);
     let tile_height = theme.min_touch_px.saturating_mul(2);
     let mut tile_nodes = [
         crate::view::node(&settings, theme, cache, Length::Fill(1), tile_height),
         crate::view::node(&logs, theme, cache, Length::Fill(1), tile_height),
         crate::view::node(&audio, theme, cache, Length::Fill(1), tile_height),
+        crate::view::node(&network, theme, cache, Length::Fill(1), tile_height),
     ];
-    let tile_count = if mode == Mode::Desk { 3 } else { 2 };
+    let tile_count = if mode == Mode::Desk { 4 } else { 2 };
 
     let mut builder = Builder {
         theme,
@@ -200,6 +211,7 @@ fn build<'a>(
     builder.push(logs)?;
     if mode == Mode::Desk {
         builder.push(audio)?;
+        builder.push(network)?;
     }
 
     let crown_children = [title_node];

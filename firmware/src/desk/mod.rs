@@ -6,6 +6,7 @@
 pub mod audio;
 mod cpu1;
 pub mod lab;
+pub mod radio;
 
 pub use cpu1::Core1;
 

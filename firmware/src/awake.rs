@@ -65,6 +65,8 @@ pub struct Inputs<'a, D, P> {
     pub desk: Option<crate::desk::Inputs>,
     /// CPU1 lifecycle controller.
     pub core1: &'a mut crate::desk::Core1,
+    /// Desk radio owner.
+    pub radio: &'a mut crate::desk::radio::Radio,
 }
 
 /// Boots Home, runs the awake loop, and returns when watch should sleep.
@@ -113,6 +115,7 @@ where
             audio: input.audio,
             desk: input.desk,
             core1: input.core1,
+            radio: input.radio,
         })
         .await
         .map_err(|error| {

@@ -21,9 +21,9 @@ fn watch_boot_spawns_no_voice_sync_audio_or_radio_work() {
             "mod sync;",
             "audio::",
             "voice::",
-            ".spawn(",
-            "wifi",
-            "bluetooth",
+            "wifi::task",
+            "ble::task",
+            "esp_radio::",
         ] {
             assert!(
                 !source.contains(forbidden),
@@ -34,6 +34,15 @@ fn watch_boot_spawns_no_voice_sync_audio_or_radio_work() {
     for source in [MAIN, SESSION] {
         assert!(!source.contains("sync::"), "no sync work in watch boot");
     }
+}
+
+#[test]
+fn watch_boot_never_starts_a_radio() {
+    assert!(MAIN.contains("if mode == Mode::Desk"));
+    assert!(!MAIN.contains("radio.wifi("));
+    assert!(!MAIN.contains("radio.ble("));
+    assert!(SESSION.contains("fn run_desk"));
+    assert!(SESSION.contains("service_connectivity(shell, radio)"));
 }
 
 #[test]

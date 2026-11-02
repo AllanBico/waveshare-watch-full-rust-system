@@ -7,8 +7,8 @@
 use alloc::boxed::Box;
 
 use apps::{
-    AudioLab, Drawer, Home, LogsApp, QuickSettings, SettingsApp, AUDIO_LAB_APP_ID, LOGS_APP_ID,
-    SETTINGS_APP_ID,
+    AudioLab, ConnectivityApp, Drawer, Home, LogsApp, QuickSettings, SettingsApp, AUDIO_LAB_APP_ID,
+    CONNECTIVITY_APP_ID, LOGS_APP_ID, SETTINGS_APP_ID,
 };
 use common::{Mode, Percent, Timestamp};
 use settings::{SettingId, SettingValue, Settings};
@@ -23,6 +23,7 @@ pub struct Registry {
     settings: SettingsApp,
     logs: LogsApp,
     audio_lab: Option<Box<AudioLab>>,
+    connectivity: Option<Box<ConnectivityApp>>,
     drawer: Drawer,
     quick: QuickSettings,
 }
@@ -53,6 +54,7 @@ impl Registry {
             settings: SettingsApp::new(mode, *settings),
             logs: LogsApp::new(),
             audio_lab: None,
+            connectivity: None,
             drawer: Drawer::new(2, mode),
             quick: QuickSettings::new(),
         }
@@ -97,6 +99,18 @@ impl Registry {
             self.audio_lab = Some(Box::new(AudioLab::new(Mode::Desk)));
         }
     }
+
+    /// The network status app, mutably.
+    pub fn connectivity_mut(&mut self) -> Option<&mut ConnectivityApp> {
+        self.connectivity.as_deref_mut()
+    }
+
+    /// Allocates the network app on the first desk entry.
+    pub fn ensure_connectivity(&mut self) {
+        if self.connectivity.is_none() {
+            self.connectivity = Some(Box::new(ConnectivityApp::new()));
+        }
+    }
 }
 
 impl AppRegistry for Registry {
@@ -106,6 +120,7 @@ impl AppRegistry for Registry {
             SETTINGS_APP_ID => Some(f(&mut self.settings)),
             LOGS_APP_ID => Some(f(&mut self.logs)),
             AUDIO_LAB_APP_ID => self.audio_lab.as_deref_mut().map(|app| f(app)),
+            CONNECTIVITY_APP_ID => self.connectivity.as_deref_mut().map(|app| f(app)),
             _ => None,
         }
     }

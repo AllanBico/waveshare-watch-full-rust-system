@@ -1,3 +1,4 @@
 /target
 
 /tools/assetgen/target
+/firmware/wifi.env

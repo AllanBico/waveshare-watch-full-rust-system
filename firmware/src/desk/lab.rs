@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use common::Cpu1State;
 use embassy_executor::task;
-use embassy_sync::channel::Channel;
+use embassy_sync08::channel::Channel;
 use embassy_time::{Duration, Instant, Timer};
 use esp_sync::RawMutex;
 use voice::lab::LabCommand;
@@ -146,7 +146,7 @@ async fn metered<F: Future>(future: F) -> F::Output {
 }
 
 fn send_finished(
-    sender: &embassy_sync::channel::Sender<'_, RawMutex, LabEvent, EVENT_CAPACITY>,
+    sender: &embassy_sync08::channel::Sender<'_, RawMutex, LabEvent, EVENT_CAPACITY>,
     result: Result<(), TransportError>,
 ) {
     if CANCEL.load(Ordering::Acquire) {
@@ -157,7 +157,7 @@ fn send_finished(
 }
 
 fn send_result(
-    sender: &embassy_sync::channel::Sender<'_, RawMutex, LabEvent, EVENT_CAPACITY>,
+    sender: &embassy_sync08::channel::Sender<'_, RawMutex, LabEvent, EVENT_CAPACITY>,
     result: Result<LabEvent, TransportError>,
 ) {
     match result {

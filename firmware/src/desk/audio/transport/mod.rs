@@ -21,10 +21,10 @@ mod playback;
 const DMA_CHUNK_BYTES: usize = 4_092;
 /// Internal-SRAM ring used by the RX DMA. A multiple of the chunk size so the
 /// circular descriptor chain has no short tail.
-pub(super) const RX_RING_BYTES: usize = DMA_CHUNK_BYTES * 8;
+pub(super) const RX_RING_BYTES: usize = DMA_CHUNK_BYTES * 2;
 /// Internal-SRAM ring used by the TX DMA. A multiple of the chunk size so the
 /// circular descriptor chain has no short tail.
-pub(super) const TX_RING_BYTES: usize = DMA_CHUNK_BYTES * 8;
+pub(super) const TX_RING_BYTES: usize = DMA_CHUNK_BYTES * 2;
 
 const _: () = assert!(DMA_CHUNK_BYTES % FRAME_BYTES == 0);
 const _: () = assert!(RX_RING_BYTES % DMA_CHUNK_BYTES == 0);

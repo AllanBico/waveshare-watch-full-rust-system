@@ -13,7 +13,7 @@ use hal::{Display, Power};
 use power::PowerManager;
 
 use crate::desk::lab::{LabError, LabEvent, LabIntent};
-use apps::{AUDIO_LAB_APP_ID, SETTINGS_APP_ID};
+use apps::{AUDIO_LAB_APP_ID, CONNECTIVITY_APP_ID, SETTINGS_APP_ID};
 use common::{Event, LogEntry, Mode, Percent, Region, Timestamp, TouchReport};
 use drivers::board;
 use drivers::clock::{self, CpuSpeed};
@@ -86,6 +86,8 @@ pub struct RunInput<'a, D, P> {
     pub desk: Option<crate::desk::Inputs>,
     /// CPU1 lifecycle controller.
     pub core1: &'a mut crate::desk::Core1,
+    /// Desk radio owner.
+    pub radio: &'a mut crate::desk::radio::Radio,
 }
 
 /// Inputs for one watch awake loop.
@@ -120,6 +122,7 @@ struct DeskInput<'a, D, P> {
     started: Instant,
     log: bool,
     audio: Option<&'a mut crate::desk::Control>,
+    radio: &'a mut crate::desk::radio::Radio,
 }
 
 /// The reason the watch awake loop stopped.
@@ -157,6 +160,7 @@ pub fn boot(
     if mode == Mode::Desk {
         let _ = shell.set_system_stats(crate::metrics::snapshot());
         shell.registry_mut().ensure_audio_lab();
+        shell.registry_mut().ensure_connectivity();
     }
     shell.start()?;
     shell.tick(0)?;
@@ -185,6 +189,7 @@ where
         mut audio,
         mut desk,
         core1,
+        radio,
     } = input;
     let mut workspace = present::workspace();
     let base_now = shell.now();
@@ -228,6 +233,7 @@ where
                         haptics = None;
                         switch(shell, power, psram, Mode::Desk, log, now())?;
                         shell.registry_mut().ensure_audio_lab();
+                        shell.registry_mut().ensure_connectivity();
                         if let Some(inputs) = desk.take() {
                             audio = crate::desk::start(inputs, core1);
                         } else if let Some(audio) = audio.as_mut() {
@@ -259,8 +265,10 @@ where
                     started,
                     log,
                     audio: audio.as_mut(),
+                    radio: &mut *radio,
                 })
                 .await;
+                radio.stop_all();
                 if let Some(audio) = audio.as_mut() {
                     audio.shutdown().await;
                 }
@@ -509,6 +517,40 @@ fn report_control_error(shell: &mut Shell<Registry>) {
     }
 }
 
+fn service_connectivity(
+    shell: &mut Shell<Registry>,
+    radio: &mut crate::desk::radio::Radio,
+) -> bool {
+    let mut changed = false;
+    while let Some(intent) = shell
+        .registry_mut()
+        .connectivity_mut()
+        .and_then(|app| app.take_intent())
+    {
+        match intent {
+            apps::ConnectivityIntent::WifiConnect => {
+                radio.wifi(crate::desk::radio::WifiCommand::Connect);
+            }
+            apps::ConnectivityIntent::WifiStop => {
+                radio.wifi(crate::desk::radio::WifiCommand::Stop);
+            }
+            apps::ConnectivityIntent::BleStart => {
+                radio.ble(crate::desk::radio::BleCommand::Start);
+            }
+            apps::ConnectivityIntent::BleStop => {
+                radio.ble(crate::desk::radio::BleCommand::Stop);
+            }
+        }
+        changed = true;
+    }
+
+    let (wifi, ble) = radio.status();
+    if let Some(app) = shell.registry_mut().connectivity_mut() {
+        changed |= app.update(wifi, ble);
+    }
+    changed
+}
+
 fn service_audio(
     shell: &mut Shell<Registry>,
     mut audio: Option<&mut crate::desk::Control>,
@@ -601,6 +643,7 @@ where
         started,
         log,
         mut audio,
+        radio,
     } = input;
     let mut next_vbus = Instant::now() + VBUS_POLL_PERIOD;
     let mut next_meter = Instant::now();
@@ -631,6 +674,7 @@ where
         let report = read_touch(touch);
         let was_settings = shell.active_app() == Some(SETTINGS_APP_ID);
         let was_audio = shell.active_app() == Some(AUDIO_LAB_APP_ID);
+        let was_connectivity = shell.active_app() == Some(CONNECTIVITY_APP_ID);
         let outcome = shell.handle_touch(&report, uptime).unwrap_or_else(|error| {
             crate::retained::record_error(common::Error::NotReady.code());
             if log {
@@ -659,6 +703,11 @@ where
         if was_audio && !is_audio && audio.is_some() {
             crate::desk::lab::stop();
         }
+        let is_connectivity = shell.active_app() == Some(CONNECTIVITY_APP_ID);
+        if was_connectivity && !is_connectivity {
+            radio.stop_all();
+        }
+        let connectivity_changed = service_connectivity(shell, radio);
         let audio_changed = service_audio(shell, audio.as_deref_mut(), log);
         let audio_active = shell
             .registry()
@@ -677,6 +726,7 @@ where
             || changed
             || stats_changed
             || audio_changed
+            || connectivity_changed
             || meter_due
             || Instant::now() >= next_repaint
         {

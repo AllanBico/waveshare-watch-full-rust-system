@@ -13,8 +13,10 @@
 
 extern crate alloc;
 
+use embassy_executor::Spawner;
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
+use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 
@@ -50,12 +52,13 @@ use esp_backtrace as _;
 use runtime::{debounce_power_button, halt, open_bus, report_boot, report_time, wake_reason};
 
 #[embassy_executor::task]
-async fn firmware() {
+async fn firmware(spawner: Spawner) {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::_80MHz));
-    let mut core1 = desk::Core1::new(peripherals.CPU_CTRL, peripherals.SW_INTERRUPT);
+    let software = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    esp_rtos::start(timg0.timer0);
+    esp_rtos::start(timg0.timer0, software.software_interrupt0);
+    let mut core1 = desk::Core1::new(peripherals.CPU_CTRL, software.software_interrupt2);
     metrics::enable();
 
     let raw_wake = wake_reason();
@@ -171,6 +174,11 @@ async fn firmware() {
         0
     };
     report_boot(mode, psram_bytes, log);
+    let mut radio = desk::radio::Radio::new(desk::radio::Inputs {
+        wifi: peripherals.WIFI,
+        bt: peripherals.BT,
+        spawner,
+    });
     let desk_inputs = desk::Inputs {
         bus,
         i2s: peripherals.I2S1,
@@ -281,6 +289,7 @@ async fn firmware() {
             audio,
             desk: desk_pending,
             core1: &mut core1,
+            radio: &mut radio,
         })
         .await
         {
@@ -323,7 +332,11 @@ fn main() -> ! {
     // the `'static` reference is valid for the whole program lifetime.
     let executor = unsafe { &mut *(&mut executor as *mut esp_rtos::embassy::Executor) };
     executor.run_with_callbacks(
-        |spawner| spawner.must_spawn(firmware()),
+        |spawner| {
+            if let Ok(token) = firmware(spawner) {
+                spawner.spawn(token);
+            }
+        },
         metrics::LoadCallbacks,
     )
 }

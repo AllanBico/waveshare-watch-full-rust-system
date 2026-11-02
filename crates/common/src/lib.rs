@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 mod color;
+mod connectivity;
 mod datetime;
 mod error;
 mod event;
@@ -27,6 +28,7 @@ mod touch;
 mod units;
 
 pub use color::Rgb565;
+pub use connectivity::{BleStatus, WifiStatus};
 pub use datetime::{is_supported_year, DateTime};
 pub use error::Error;
 pub use event::{Event, WakeReason};

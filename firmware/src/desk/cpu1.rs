@@ -4,9 +4,9 @@
 //! first desk entry, parked on every return to watch, and unparked on later
 //! desk entries. The guard is retained so parking is always possible.
 
-use esp_hal::interrupt::software::SoftwareInterruptControl;
+use esp_hal::interrupt::software::SoftwareInterrupt;
 use esp_hal::interrupt::Priority;
-use esp_hal::peripherals::{CPU_CTRL, SW_INTERRUPT};
+use esp_hal::peripherals::CPU_CTRL;
 use esp_hal::system::{Cpu, CpuControl, Stack};
 use esp_rtos::embassy::InterruptExecutor;
 use static_cell::StaticCell;
@@ -31,9 +31,11 @@ pub struct Core1 {
 
 impl Core1 {
     /// Creates the core controller without touching hardware.
-    pub fn new(cpu_control: CPU_CTRL<'static>, sw_interrupt: SW_INTERRUPT<'static>) -> Self {
-        let software = SoftwareInterruptControl::new(sw_interrupt);
-        let executor = EXECUTOR.init(InterruptExecutor::new(software.software_interrupt2));
+    pub fn new(
+        cpu_control: CPU_CTRL<'static>,
+        software_interrupt: SoftwareInterrupt<'static, 2>,
+    ) -> Self {
+        let executor = EXECUTOR.init(InterruptExecutor::new(software_interrupt));
         Self {
             control: CpuControl::new(cpu_control),
             guard: None,
@@ -56,7 +58,9 @@ impl Core1 {
         let stack = APP_CORE_STACK.init(Stack::new());
         let result = self.control.start_app_core(stack, move || {
             let spawner = executor.start(Priority::Priority3);
-            spawner.must_spawn(lab::task(transport, clip));
+            if let Ok(token) = lab::task(transport, clip) {
+                spawner.spawn(token);
+            }
             crate::metrics::set_cpu1_state(Cpu1State::Idle);
             loop {
                 // SAFETY: waiti only pauses the core until the next interrupt.

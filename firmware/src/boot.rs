@@ -9,6 +9,7 @@ use embassy_time::Duration;
 use esp_hal::delay::Delay;
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::peripherals::{GPIO9, PSRAM};
+use esp_hal::ram;
 use esp_println::println;
 use hal::Display;
 
@@ -47,10 +48,18 @@ where
     }
 }
 
+const DRAM2_UNINIT_SIZE: usize = {
+    let range: core::ops::Range<usize> = esp_metadata_generated::memory_range!("DRAM2_UNINIT");
+    range.end - range.start
+};
+
 /// Initializes PSRAM for desk mode and returns its size.
 pub fn init_psram(psram: PSRAM<'static>) -> usize {
-    let (_, bytes) = esp_hal::psram::psram_raw_parts(&psram);
-    esp_alloc::psram_allocator!(psram, esp_hal::psram);
+    esp_alloc::heap_allocator!(#[ram(reclaimed)] size: DRAM2_UNINIT_SIZE);
+    esp_alloc::heap_allocator!(size: 36 * 1024);
+    let psram = esp_hal::psram::Psram::new(psram, esp_hal::psram::PsramConfig::default());
+    let (_, bytes) = psram.raw_parts();
+    esp_alloc::psram_allocator!(&psram);
     bytes
 }
 
